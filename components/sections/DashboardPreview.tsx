@@ -28,18 +28,19 @@ const sidebarMenuItems = [
 ]
 
 const stats = [
-  { icon: BookOpen, label: '전체 도서', value: '1,284', color: 'bg-blue-50 text-blue-600' },
-  { icon: ClipboardList, label: '대여 중', value: '128', color: 'bg-green-50 text-green-600' },
-  { icon: AlertCircle, label: '연체', value: '6', color: 'bg-red-50 text-red-600' },
+  { icon: BookOpen, label: '전체 도서', value: '-', color: 'bg-blue-50 text-blue-600' },
+  { icon: ClipboardList, label: '대여 중', value: '-', color: 'bg-green-50 text-green-600' },
+  { icon: AlertCircle, label: '연체', value: '-', color: 'bg-red-50 text-red-600' },
 ]
 
-const recentRentals = [
-  { id: 1, studentName: '김서연', bookTitle: '아몬드', rentalDate: '2024-05-16', returnDate: '2024-05-30', status: 'rented' as const },
-  { id: 2, studentName: '이준호', bookTitle: '불편한 편의점', rentalDate: '2024-05-15', returnDate: '2024-05-29', status: 'rented' as const },
-  { id: 3, studentName: '박민지', bookTitle: '82년생 김지영', rentalDate: '2024-05-10', returnDate: '2024-05-24', status: 'overdue' as const },
-  { id: 4, studentName: '최도현', bookTitle: '데미안', rentalDate: '2024-05-08', returnDate: '2024-05-22', status: 'overdue' as const },
-  { id: 5, studentName: '정하린', bookTitle: '어린 왕자', rentalDate: '2024-05-14', returnDate: '2024-05-28', status: 'rented' as const },
-]
+const recentRentals: Array<{
+  id: number
+  studentName: string
+  bookTitle: string
+  rentalDate: string
+  returnDate: string
+  status: 'rented' | 'overdue'
+}> = []
 
 function Sidebar() {
   return (
@@ -107,26 +108,36 @@ function RecentRentalsTable() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {recentRentals.map((rental) => (
-              <tr key={rental.id} className="hover:bg-gray-50/50">
-                <td className="px-6 py-4 text-sm text-gray-900">{rental.studentName}</td>
-                <td className="px-6 py-4 text-sm text-gray-900">{rental.bookTitle}</td>
-                <td className="px-6 py-4 text-sm text-gray-500">{rental.rentalDate}</td>
-                <td className="px-6 py-4 text-sm text-gray-500">{rental.returnDate}</td>
-                <td className="px-6 py-4">
-                  <span
-                    className={cn(
-                      'inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium',
-                      rental.status === 'rented'
-                        ? 'bg-green-50 text-green-700'
-                        : 'bg-red-50 text-red-700'
-                    )}
-                  >
-                    {rental.status === 'rented' ? '대여 중' : '연체'}
-                  </span>
-                </td>
+            {recentRentals.length === 0 ? (
+              <tr>
+                <td className="px-6 py-4 text-sm text-gray-500">-</td>
+                <td className="px-6 py-4 text-sm text-gray-500">-</td>
+                <td className="px-6 py-4 text-sm text-gray-500">-</td>
+                <td className="px-6 py-4 text-sm text-gray-500">-</td>
+                <td className="px-6 py-4 text-sm text-gray-500">-</td>
               </tr>
-            ))}
+            ) : (
+              recentRentals.map((rental) => (
+                <tr key={rental.id} className="hover:bg-gray-50/50">
+                  <td className="px-6 py-4 text-sm text-gray-900">{rental.studentName}</td>
+                  <td className="px-6 py-4 text-sm text-gray-900">{rental.bookTitle}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500">{rental.rentalDate}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500">{rental.returnDate}</td>
+                  <td className="px-6 py-4">
+                    <span
+                      className={cn(
+                        'inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium',
+                        rental.status === 'rented'
+                          ? 'bg-green-50 text-green-700'
+                          : 'bg-red-50 text-red-700'
+                      )}
+                    >
+                      {rental.status === 'rented' ? '대여 중' : '연체'}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

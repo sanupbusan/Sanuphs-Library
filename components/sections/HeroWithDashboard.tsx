@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect, useMemo, useState } from 'react'
+import type { LucideIcon } from 'lucide-react'
 import {
   BookOpen,
   LayoutDashboard,
@@ -13,7 +15,27 @@ import {
   ChevronRight,
   Search,
 } from 'lucide-react'
+import { getDashboardData, type DashboardSummary, type RecentLoan } from '@/lib/library-queries'
+import { getBrowserSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+
+type RentalStatus = 'rented' | 'overdue' | 'returned'
+
+type DashboardStat = {
+  icon: LucideIcon
+  label: string
+  value: string
+  color: string
+}
+
+type RecentRental = {
+  id: string
+  studentName: string
+  bookTitle: string
+  rentalDate: string
+  returnDate: string
+  status: RentalStatus
+}
 
 const sidebarMenuItems = [
   { icon: LayoutDashboard, label: '대시보드', active: true },
@@ -26,19 +48,83 @@ const sidebarMenuItems = [
   { icon: Settings, label: '설정', active: false },
 ]
 
-const stats = [
-  { icon: BookOpen, label: '전체 도서', value: '1,284', color: 'bg-blue-50 text-blue-600' },
-  { icon: ClipboardList, label: '대여 중', value: '128', color: 'bg-green-50 text-green-600' },
-  { icon: AlertCircle, label: '연체', value: '6', color: 'bg-red-50 text-red-600' },
+const fallbackStats: DashboardStat[] = [
+  { icon: BookOpen, label: '전체 도서', value: '-', color: 'bg-blue-50 text-blue-600' },
+  { icon: ClipboardList, label: '대여 중', value: '-', color: 'bg-green-50 text-green-600' },
+  { icon: AlertCircle, label: '연체', value: '-', color: 'bg-red-50 text-red-600' },
 ]
 
-const recentRentals = [
-  { id: 1, studentName: '김서연', bookTitle: '아몬드', rentalDate: '2024-05-16', returnDate: '2024-05-30', status: 'rented' as const },
-  { id: 2, studentName: '이준호', bookTitle: '불편한 편의점', rentalDate: '2024-05-15', returnDate: '2024-05-29', status: 'rented' as const },
-  { id: 3, studentName: '박민지', bookTitle: '82년생 김지영', rentalDate: '2024-05-10', returnDate: '2024-05-24', status: 'overdue' as const },
-  { id: 4, studentName: '최도현', bookTitle: '데미안', rentalDate: '2024-05-08', returnDate: '2024-05-22', status: 'overdue' as const },
-  { id: 5, studentName: '정하린', bookTitle: '어린 왕자', rentalDate: '2024-05-14', returnDate: '2024-05-28', status: 'rented' as const },
-]
+const numberFormatter = new Intl.NumberFormat('ko-KR')
+
+function formatNumber(value: number | null | undefined) {
+  return numberFormatter.format(value ?? 0)
+}
+
+function buildStats(summary: DashboardSummary): DashboardStat[] {
+  return [
+    {
+      icon: BookOpen,
+      label: '전체 도서',
+      value: formatNumber(summary.total_books),
+      color: 'bg-blue-50 text-blue-600',
+    },
+    {
+      icon: ClipboardList,
+      label: '대여 중',
+      value: formatNumber(summary.active_loans),
+      color: 'bg-green-50 text-green-600',
+    },
+    {
+      icon: AlertCircle,
+      label: '연체',
+      value: formatNumber(summary.overdue_loans),
+      color: 'bg-red-50 text-red-600',
+    },
+  ]
+}
+
+function normalizeRentalStatus(status: RecentLoan['status']): RentalStatus {
+  if (status === 'overdue' || status === 'returned') {
+    return status
+  }
+
+  return 'rented'
+}
+
+function mapRecentLoans(loans: RecentLoan[]): RecentRental[] {
+  return loans.map((loan, index) => ({
+    id: loan.id ?? `loan-${index}`,
+    studentName: loan.student_name ?? '-',
+    bookTitle: loan.book_title ?? '-',
+    rentalDate: loan.rental_date ?? '-',
+    returnDate: loan.return_date ?? '-',
+    status: normalizeRentalStatus(loan.status),
+  }))
+}
+
+function getStatusLabel(status: RentalStatus) {
+  if (status === 'overdue') {
+    return '연체'
+  }
+
+  if (status === 'returned') {
+    return '반납'
+  }
+
+  return '대여 중'
+}
+
+function getStatusColor(status: RentalStatus) {
+  if (status === 'overdue') {
+    return 'bg-red-50 text-red-700'
+  }
+
+  if (status === 'returned') {
+    return 'bg-gray-100 text-gray-600'
+  }
+
+  return 'bg-green-50 text-green-700'
+}
 
 function Sidebar() {
   return (
@@ -67,12 +153,7 @@ function Sidebar() {
   )
 }
 
-function StatCard({ icon: Icon, label, value, color }: {
-  icon: typeof BookOpen
-  label: string
-  value: string
-  color: string
-}) {
+function StatCard({ icon: Icon, label, value, color }: DashboardStat) {
   return (
     <div className="flex items-center gap-3 rounded-lg border border-gray-100 bg-white p-3 shadow-sm">
       <div className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full', color)}>
@@ -86,7 +167,7 @@ function StatCard({ icon: Icon, label, value, color }: {
   )
 }
 
-function RecentRentalsTable() {
+function RecentRentalsTable({ rentals }: { rentals: RecentRental[] }) {
   return (
     <div className="rounded-lg border border-gray-100 bg-white shadow-sm">
       <div className="px-4 py-3">
@@ -105,26 +186,29 @@ function RecentRentalsTable() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {recentRentals.map((rental) => (
-              <tr key={rental.id} className="hover:bg-gray-50/50">
-                <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-900">{rental.studentName}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-900">{rental.bookTitle}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-500">{rental.rentalDate}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-500">{rental.returnDate}</td>
-                <td className="whitespace-nowrap px-3 py-2">
-                  <span
-                    className={cn(
-                      'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
-                      rental.status === 'rented'
-                        ? 'bg-green-50 text-green-700'
-                        : 'bg-red-50 text-red-700'
-                    )}
-                  >
-                    {rental.status === 'rented' ? '대여 중' : '연체'}
-                  </span>
-                </td>
+            {rentals.length === 0 ? (
+              <tr>
+                <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-500">-</td>
+                <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-500">-</td>
+                <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-500">-</td>
+                <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-500">-</td>
+                <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-500">-</td>
               </tr>
-            ))}
+            ) : (
+              rentals.map((rental) => (
+                <tr key={rental.id} className="hover:bg-gray-50/50">
+                  <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-900">{rental.studentName}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-900">{rental.bookTitle}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-500">{rental.rentalDate}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-500">{rental.returnDate}</td>
+                  <td className="whitespace-nowrap px-3 py-2">
+                    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', getStatusColor(rental.status))}>
+                      {getStatusLabel(rental.status)}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -139,7 +223,13 @@ function RecentRentalsTable() {
   )
 }
 
-function DashboardMockup() {
+function DashboardMockup({
+  stats,
+  recentRentals,
+}: {
+  stats: DashboardStat[]
+  recentRentals: RecentRental[]
+}) {
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl">
       <div className="flex">
@@ -148,8 +238,6 @@ function DashboardMockup() {
         <div className="flex-1 p-4">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-base font-bold text-gray-900">대시보드</h2>
-
-
           </div>
 
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
@@ -158,7 +246,7 @@ function DashboardMockup() {
             ))}
           </div>
 
-          <RecentRentalsTable />
+          <RecentRentalsTable rentals={recentRentals} />
         </div>
       </div>
     </div>
@@ -166,6 +254,50 @@ function DashboardMockup() {
 }
 
 export default function HeroWithDashboard() {
+  const [summary, setSummary] = useState<DashboardSummary | null>(null)
+  const [recentRentals, setRecentRentals] = useState<RecentRental[]>([])
+
+  const stats = useMemo(() => {
+    if (!summary) {
+      return fallbackStats
+    }
+
+    return buildStats(summary)
+  }, [summary])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      return
+    }
+
+    let didCancel = false
+
+    async function loadDashboardData() {
+      try {
+        const client = getBrowserSupabaseClient()
+        const dashboardData = await getDashboardData(client)
+
+        if (didCancel) {
+          return
+        }
+
+        setSummary(dashboardData.summary)
+
+        setRecentRentals(mapRecentLoans(dashboardData.recentLoans))
+      } catch (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Supabase dashboard data unavailable:', error)
+        }
+      }
+    }
+
+    void loadDashboardData()
+
+    return () => {
+      didCancel = true
+    }
+  }, [])
+
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-white py-16 sm:py-20">
         <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
@@ -197,7 +329,7 @@ export default function HeroWithDashboard() {
           </div>
 
           <div className="hidden lg:block">
-            <DashboardMockup />
+            <DashboardMockup stats={stats} recentRentals={recentRentals} />
           </div>
         </div>
       </div>
