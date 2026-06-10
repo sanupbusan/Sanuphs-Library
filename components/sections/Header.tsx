@@ -8,9 +8,9 @@ interface HeaderProps {
 }
 
 const navigationItems = [
-  { label: '도서검색', href: '#search' },
-  { label: '대여관리', href: '#rental' },
-  { label: '기능소개', href: '#features' },
+  { label: '도서검색', href: '/books' },
+  { label: '대여관리', href: '/#rental' },
+  { label: '기능소개', href: '/#features' },
 ]
 
 export default function Header({ className }: HeaderProps) {

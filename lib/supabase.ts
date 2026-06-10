@@ -8,6 +8,10 @@ type SupabasePublicEnv = {
   supabaseAnonKey: string
 }
 
+type SupabaseClientOptions = {
+  persistAuthSession?: boolean
+}
+
 const missingSupabaseEnvMessage =
   'Missing Supabase environment variables. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.'
 
@@ -51,17 +55,28 @@ export function assertSupabasePublicEnv(): SupabasePublicEnv {
   return supabaseEnv
 }
 
-export function createBrowserSupabaseClient(): TypedSupabaseClient {
+function createSupabaseClient({
+  persistAuthSession = false,
+}: SupabaseClientOptions = {}): TypedSupabaseClient {
   const { supabaseUrl, supabaseAnonKey } = assertSupabasePublicEnv()
-  const isBrowser = typeof window !== 'undefined'
 
   return createClient<Database>(supabaseUrl, supabaseAnonKey, {
     auth: {
-      persistSession: isBrowser,
-      autoRefreshToken: isBrowser,
-      detectSessionInUrl: isBrowser,
+      persistSession: persistAuthSession,
+      autoRefreshToken: persistAuthSession,
+      detectSessionInUrl: persistAuthSession,
     },
   })
+}
+
+export function createBrowserSupabaseClient(): TypedSupabaseClient {
+  return createSupabaseClient({
+    persistAuthSession: typeof window !== 'undefined',
+  })
+}
+
+export function createServerSupabaseClient(): TypedSupabaseClient {
+  return createSupabaseClient()
 }
 
 export function getBrowserSupabaseClient(): TypedSupabaseClient {

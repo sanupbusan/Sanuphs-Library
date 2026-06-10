@@ -37,9 +37,10 @@ export async function getRecentLoans(client: TypedSupabaseClient, limit = 5) {
   return data ?? []
 }
 
-export async function searchBooks(client: TypedSupabaseClient, query: string) {
+export async function searchBooks(client: TypedSupabaseClient, query: string, limit = 20) {
   const { data, error } = await client
     .rpc('search_books', { search_query: query.trim() })
+    .limit(limit)
 
   if (error) {
     throw error

@@ -54,4 +54,31 @@ Vercel, Netlify, GitHub Actions 같은 배포 환경에는 다음 값을 secret/
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
+도서 검색은 Next.js API route를 사용하므로 정적 파일 호스팅만으로는 동작하지 않습니다. Vercel 또는 Next 서버를 지원하는 런타임에 배포해야 합니다.
+
+## Book search API
+
+도서 검색 backend endpoint는 다음과 같습니다.
+
+```http
+GET /api/books/search?q=<검색어>&limit=20
+```
+
+- `q` 또는 `query`: 제목, 저자, 카테고리 검색어입니다. 빈 값이면 등록된 도서를 최신 제한 개수만큼 조회합니다.
+- `limit`: 선택값이며 기본 20, 최대 50입니다.
+- Supabase의 `search_books` RPC를 호출합니다.
+
+응답 예시:
+
+```json
+{
+  "data": [],
+  "meta": {
+    "query": "",
+    "count": 0,
+    "limit": 20
+  }
+}
+```
+
 현재 DB 정책은 도서 검색은 anon 접근을 허용하고, 학생/대여 관리 데이터는 authenticated 사용자에게만 허용합니다. 공개 화면에서 관리 대시보드 데이터를 노출하려면 RLS 정책과 view 권한을 먼저 의도적으로 조정해야 합니다.
