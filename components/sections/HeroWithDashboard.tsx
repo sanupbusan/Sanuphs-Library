@@ -9,9 +9,7 @@ import {
   ClipboardList,
   RotateCcw,
   AlertCircle,
-  Heart,
   BarChart3,
-  Settings,
   ChevronRight,
   Search,
 } from 'lucide-react'
@@ -43,9 +41,7 @@ const sidebarMenuItems = [
   { icon: ClipboardList, label: '대여관리', active: false },
   { icon: RotateCcw, label: '반납관리', active: false },
   { icon: AlertCircle, label: '연체관리', active: false },
-  { icon: Heart, label: '희망관리', active: false },
   { icon: BarChart3, label: '통계', active: false },
-  { icon: Settings, label: '설정', active: false },
 ]
 
 const fallbackStats: DashboardStat[] = [
