@@ -19,6 +19,8 @@
 /.next-wsl/
 /out/
 
+/.omo/
+
 # production
 /build
 

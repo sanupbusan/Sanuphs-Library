@@ -11,12 +11,14 @@ import {
   AlertCircle,
   BarChart3,
   ChevronRight,
+  Plus,
   Search,
 } from 'lucide-react'
-import { getDashboardData, type DashboardSummary, type RecentLoan } from '@/lib/library-queries'
+import { getDashboardData, getRecentBooks, type DashboardSummary, type RecentBook, type RecentLoan } from '@/lib/library-queries'
 import { getBrowserSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 
+type ActiveDashboardPanel = 'dashboard' | 'books'
 type RentalStatus = 'rented' | 'overdue' | 'returned'
 
 type DashboardStat = {
@@ -35,13 +37,22 @@ type RecentRental = {
   status: RentalStatus
 }
 
-const sidebarMenuItems = [
-  { icon: LayoutDashboard, label: '대시보드', active: true },
-  { icon: Library, label: '도서관리', active: false },
-  { icon: ClipboardList, label: '대여관리', active: false },
-  { icon: RotateCcw, label: '반납관리', active: false },
-  { icon: AlertCircle, label: '연체관리', active: false },
-  { icon: BarChart3, label: '통계', active: false },
+type RecentBookItem = {
+  id: string
+  title: string
+  author: string
+  category: string
+  addedDate: string
+  availableCopies: string
+}
+
+const sidebarMenuItems: Array<{ icon: LucideIcon; label: string; panel?: ActiveDashboardPanel }> = [
+  { icon: LayoutDashboard, label: '대시보드', panel: 'dashboard' },
+  { icon: Library, label: '도서관리', panel: 'books' },
+  { icon: ClipboardList, label: '대여관리' },
+  { icon: RotateCcw, label: '반납관리' },
+  { icon: AlertCircle, label: '연체관리' },
+  { icon: BarChart3, label: '통계' },
 ]
 
 const fallbackStats: DashboardStat[] = [
@@ -51,6 +62,11 @@ const fallbackStats: DashboardStat[] = [
 ]
 
 const numberFormatter = new Intl.NumberFormat('ko-KR')
+const dateFormatter = new Intl.DateTimeFormat('ko-KR', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
 
 function formatNumber(value: number | null | undefined) {
   return numberFormatter.format(value ?? 0)
@@ -98,6 +114,31 @@ function mapRecentLoans(loans: RecentLoan[]): RecentRental[] {
   }))
 }
 
+function formatDate(value: string | null) {
+  if (!value) {
+    return '-'
+  }
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return '-'
+  }
+
+  return dateFormatter.format(date)
+}
+
+function mapRecentBooks(books: RecentBook[]): RecentBookItem[] {
+  return books.map((book) => ({
+    id: book.id,
+    title: book.title,
+    author: book.author,
+    category: book.category,
+    addedDate: formatDate(book.created_at),
+    availableCopies: `${formatNumber(book.available_copies)} / ${formatNumber(book.total_copies)}권`,
+  }))
+}
+
 function getStatusLabel(status: RentalStatus) {
   if (status === 'overdue') {
     return '연체'
@@ -122,7 +163,19 @@ function getStatusColor(status: RentalStatus) {
   return 'bg-green-50 text-green-700'
 }
 
-function Sidebar() {
+function warnIfDevelopment(message: string, error: unknown) {
+  if (process.env.NODE_ENV === 'development') {
+    console.warn(message, error)
+  }
+}
+
+function Sidebar({
+  activePanel,
+  onSelectPanel,
+}: {
+  activePanel: ActiveDashboardPanel
+  onSelectPanel: (panel: ActiveDashboardPanel) => void
+}) {
   return (
     <div className="flex w-40 flex-shrink-0 flex-col bg-primary-700 py-4">
       <div className="mb-6 flex items-center px-4">
@@ -130,20 +183,31 @@ function Sidebar() {
       </div>
 
       <nav className="flex flex-1 flex-col gap-1 px-2">
-        {sidebarMenuItems.map((item) => (
-          <button
-            key={item.label}
-            className={cn(
-              'flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
-              item.active
-                ? 'bg-white/10 text-white'
-                : 'text-white/70 hover:bg-white/5 hover:text-white'
-            )}
-          >
-            <item.icon className="h-4 w-4" />
-            {item.label}
-          </button>
-        ))}
+        {sidebarMenuItems.map((item) => {
+          const isActive = item.panel === activePanel
+
+          return (
+            <button
+              key={item.label}
+              type="button"
+              aria-current={isActive ? 'page' : undefined}
+              onClick={() => {
+                if (item.panel) {
+                  onSelectPanel(item.panel)
+                }
+              }}
+              className={cn(
+                'flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
+                isActive
+                  ? 'bg-white/10 text-white'
+                  : 'text-white/70 hover:bg-white/5 hover:text-white'
+              )}
+            >
+              <item.icon className="h-4 w-4" />
+              {item.label}
+            </button>
+          )
+        })}
       </nav>
     </div>
   )
@@ -219,30 +283,96 @@ function RecentRentalsTable({ rentals }: { rentals: RecentRental[] }) {
   )
 }
 
+function RecentBooksPanel({ books }: { books: RecentBookItem[] }) {
+  return (
+    <div className="rounded-lg border border-gray-100 bg-white shadow-sm">
+      <div className="flex items-start justify-between gap-3 px-4 py-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">최근 추가된 책</h3>
+          <p className="mt-1 text-xs text-gray-500">새로 등록된 도서를 최신순으로 확인합니다.</p>
+        </div>
+
+        <button
+          type="button"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-primary-600/20 transition-colors hover:bg-primary-700"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          책 추가하기
+        </button>
+      </div>
+
+      <div className="divide-y divide-gray-50 border-t border-gray-50">
+        {books.length === 0 ? (
+          <div className="px-4 py-8 text-center">
+            <p className="text-xs font-medium text-gray-700">아직 등록된 책이 없습니다.</p>
+            <p className="mt-1 text-xs text-gray-500">책 추가하기 버튼으로 첫 도서를 등록하세요.</p>
+          </div>
+        ) : (
+          books.map((book) => (
+            <div key={book.id} className="grid gap-3 px-4 py-3 hover:bg-gray-50/50 sm:grid-cols-[minmax(0,1.4fr)_0.8fr_0.7fr_0.7fr]">
+              <div className="min-w-0">
+                <p className="truncate text-xs font-semibold text-gray-900">{book.title}</p>
+                <p className="mt-1 truncate text-xs text-gray-500">{book.author}</p>
+              </div>
+
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-gray-400">분류</p>
+                <p className="truncate text-xs text-gray-700">{book.category}</p>
+              </div>
+
+              <div>
+                <p className="text-[11px] font-medium text-gray-400">등록일</p>
+                <p className="whitespace-nowrap text-xs text-gray-700">{book.addedDate}</p>
+              </div>
+
+              <div>
+                <p className="text-[11px] font-medium text-gray-400">보유</p>
+                <p className="whitespace-nowrap text-xs text-gray-700">{book.availableCopies}</p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
 function DashboardMockup({
   stats,
   recentRentals,
+  recentBooks,
 }: {
   stats: DashboardStat[]
   recentRentals: RecentRental[]
+  recentBooks: RecentBookItem[]
 }) {
+  const [activePanel, setActivePanel] = useState<ActiveDashboardPanel>('dashboard')
+
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl">
       <div className="flex">
-        <Sidebar />
+        <Sidebar activePanel={activePanel} onSelectPanel={setActivePanel} />
 
         <div className="flex-1 p-4">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-base font-bold text-gray-900">대시보드</h2>
+            <h2 className="text-base font-bold text-gray-900">
+              {activePanel === 'books' ? '도서관리' : '대시보드'}
+            </h2>
           </div>
 
-          <div className="mb-4 grid gap-3 sm:grid-cols-3">
-            {stats.map((stat) => (
-              <StatCard key={stat.label} {...stat} />
-            ))}
-          </div>
+          {activePanel === 'books' ? (
+            <RecentBooksPanel books={recentBooks} />
+          ) : (
+            <>
+              <div className="mb-4 grid gap-3 sm:grid-cols-3">
+                {stats.map((stat) => (
+                  <StatCard key={stat.label} {...stat} />
+                ))}
+              </div>
 
-          <RecentRentalsTable rentals={recentRentals} />
+              <RecentRentalsTable rentals={recentRentals} />
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -252,6 +382,7 @@ function DashboardMockup({
 export default function HeroWithDashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [recentRentals, setRecentRentals] = useState<RecentRental[]>([])
+  const [recentBooks, setRecentBooks] = useState<RecentBookItem[]>([])
 
   const stats = useMemo(() => {
     if (!summary) {
@@ -271,19 +402,29 @@ export default function HeroWithDashboard() {
     async function loadDashboardData() {
       try {
         const client = getBrowserSupabaseClient()
-        const dashboardData = await getDashboardData(client)
+        const [dashboardDataResult, recentBooksResult] = await Promise.allSettled([
+          getDashboardData(client),
+          getRecentBooks(client),
+        ])
 
         if (didCancel) {
           return
         }
 
-        setSummary(dashboardData.summary)
-
-        setRecentRentals(mapRecentLoans(dashboardData.recentLoans))
-      } catch (error) {
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('Supabase dashboard data unavailable:', error)
+        if (dashboardDataResult.status === 'fulfilled') {
+          setSummary(dashboardDataResult.value.summary)
+          setRecentRentals(mapRecentLoans(dashboardDataResult.value.recentLoans))
+        } else {
+          warnIfDevelopment('Supabase dashboard data unavailable:', dashboardDataResult.reason)
         }
+
+        if (recentBooksResult.status === 'fulfilled') {
+          setRecentBooks(mapRecentBooks(recentBooksResult.value))
+        } else {
+          warnIfDevelopment('Supabase recent books unavailable:', recentBooksResult.reason)
+        }
+      } catch (error) {
+        warnIfDevelopment('Supabase client unavailable:', error)
       }
     }
 
@@ -325,7 +466,7 @@ export default function HeroWithDashboard() {
           </div>
 
           <div className="hidden lg:block">
-            <DashboardMockup stats={stats} recentRentals={recentRentals} />
+            <DashboardMockup stats={stats} recentRentals={recentRentals} recentBooks={recentBooks} />
           </div>
         </div>
       </div>
