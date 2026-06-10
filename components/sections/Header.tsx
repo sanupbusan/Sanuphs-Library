@@ -11,6 +11,7 @@ const navigationItems = [
   { label: '도서검색', href: '/books' },
   { label: '대여관리', href: '/#rental' },
   { label: '기능소개', href: '/#features' },
+  { label: '로그인', href: '/admin' },
 ]
 
 export default function Header({ className }: HeaderProps) {

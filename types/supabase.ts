@@ -3,6 +3,30 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      admin_users: {
+        Row: {
+          created_at: string
+          login_id: string
+          role: Database['public']['Enums']['admin_role']
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          login_id: string
+          role?: Database['public']['Enums']['admin_role']
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          login_id?: string
+          role?: Database['public']['Enums']['admin_role']
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       book_requests: {
         Row: {
           author: string | null
@@ -207,6 +231,10 @@ export type Database = {
       }
     }
     Functions: {
+      is_admin: {
+        Args: { check_user_id?: string | null }
+        Returns: boolean
+      }
       search_books: {
         Args: { search_query?: string | null }
         Returns: {
@@ -223,6 +251,7 @@ export type Database = {
       }
     }
     Enums: {
+      admin_role: 'admin'
       loan_status: 'rented' | 'returned'
       request_status: 'pending' | 'approved' | 'rejected' | 'purchased'
     }

@@ -9,6 +9,7 @@ type SupabasePublicEnv = {
 }
 
 type SupabaseClientOptions = {
+  accessToken?: string
   persistAuthSession?: boolean
 }
 
@@ -56,11 +57,19 @@ export function assertSupabasePublicEnv(): SupabasePublicEnv {
 }
 
 function createSupabaseClient({
+  accessToken,
   persistAuthSession = false,
 }: SupabaseClientOptions = {}): TypedSupabaseClient {
   const { supabaseUrl, supabaseAnonKey } = assertSupabasePublicEnv()
 
   return createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    global: accessToken
+      ? {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      : undefined,
     auth: {
       persistSession: persistAuthSession,
       autoRefreshToken: persistAuthSession,
@@ -77,6 +86,10 @@ export function createBrowserSupabaseClient(): TypedSupabaseClient {
 
 export function createServerSupabaseClient(): TypedSupabaseClient {
   return createSupabaseClient()
+}
+
+export function createSupabaseClientWithAccessToken(accessToken: string): TypedSupabaseClient {
+  return createSupabaseClient({ accessToken })
 }
 
 export function getBrowserSupabaseClient(): TypedSupabaseClient {
