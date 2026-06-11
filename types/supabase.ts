@@ -234,9 +234,30 @@ export type Database = {
       }
     }
     Functions: {
+      get_returnable_loan_by_school_book_code: {
+        Args: { input_school_book_code: string }
+        Returns: {
+          book_title: string
+          borrowed_on: string
+          due_on: string
+          loan_id: string
+          school_book_code: string | null
+          student_name: string
+        }[]
+      }
       is_admin: {
         Args: { check_user_id?: string | null }
         Returns: boolean
+      }
+      return_loans_by_school_book_codes: {
+        Args: { input_school_book_codes: string[] }
+        Returns: {
+          book_title: string
+          loan_id: string
+          returned_on: string
+          school_book_code: string | null
+          student_name: string
+        }[]
       }
       search_books: {
         Args: { search_query?: string | null }
