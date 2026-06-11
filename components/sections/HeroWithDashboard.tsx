@@ -1,6 +1,7 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -16,7 +17,6 @@ import {
   AlertTriangle,
   ChevronRight,
   Search,
-  ScanBarcode,
 } from 'lucide-react'
 import {
   getDashboardData,
@@ -31,7 +31,6 @@ import {
 } from '@/lib/library-queries'
 import { getBrowserSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
-import MainReturnCodeForm from '@/components/returns/MainReturnCodeForm'
 
 type RentalStatus = 'rented' | 'overdue' | 'returned'
 type DashboardSection = 'dashboard' | 'books' | 'overdue' | 'statistics'
@@ -77,6 +76,7 @@ type OverdueLoan = {
 }
 
 type SidebarMenuItem = {
+  href?: string
   icon: LucideIcon
   label: string
   section: DashboardSection | null
@@ -85,8 +85,7 @@ type SidebarMenuItem = {
 const sidebarMenuItems: SidebarMenuItem[] = [
   { icon: LayoutDashboard, label: '대시보드', section: 'dashboard' },
   { icon: Library, label: '도서 관리', section: 'books' },
-  { icon: ClipboardList, label: '대여 관리', section: null },
-  { icon: RotateCcw, label: '반납 관리', section: null },
+  { icon: ClipboardList, label: '대여 관리', href: '/admin/loans', section: null },
   { icon: AlertCircle, label: '연체 관리', section: 'overdue' },
   { icon: BarChart3, label: '통계', section: 'statistics' },
 ]
@@ -233,6 +232,8 @@ function Sidebar({
   activeSection: DashboardSection
   onSectionChange: (section: DashboardSection) => void
 }) {
+  const router = useRouter()
+
   return (
     <div className="flex w-40 flex-shrink-0 flex-col bg-primary-700 py-4">
       <div className="mb-6 flex items-center px-4">
@@ -249,7 +250,9 @@ function Sidebar({
               type="button"
               aria-pressed={isActive}
               onClick={() => {
-                if (item.section) {
+                if (item.href) {
+                  router.push(item.href)
+                } else if (item.section) {
                   onSectionChange(item.section)
                 }
               }}
@@ -258,7 +261,7 @@ function Sidebar({
                 isActive
                   ? 'bg-white/10 text-white'
                   : 'text-white/70 hover:bg-white/5 hover:text-white',
-                !item.section && 'cursor-default text-white/45 hover:bg-transparent hover:text-white/45'
+                !item.section && !item.href && 'cursor-default text-white/45 hover:bg-transparent hover:text-white/45'
               )}
             >
               <item.icon className="h-4 w-4" />
@@ -619,72 +622,31 @@ function DashboardMockup({
   )
 }
 
-function StudentBarcodeInput() {
-  const [studentNumber, setStudentNumber] = useState('')
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const trimmed = studentNumber.trim()
-    if (!trimmed) return
-    window.location.assign(`/rent?studentNumber=${encodeURIComponent(trimmed)}`)
-  }
-
-  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'Enter') {
-      event.preventDefault()
-      const trimmed = studentNumber.trim()
-      if (!trimmed) return
-      window.location.assign(`/rent?studentNumber=${encodeURIComponent(trimmed)}`)
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="flex max-w-md gap-2">
-      <div className="relative flex-1">
-        <ScanBarcode className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-        <input
-          value={studentNumber}
-          onChange={(event) => setStudentNumber(event.target.value)}
-          onKeyDown={handleKeyDown}
-          className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-          inputMode="numeric"
-          placeholder="학생 바코드를 스캔하면 대여 페이지로 이동"
-          type="text"
-        />
-      </div>
-      <button
-        className="inline-flex h-11 items-center justify-center rounded-lg bg-gray-900 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gray-800"
-        type="submit"
-      >
-        대여하기
-      </button>
-    </form>
-  )
-}
-
 export default function HeroWithDashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [overdueLoans, setOverdueLoans] = useState<OverdueLoan[]>([])
   const [recentRentals, setRecentRentals] = useState<RecentRental[]>([])
   const [recentBooks, setRecentBooks] = useState<RecentBook[]>([])
   const [studentLoanStats, setStudentLoanStats] = useState<StudentLoanStatistic[]>([])
+  const [toasts, setToasts] = useState<{ id: number; message: string; type: 'success' | 'error' }[]>([])
+  const barcodeBufferRef = useRef('')
+  const barcodeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const toastIdRef = useRef(0)
 
-  const stats = useMemo(() => {
-    if (!summary) {
-      return fallbackStats
-    }
+  function addToast(message: string, type: 'success' | 'error') {
+    const id = ++toastIdRef.current
+    setToasts((current) => [...current, { id, message, type }])
+    setTimeout(() => {
+      setToasts((current) => current.filter((t) => t.id !== id))
+    }, 1000)
+  }
 
-    return buildStats(summary)
-  }, [summary])
-
-  useEffect(() => {
+  async function loadDashboardData() {
     if (!isSupabaseConfigured()) {
       return
     }
 
-    let didCancel = false
-
-    async function loadDashboardData() {
+    try {
       const client = getBrowserSupabaseClient()
       const [dashboardResult, recentBooksResult, overdueLoansResult, studentLoanStatsResult] = await Promise.allSettled([
         getDashboardData(client),
@@ -692,10 +654,6 @@ export default function HeroWithDashboard() {
         getOverdueLoans(client),
         getStudentLoanStats(client),
       ])
-
-      if (didCancel) {
-        return
-      }
 
       if (dashboardResult.status === 'fulfilled') {
         setSummary(dashboardResult.value.summary)
@@ -721,12 +679,82 @@ export default function HeroWithDashboard() {
       } else if (process.env.NODE_ENV === 'development') {
         console.warn('Supabase student loan stats unavailable:', studentLoanStatsResult.reason)
       }
+    } catch (error) {
+      console.error('Dashboard data load failed:', error)
+    }
+  }
+
+  async function processReturn(code: string) {
+    try {
+      const response = await fetch(`/api/returns/loans?code=${encodeURIComponent(code)}`)
+      const payload = await response.json() as { data?: { bookTitle: string }; error?: { message: string } }
+
+      if (!response.ok) {
+        throw new Error(payload.error?.message ?? '반납 처리에 실패했습니다.')
+      }
+
+      if (payload.data) {
+        addToast(`"${payload.data.bookTitle}" 반납 완료`, 'success')
+        await loadDashboardData()
+      }
+    } catch (error) {
+      addToast(error instanceof Error ? error.message : '반납 처리에 실패했습니다.', 'error')
+    }
+  }
+
+  const stats = useMemo(() => {
+    if (!summary) {
+      return fallbackStats
     }
 
+    return buildStats(summary)
+  }, [summary])
+
+  useEffect(() => {
     void loadDashboardData()
+  }, [])
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return
+      }
+
+      if (event.key === 'Enter') {
+        const buffer = barcodeBufferRef.current.trim()
+        barcodeBufferRef.current = ''
+        if (barcodeTimeoutRef.current) {
+          clearTimeout(barcodeTimeoutRef.current)
+        }
+
+        if (!buffer) return
+
+        if (/^[0-9]{5}$/.test(buffer)) {
+          window.location.assign(`/rent?studentNumber=${encodeURIComponent(buffer)}`)
+        } else {
+          void processReturn(buffer)
+        }
+        return
+      }
+
+      if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        barcodeBufferRef.current += event.key
+        if (barcodeTimeoutRef.current) {
+          clearTimeout(barcodeTimeoutRef.current)
+        }
+        barcodeTimeoutRef.current = setTimeout(() => {
+          barcodeBufferRef.current = ''
+        }, 100)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
 
     return () => {
-      didCancel = true
+      document.removeEventListener('keydown', handleKeyDown)
+      if (barcodeTimeoutRef.current) {
+        clearTimeout(barcodeTimeoutRef.current)
+      }
     }
   }, [])
 
@@ -758,12 +786,6 @@ export default function HeroWithDashboard() {
                 도서 검색하기
               </a>
             </div>
-
-            <div className="mt-6">
-              <StudentBarcodeInput />
-            </div>
-
-            <MainReturnCodeForm />
           </div>
 
           <div className="hidden lg:block">
@@ -777,6 +799,21 @@ export default function HeroWithDashboard() {
             />
           </div>
         </div>
+      </div>
+
+      <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`rounded-lg px-4 py-2 text-sm font-medium shadow-lg ${
+              toast.type === 'success'
+                ? 'bg-green-600 text-white'
+                : 'bg-red-600 text-white'
+            }`}
+          >
+            {toast.message}
+          </div>
+        ))}
       </div>
     </section>
   )

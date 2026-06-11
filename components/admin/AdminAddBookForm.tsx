@@ -40,6 +40,14 @@ const initialFormState: BookFormState = {
   title: '',
 }
 
+function sanitizeIsbn(value: string) {
+  return value.replace(/[^0-9Xx]/g, '')
+}
+
+function sanitizeSchoolBookCode(value: string) {
+  return value.replace(/[^0-9A-Za-z-]/g, '')
+}
+
 function trimFormState(form: BookFormState) {
   return {
     author: form.author.trim(),
@@ -112,8 +120,8 @@ export default function AdminAddBookForm() {
     if (paramIsbn || paramSchoolBookCode) {
       setForm((current) => ({
         ...current,
-        isbn: paramIsbn,
-        schoolBookCode: paramSchoolBookCode,
+        isbn: sanitizeIsbn(paramIsbn),
+        schoolBookCode: sanitizeSchoolBookCode(paramSchoolBookCode),
       }))
     }
 
@@ -127,9 +135,16 @@ export default function AdminAddBookForm() {
   }, [isCheckingSession, searchParams])
 
   function updateField(field: keyof BookFormState, value: string) {
+    const nextValue =
+      field === 'isbn'
+        ? sanitizeIsbn(value)
+        : field === 'schoolBookCode'
+          ? sanitizeSchoolBookCode(value)
+          : value
+
     setForm((current) => ({
       ...current,
-      [field]: value,
+      [field]: nextValue,
     }))
   }
 
@@ -173,7 +188,7 @@ export default function AdminAddBookForm() {
   }
 
   async function lookupIsbn(nextIsbn = form.isbn) {
-    const isbn = nextIsbn.trim().replace(/[^0-9Xx]/g, '')
+    const isbn = sanitizeIsbn(nextIsbn.trim())
 
     if (!isbn) {
       setErrorMessage('ISBN 코드를 입력해주세요.')
