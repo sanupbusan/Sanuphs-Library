@@ -64,6 +64,18 @@ Vercel, Netlify, GitHub Actions 같은 배포 환경에는 다음 값을 secret/
 
 현재 DB 정책은 도서 검색은 anon 접근을 허용하고, 도서/학생/대여/희망도서 관리 데이터 변경은 `admin_users`에 등록된 관리자만 허용합니다. 공개 화면에서 관리 대시보드 데이터를 노출하려면 RLS 정책과 view 권한을 먼저 의도적으로 조정해야 합니다.
 
+## Book search API
+
+도서 검색 backend endpoint는 다음과 같습니다.
+
+```http
+GET /api/books/search?q=<검색어>&limit=20
+```
+
+- `q` 또는 `query`: 제목, 저자, 분류 검색어입니다. 빈 값이면 등록된 도서를 제한 개수만큼 조회합니다.
+- `limit`: 선택값이며 기본 20, 최대 50입니다.
+- Supabase의 `search_books` RPC를 호출합니다.
+
 ## Admin auth
 
 관리 기능은 Supabase Auth 사용자 중 `public.admin_users`에 등록된 사용자만 접근할 수 있습니다. 화면에서는 이메일 대신 관리자 아이디로 로그인합니다.

@@ -18,7 +18,7 @@ type SessionResponse = {
 }
 
 const publicNavigationItems = [
-  { label: '도서검색', href: '/#search' },
+  { label: '도서검색', href: '/books' },
   { label: '기능소개', href: '/#features' },
 ]
 

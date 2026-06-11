@@ -463,7 +463,7 @@ export default function HeroWithDashboard() {
 
             <div className="mt-8 flex flex-wrap gap-4">
               <a
-                href="#search"
+                href="/books"
                 className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-primary-600/20 transition-all hover:bg-primary-700 hover:shadow-xl hover:shadow-primary-600/30"
               >
                 <Search className="h-5 w-5" />
