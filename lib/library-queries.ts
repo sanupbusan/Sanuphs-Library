@@ -8,6 +8,15 @@ export type RecentBook = Pick<
   Database['public']['Tables']['books']['Row'],
   'id' | 'title' | 'author' | 'category' | 'available_copies' | 'total_copies' | 'created_at'
 >
+export type StudentLoanStat = {
+  student_id: string
+  student_name: string
+  total_loans: number
+}
+
+type ActiveLoanWithStudent = Pick<Database['public']['Tables']['loans']['Row'], 'id' | 'student_id'> & {
+  students: Pick<Database['public']['Tables']['students']['Row'], 'name'> | null
+}
 
 export type DashboardData = {
   summary: DashboardSummary
@@ -53,6 +62,42 @@ export async function getRecentBooks(client: TypedSupabaseClient, limit = 5): Pr
   }
 
   return data ?? []
+}
+
+export async function getStudentLoanStats(client: TypedSupabaseClient): Promise<StudentLoanStat[]> {
+  const { data, error } = await client
+    .from('loans')
+    .select('id, student_id, students(name)')
+    .returns<ActiveLoanWithStudent[]>()
+
+  if (error) {
+    throw error
+  }
+
+  const statsByStudent = new Map<string, StudentLoanStat>()
+
+  for (const loan of data ?? []) {
+    const existingStat = statsByStudent.get(loan.student_id)
+
+    if (existingStat) {
+      existingStat.total_loans += 1
+      continue
+    }
+
+    statsByStudent.set(loan.student_id, {
+      student_id: loan.student_id,
+      student_name: loan.students?.name ?? '-',
+      total_loans: 1,
+    })
+  }
+
+  return Array.from(statsByStudent.values()).sort((a, b) => {
+    if (a.total_loans !== b.total_loans) {
+      return b.total_loans - a.total_loans
+    }
+
+    return a.student_name.localeCompare(b.student_name, 'ko-KR')
+  })
 }
 
 export async function searchBooks(client: TypedSupabaseClient, query: string) {
