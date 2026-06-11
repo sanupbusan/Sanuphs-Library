@@ -13,6 +13,40 @@ function getText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+export async function GET() {
+  try {
+    const supabase = createServerSupabaseClient()
+    const { data, error } = await supabase
+      .from('loans')
+      .select('id, book_id, student_id, borrowed_on, due_on, returned_on, status, books(title, school_book_code), students(name, student_number)')
+      .eq('status', 'rented')
+      .order('borrowed_on', { ascending: false })
+
+    if (error) {
+      throw error
+    }
+
+    return NextResponse.json(
+      { data: data ?? [] },
+      {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0',
+        },
+      }
+    )
+  } catch {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'FETCH_FAILED',
+          message: '대여 목록을 불러오는 중 오류가 발생했습니다.',
+        },
+      },
+      { status: 500 }
+    )
+  }
+}
+
 export async function POST(request: Request) {
   let body: CreateLoanBody
 
@@ -71,7 +105,7 @@ export async function POST(request: Request) {
         {
           error: {
             code: 'NO_AVAILABLE_COPIES',
-            message: '해당 도서의 대여 가능한 권수가 없습니다.',
+            message: '이미 대여 중인 도서입니다.',
           },
         },
         { status: 409 }
@@ -134,15 +168,6 @@ export async function POST(request: Request) {
       throw loanError
     }
 
-    const { error: updateError } = await supabase
-      .from('books')
-      .update({ available_copies: book.available_copies - 1 })
-      .eq('id', bookId)
-
-    if (updateError) {
-      throw updateError
-    }
-
     return NextResponse.json(
       {
         data: {
@@ -154,12 +179,13 @@ export async function POST(request: Request) {
       },
       { status: 201 }
     )
-  } catch {
+  } catch (error) {
+    console.error('Loan creation error:', error)
     return NextResponse.json(
       {
         error: {
           code: 'CREATE_LOAN_FAILED',
-          message: '대여 처리 중 오류가 발생했습니다.',
+          message: error instanceof Error ? error.message : '대여 처리 중 오류가 발생했습니다.',
         },
       },
       { status: 500 }

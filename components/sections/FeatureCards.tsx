@@ -11,7 +11,7 @@ const features = [
     description: '제목, 저자, 카테고리로 원하는 책을 빠르게 찾을 수 있어요.',
   },
   {
-    href: '/admin/books',
+    href: '/admin/loans',
     icon: ClipboardCheck,
     title: '대여 관리',
     description: '학생별 대여 상태와 반납 여부를 쉽게 확인할 수 있어요.',

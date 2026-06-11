@@ -123,6 +123,12 @@ export default function RentBookForm() {
 
       if (payload.data) {
         setBook(payload.data)
+
+        if (payload.data.available_copies > 0) {
+          await handleRent(payload.data)
+        } else {
+          setErrorMessage('이미 대여 중인 도서입니다.')
+        }
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '도서 정보 조회에 실패했습니다.')
@@ -131,14 +137,14 @@ export default function RentBookForm() {
     }
   }
 
-  async function handleRent() {
-    if (!student || !book) {
+  async function handleRent(targetBook = book) {
+    if (!student || !targetBook) {
       setErrorMessage('학생과 도서를 모두 확인해주세요.')
       return
     }
 
-    if (book.available_copies <= 0) {
-      setErrorMessage('해당 도서의 대여 가능한 권수가 없습니다.')
+    if (targetBook.available_copies <= 0) {
+      setErrorMessage('이미 대여 중인 도서입니다.')
       return
     }
 
@@ -149,7 +155,7 @@ export default function RentBookForm() {
     try {
       const response = await fetch('/api/loans', {
         body: JSON.stringify({
-          bookId: book.id,
+          bookId: targetBook.id,
           studentId: student.id,
         }),
         headers: {
@@ -169,7 +175,9 @@ export default function RentBookForm() {
         )
         setBook(null)
         setBookCode('')
-        bookInputRef.current?.focus()
+        setTimeout(() => {
+          bookInputRef.current?.focus()
+        }, 0)
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '대여 처리에 실패했습니다.')
@@ -182,12 +190,6 @@ export default function RentBookForm() {
     if (event.key !== 'Enter') return
     event.preventDefault()
     void lookupStudent()
-  }
-
-  function handleBookKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key !== 'Enter') return
-    event.preventDefault()
-    void lookupBook()
   }
 
   function handleStudentSubmit(event: FormEvent<HTMLFormElement>) {
@@ -264,8 +266,7 @@ export default function RentBookForm() {
                 id="book-code"
                 ref={bookInputRef}
                 value={bookCode}
-                onChange={(event) => setBookCode(event.target.value)}
-                onKeyDown={handleBookKeyDown}
+                onChange={(event) => setBookCode(event.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
                 className="h-11 w-full rounded-lg border border-gray-200 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
                 placeholder="도서 바코드 스캔"
                 type="text"
@@ -287,21 +288,12 @@ export default function RentBookForm() {
               <div className="text-xs text-gray-500">
                 저자: {book.author} | 출판사: {book.publisher ?? '-'} | 남은 권수: {book.available_copies}/{book.total_copies}
               </div>
-              {book.available_copies <= 0 ? (
-                <div className="mt-2 text-xs font-medium text-red-600">대여 가능한 권수가 없습니다.</div>
-              ) : (
-                <button
-                  className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-green-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-green-700 disabled:cursor-wait disabled:opacity-70"
-                  disabled={isSubmitting}
-                  onClick={() => {
-                    void handleRent()
-                  }}
-                  type="button"
-                >
-                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
-                  대여하기
-                </button>
-              )}
+              {isSubmitting ? (
+                <div className="mt-2 flex items-center gap-2 text-xs text-primary-600">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  대여 처리 중...
+                </div>
+              ) : null}
             </div>
           ) : null}
         </form>
