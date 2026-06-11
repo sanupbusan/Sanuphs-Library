@@ -64,6 +64,35 @@ export function createBrowserSupabaseClient(): TypedSupabaseClient {
   })
 }
 
+export function createServerSupabaseClient(): TypedSupabaseClient {
+  const { supabaseUrl, supabaseAnonKey } = assertSupabasePublicEnv()
+
+  return createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  })
+}
+
+export function createSupabaseClientWithAccessToken(accessToken: string): TypedSupabaseClient {
+  const { supabaseUrl, supabaseAnonKey } = assertSupabasePublicEnv()
+
+  return createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  })
+}
+
 export function getBrowserSupabaseClient(): TypedSupabaseClient {
   if (!browserSupabaseClient) {
     browserSupabaseClient = createBrowserSupabaseClient()
