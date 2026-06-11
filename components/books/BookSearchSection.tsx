@@ -6,7 +6,6 @@ import { BookOpen, Loader2, Search } from 'lucide-react'
 type BookSearchResult = {
   author: string
   available_copies: number
-  category: string
   id: string
   isbn: string | null
   location: string | null
@@ -89,7 +88,7 @@ export default function BookSearchSection() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">도서 검색</h1>
-            <p className="mt-1 text-sm text-gray-600">제목, 저자, 분류로 도서를 검색합니다.</p>
+            <p className="mt-1 text-sm text-gray-600">제목과 저자로 도서를 검색합니다.</p>
           </div>
         </div>
 
@@ -104,7 +103,7 @@ export default function BookSearchSection() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-              placeholder="도서명, 저자, 분류"
+              placeholder="도서명, 저자"
               type="search"
             />
           </div>
@@ -143,7 +142,6 @@ export default function BookSearchSection() {
                     <th className="px-4 py-3">도서명</th>
                     <th className="px-4 py-3">저자</th>
                     <th className="px-4 py-3">출판사</th>
-                    <th className="px-4 py-3">분류</th>
                     <th className="px-4 py-3">대여 가능</th>
                     <th className="px-4 py-3">위치</th>
                   </tr>
@@ -151,7 +149,7 @@ export default function BookSearchSection() {
                 <tbody className="divide-y divide-gray-100 text-gray-700">
                   {books.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-8 text-center text-gray-500" colSpan={6}>
+                      <td className="px-4 py-8 text-center text-gray-500" colSpan={5}>
                         -
                       </td>
                     </tr>
@@ -163,7 +161,6 @@ export default function BookSearchSection() {
                         </td>
                         <td className="px-4 py-3">{displayValue(book.author)}</td>
                         <td className="px-4 py-3">{displayValue(book.publisher)}</td>
-                        <td className="px-4 py-3">{displayValue(book.category)}</td>
                         <td className="px-4 py-3">
                           {book.available_copies} / {book.total_copies}
                         </td>

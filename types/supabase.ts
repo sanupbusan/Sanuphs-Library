@@ -82,6 +82,7 @@ export type Database = {
           location: string | null
           published_year: number | null
           publisher: string | null
+          school_book_code: string | null
           title: string
           total_copies: number
           updated_at: string
@@ -96,6 +97,7 @@ export type Database = {
           location?: string | null
           published_year?: number | null
           publisher?: string | null
+          school_book_code?: string | null
           title: string
           total_copies?: number
           updated_at?: string
@@ -110,6 +112,7 @@ export type Database = {
           location?: string | null
           published_year?: number | null
           publisher?: string | null
+          school_book_code?: string | null
           title?: string
           total_copies?: number
           updated_at?: string

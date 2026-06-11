@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
 import {
   BookOpen,
@@ -299,21 +300,21 @@ function BookManagementPanel({ books }: { books: RecentBook[] }) {
         </div>
 
         <div className="flex flex-shrink-0 items-center gap-2">
-          <button
-            type="button"
+          <Link
+            href="/admin/books?mode=remove#remove-books"
             className="inline-flex items-center gap-1.5 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:border-red-200 hover:bg-red-100"
           >
             <Trash2 className="h-3.5 w-3.5" />
             기존 책 제거
-          </button>
+          </Link>
 
-          <button
-            type="button"
+          <Link
+            href="/admin/add_books"
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-primary-600/20 transition-colors hover:bg-primary-700"
           >
             <Plus className="h-3.5 w-3.5" />
             새 책 추가
-          </button>
+          </Link>
         </div>
       </div>
 

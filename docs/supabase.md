@@ -11,12 +11,14 @@ NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-public-key>
 ADMIN_LOGIN_ID=SanupLib
 ADMIN_AUTH_EMAIL=sanuplib-admin@sanuplib.local
+NATIONAL_LIBRARY_ISBN_API_KEY=<national-library-isbn-api-key>
 ```
 
 - `NEXT_PUBLIC_SUPABASE_URL`: Supabase Dashboard > Project Settings > API > Project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase Dashboard > Project Settings > API > anon public key
 - `ADMIN_LOGIN_ID`: 로그인 화면에서 입력할 관리자 아이디입니다. 기본값은 `SanupLib`입니다.
 - `ADMIN_AUTH_EMAIL`: Supabase Auth에 실제로 생성할 관리자 사용자 이메일입니다. 앱은 관리자 아이디를 이 이메일 로그인으로 매핑합니다.
+- `NATIONAL_LIBRARY_ISBN_API_KEY`: 새 책 추가 화면에서 ISBN으로 책 정보를 조회할 때 사용하는 국립중앙도서관 ISBN API 키입니다. 서버 전용이므로 `NEXT_PUBLIC_`을 붙이지 않습니다.
 - `.env`, `.env.local`, `.env.production` 같은 실제 값 파일은 커밋하지 않습니다.
 - `service_role` key는 브라우저/Next public 환경변수에 넣지 않습니다.
 
@@ -59,6 +61,7 @@ Vercel, Netlify, GitHub Actions 같은 배포 환경에는 다음 값을 secret/
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `ADMIN_LOGIN_ID`
 - `ADMIN_AUTH_EMAIL`
+- `NATIONAL_LIBRARY_ISBN_API_KEY`
 
 도서 검색과 로그인 API는 Next.js API route를 사용하므로 정적 파일 호스팅만으로는 동작하지 않습니다. Vercel 또는 Next 서버를 지원하는 런타임에 배포해야 합니다.
 
@@ -72,9 +75,43 @@ Vercel, Netlify, GitHub Actions 같은 배포 환경에는 다음 값을 secret/
 GET /api/books/search?q=<검색어>&limit=20
 ```
 
-- `q` 또는 `query`: 제목, 저자, 분류 검색어입니다. 빈 값이면 등록된 도서를 제한 개수만큼 조회합니다.
+- `q` 또는 `query`: 제목 또는 저자 검색어입니다. 빈 값이면 등록된 도서를 제한 개수만큼 조회합니다.
 - `limit`: 선택값이며 기본 20, 최대 50입니다.
 - Supabase의 `search_books` RPC를 호출합니다.
+
+## Admin book registration
+
+새 책 등록은 로그인된 관리자만 사용할 수 있습니다.
+
+```http
+POST /api/admin/books
+```
+
+요청 body:
+
+```json
+{
+  "title": "책 이름",
+  "author": "저자",
+  "publisher": "출판사",
+  "isbn": "ISBN 코드",
+  "schoolBookCode": "학교 내 도서 코드"
+}
+```
+
+- 화면 경로: `/admin/add_books`
+- `school_book_code`는 학교 내 도서 바코드 값이며 중복 등록을 막습니다.
+- ISBN 입력 후 Enter 또는 조회 버튼을 누르면 서버 API가 국립중앙도서관 ISBN API를 호출해 책 이름, 저자, 출판사를 자동 입력합니다.
+
+ISBN 조회 endpoint:
+
+```http
+GET /api/admin/books/isbn?isbn=<ISBN>
+```
+
+- 로그인된 관리자만 호출할 수 있습니다.
+- 내부적으로 `NATIONAL_LIBRARY_ISBN_API_KEY`를 사용합니다.
+- 기본 외부 API URL은 `https://www.nl.go.kr/seoji/SearchApi.do`이며, 필요 시 `NATIONAL_LIBRARY_ISBN_API_URL`로 override할 수 있습니다.
 
 ## Admin auth
 
