@@ -30,6 +30,7 @@ import {
 } from '@/lib/library-queries'
 import { getBrowserSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+import MainReturnCodeForm from '@/components/returns/MainReturnCodeForm'
 
 type RentalStatus = 'rented' | 'overdue' | 'returned'
 type DashboardSection = 'dashboard' | 'books' | 'overdue' | 'statistics'
@@ -713,6 +714,8 @@ export default function HeroWithDashboard() {
                 도서 검색하기
               </a>
             </div>
+
+            <MainReturnCodeForm />
           </div>
 
           <div className="hidden lg:block">
