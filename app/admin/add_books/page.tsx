@@ -4,6 +4,8 @@ import AdminRemoveBookPanel from '@/components/admin/AdminRemoveBookPanel'
 import Footer from '@/components/sections/Footer'
 import Header from '@/components/sections/Header'
 
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: '새 책 추가 - SanupHs Library',
   description: 'SanupHs Library 새 책 추가',

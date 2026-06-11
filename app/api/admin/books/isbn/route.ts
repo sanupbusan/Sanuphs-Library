@@ -4,7 +4,7 @@ import { adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
 export const dynamic = 'force-dynamic'
 
 const DEFAULT_ISBN_API_URL = 'https://www.nl.go.kr/seoji/SearchApi.do'
-const ISBN_API_TIMEOUT_MS = 8_000
+const ISBN_API_TIMEOUT_MS = 15_000
 
 type NormalizedBookInfo = {
   author: string
@@ -219,9 +219,14 @@ export async function GET(request: Request) {
     } catch (error) {
       console.error('National Library ISBN API fetch failed:', error)
 
+      const isTimeout =
+        error instanceof DOMException && error.name === 'AbortError'
+
       return jsonError(
-        'ISBN_API_FETCH_FAILED',
-        '국립중앙도서관 ISBN API에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.',
+        isTimeout ? 'ISBN_API_TIMEOUT' : 'ISBN_API_FETCH_FAILED',
+        isTimeout
+          ? '국립중앙도서관 ISBN API 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
+          : '국립중앙도서관 ISBN API에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.',
         502
       )
     }
