@@ -42,10 +42,21 @@ export async function GET(request: Request) {
       throw error
     }
 
+    const books = (data ?? []).map((book) => ({
+      id: book.id,
+      isbn: book.isbn,
+      title: book.title,
+      author: book.author,
+      publisher: book.publisher,
+      available_copies: book.available_copies,
+      total_copies: book.total_copies,
+      location: book.location,
+    }))
+
     return NextResponse.json({
-      data: data ?? [],
+      data: books,
       meta: {
-        count: data?.length ?? 0,
+        count: books.length,
         limit,
         query,
       },
