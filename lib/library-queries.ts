@@ -4,6 +4,10 @@ import type { Database } from '@/types/supabase'
 export type DashboardSummary = Database['public']['Views']['dashboard_summary']['Row']
 export type RecentLoan = Database['public']['Views']['dashboard_recent_loans']['Row']
 export type SearchBook = Database['public']['Functions']['search_books']['Returns'][number]
+export type RecentBook = Pick<
+  Database['public']['Tables']['books']['Row'],
+  'id' | 'title' | 'author' | 'category' | 'available_copies' | 'total_copies' | 'created_at'
+>
 
 export type DashboardData = {
   summary: DashboardSummary
@@ -28,6 +32,20 @@ export async function getRecentLoans(client: TypedSupabaseClient, limit = 5) {
     .from('dashboard_recent_loans')
     .select('*')
     .order('rental_date', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    throw error
+  }
+
+  return data ?? []
+}
+
+export async function getRecentBooks(client: TypedSupabaseClient, limit = 5): Promise<RecentBook[]> {
+  const { data, error } = await client
+    .from('books')
+    .select('id, title, author, category, available_copies, total_copies, created_at')
+    .order('created_at', { ascending: false })
     .limit(limit)
 
   if (error) {
