@@ -1,7 +1,7 @@
 'use client'
 
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Barcode, BookPlus, Loader2, Save, Search } from 'lucide-react'
 
 type CreateBookResponse = {
@@ -60,6 +60,7 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
 
 export default function AdminAddBookForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const isbnInputRef = useRef<HTMLInputElement>(null)
   const schoolBookCodeInputRef = useRef<HTMLInputElement>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
@@ -86,7 +87,6 @@ export default function AdminAddBookForm() {
 
         if (!didCancel) {
           setIsCheckingSession(false)
-          isbnInputRef.current?.focus()
         }
       } catch {
         if (!didCancel) {
@@ -102,6 +102,29 @@ export default function AdminAddBookForm() {
       didCancel = true
     }
   }, [router])
+
+  useEffect(() => {
+    if (isCheckingSession) return
+
+    const paramIsbn = searchParams.get('isbn') ?? ''
+    const paramSchoolBookCode = searchParams.get('schoolBookCode') ?? ''
+
+    if (paramIsbn || paramSchoolBookCode) {
+      setForm((current) => ({
+        ...current,
+        isbn: paramIsbn,
+        schoolBookCode: paramSchoolBookCode,
+      }))
+    }
+
+    if (paramIsbn) {
+      isbnInputRef.current?.focus()
+    } else if (paramSchoolBookCode) {
+      schoolBookCodeInputRef.current?.focus()
+    } else {
+      isbnInputRef.current?.focus()
+    }
+  }, [isCheckingSession, searchParams])
 
   function updateField(field: keyof BookFormState, value: string) {
     setForm((current) => ({
