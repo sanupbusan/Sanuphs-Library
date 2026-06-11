@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   ChevronRight,
   Search,
+  ScanBarcode,
 } from 'lucide-react'
 import {
   getDashboardData,
@@ -618,6 +619,49 @@ function DashboardMockup({
   )
 }
 
+function StudentBarcodeInput() {
+  const [studentNumber, setStudentNumber] = useState('')
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const trimmed = studentNumber.trim()
+    if (!trimmed) return
+    window.location.assign(`/rent?studentNumber=${encodeURIComponent(trimmed)}`)
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      const trimmed = studentNumber.trim()
+      if (!trimmed) return
+      window.location.assign(`/rent?studentNumber=${encodeURIComponent(trimmed)}`)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex max-w-md gap-2">
+      <div className="relative flex-1">
+        <ScanBarcode className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <input
+          value={studentNumber}
+          onChange={(event) => setStudentNumber(event.target.value)}
+          onKeyDown={handleKeyDown}
+          className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+          inputMode="numeric"
+          placeholder="학생 바코드를 스캔하면 대여 페이지로 이동"
+          type="text"
+        />
+      </div>
+      <button
+        className="inline-flex h-11 items-center justify-center rounded-lg bg-gray-900 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gray-800"
+        type="submit"
+      >
+        대여하기
+      </button>
+    </form>
+  )
+}
+
 export default function HeroWithDashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [overdueLoans, setOverdueLoans] = useState<OverdueLoan[]>([])
@@ -713,6 +757,10 @@ export default function HeroWithDashboard() {
                 <Search className="h-5 w-5" />
                 도서 검색하기
               </a>
+            </div>
+
+            <div className="mt-6">
+              <StudentBarcodeInput />
             </div>
 
             <MainReturnCodeForm />
