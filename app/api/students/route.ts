@@ -11,6 +11,36 @@ function getStudentNumber(request: Request) {
   return normalizeBorrowerLookupCode(normalizeBarcodeInput(url.searchParams.get('studentNumber') ?? ''))
 }
 
+function getTodayDateKey() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function getDateKeyTime(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+
+  return Date.UTC(year, month - 1, day)
+}
+
+function getOverdueDays(dueOn: string, today: string) {
+  return Math.max(0, Math.floor((getDateKeyTime(today) - getDateKeyTime(dueOn)) / 86_400_000))
+}
+
+function getLoanBanRemainingDays(loanBannedUntil: string | null, today: string) {
+  if (!loanBannedUntil || loanBannedUntil < today) {
+    return 0
+  }
+
+  return Math.floor((getDateKeyTime(loanBannedUntil) - getDateKeyTime(today)) / 86_400_000) + 1
+}
+
 export async function GET(request: Request) {
   const studentNumber = getStudentNumber(request)
 
@@ -31,7 +61,7 @@ export async function GET(request: Request) {
     const supabase = session.supabase
     const { data, error } = await supabase
       .from('students')
-      .select('id, student_number, name, grade, class_number, seat_number')
+      .select('id, student_number, name, grade, class_number, seat_number, loan_banned_until')
       .eq('student_number', studentNumber)
       .maybeSingle()
 
@@ -62,6 +92,23 @@ export async function GET(request: Request) {
     }
 
     const activeLoanCount = count ?? 0
+    const today = getTodayDateKey()
+    const { data: overdueLoan, error: overdueLoanError } = await supabase
+      .from('loans')
+      .select('due_on')
+      .eq('student_id', data.id)
+      .eq('status', 'rented')
+      .lt('due_on', today)
+      .order('due_on', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (overdueLoanError) {
+      throw overdueLoanError
+    }
+
+    const overdueDays = overdueLoan ? getOverdueDays(overdueLoan.due_on, today) : 0
+    const loanBanRemainingDays = getLoanBanRemainingDays(data.loan_banned_until, today)
     const { borrowerLabel, borrowerType, loanLimit } = getBorrowerLoanLimit(data)
 
     return NextResponse.json({
@@ -70,7 +117,9 @@ export async function GET(request: Request) {
         active_loan_count: activeLoanCount,
         borrower_label: borrowerLabel,
         borrower_type: borrowerType,
+        loan_ban_remaining_days: loanBanRemainingDays,
         loan_limit: loanLimit,
+        overdue_days: overdueDays,
         remaining_loan_count: Math.max(loanLimit - activeLoanCount, 0),
       },
     })

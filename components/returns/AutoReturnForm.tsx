@@ -7,6 +7,8 @@ import { normalizeBarcodeInput } from '@/lib/barcode-input'
 type ReturnResponse = {
   data?: Array<{
     book_title: string
+    loan_banned_until: string | null
+    overdue_days: number
     returned_on: string
     student_name: string
   }>
@@ -34,14 +36,14 @@ function formatKoreanDate(value: string) {
   return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
 }
 
-function getReturnSuccessMessage(data: NonNullable<ReturnResponse['data']>) {
-  if (data.overdueDays > 0 && data.loanBannedUntil) {
-    return `"${data.bookTitle}" 반납 완료. ${data.studentName} 학생은 연체 ${data.overdueDays}일로 ${formatKoreanDate(
-      data.loanBannedUntil
+function getReturnSuccessMessage(data: NonNullable<ReturnResponse['data']>[number]) {
+  if (data.overdue_days > 0 && data.loan_banned_until) {
+    return `"${data.book_title}" 반납 완료. ${data.student_name} 학생은 연체 ${data.overdue_days}일로 ${formatKoreanDate(
+      data.loan_banned_until
     )}까지 대출할 수 없습니다.`
   }
 
-  return `"${data.bookTitle}" 반납 완료`
+  return `"${data.book_title}" 반납 완료`
 }
 
 export default function AutoReturnForm() {
@@ -81,7 +83,7 @@ export default function AutoReturnForm() {
       const returnedLoan = payload.data?.[0]
 
       if (returnedLoan) {
-        addToast(`"${returnedLoan.book_title}" 반납 완료`, 'success')
+        addToast(getReturnSuccessMessage(returnedLoan), 'success')
       }
     } catch (error) {
       addToast(error instanceof Error ? error.message : '반납 처리에 실패했습니다.', 'error')

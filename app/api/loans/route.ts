@@ -26,6 +26,28 @@ function isLoanLimitError(error: unknown) {
   )
 }
 
+function getTodayDateKey() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function formatKoreanDate(value: string) {
+  const [year, month, day] = value.split('-')
+
+  if (!year || !month || !day) {
+    return value
+  }
+
+  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
+}
+
 export async function GET(request: Request) {
   try {
     const session = await requireAdminSession(request)
@@ -135,7 +157,7 @@ export async function POST(request: Request) {
 
     const { data: student, error: studentError } = await supabase
       .from('students')
-      .select('id, name, student_number, class_number')
+      .select('id, name, student_number, class_number, loan_banned_until')
       .eq('id', studentId)
       .single()
 
