@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server'
 import { normalizeIsbnInput } from '@/lib/barcode-input'
 import { adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
+import { jsonData, jsonError } from '@/lib/api-route'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,18 +16,6 @@ type NormalizedBookInfo = {
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
-}
-
-function jsonError(code: string, message: string, status: number) {
-  return NextResponse.json(
-    {
-      error: {
-        code,
-        message,
-      },
-    },
-    { status }
-  )
 }
 
 function getNationalLibraryApiKey() {
@@ -246,9 +234,7 @@ export async function GET(request: Request) {
       return jsonError('BOOK_NOT_FOUND', 'ISBN으로 책 정보를 찾지 못했습니다.', 404)
     }
 
-    return NextResponse.json({
-      data: book,
-    })
+    return jsonData(book)
   } catch (error) {
     return adminAuthErrorResponse(error)
   }

@@ -1,6 +1,10 @@
-import { NextResponse } from 'next/server'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
+import {
+  createRouteSupabaseClient,
+  jsonData,
+  runApiRoute,
+  throwApiError,
+} from '@/lib/api-route'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,77 +25,46 @@ function isLikelyIsbn(value: string) {
 }
 
 export async function GET(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'SUPABASE_NOT_CONFIGURED',
-          message: 'Supabase 환경변수가 설정되지 않았습니다.',
-        },
+  return runApiRoute(
+    {
+      fallback: {
+        code: 'FETCH_FAILED',
+        message: '도서 정보를 조회하는 중 오류가 발생했습니다.',
       },
-      { status: 503 }
-    )
-  }
+      logLabel: 'Book lookup error:',
+    },
+    async () => {
+      const code = getCode(request)
 
-  const code = getCode(request)
+      if (!code) {
+        throwApiError(400, 'MISSING_CODE', '도서 코드를 입력해주세요.')
+      }
 
-  if (!code) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'MISSING_CODE',
-          message: '도서 코드를 입력해주세요.',
-        },
-      },
-      { status: 400 }
-    )
-  }
+      const supabase = createRouteSupabaseClient()
+      const normalizedCode = normalizeCode(code)
+      const isIsbn = isLikelyIsbn(normalizedCode)
 
-  try {
-    const supabase = createServerSupabaseClient()
-    const normalizedCode = normalizeCode(code)
-    const isIsbn = isLikelyIsbn(normalizedCode)
+      let query = supabase
+        .from('books')
+        .select('id, isbn, school_book_code, title, author, publisher, available_copies, total_copies')
 
-    let query = supabase
-      .from('books')
-      .select('id, isbn, school_book_code, title, author, publisher, available_copies, total_copies')
+      if (isIsbn) {
+        query = query.eq('isbn', normalizedCode)
+      } else {
+        query = query.eq('school_book_code', normalizedCode)
+      }
 
-    if (isIsbn) {
-      query = query.eq('isbn', normalizedCode)
-    } else {
-      query = query.eq('school_book_code', normalizedCode)
+      const { data, error } = await query.maybeSingle()
+
+      if (error) {
+        throw error
+      }
+
+      if (!data) {
+        throwApiError(404, 'BOOK_NOT_FOUND', '해당 도서 코드의 책을 찾을 수 없습니다.')
+      }
+
+      return jsonData(data)
     }
-
-    const { data, error } = await query.maybeSingle()
-
-    if (error) {
-      throw error
-    }
-
-    if (!data) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'BOOK_NOT_FOUND',
-            message: '해당 도서 코드의 책을 찾을 수 없습니다.',
-          },
-        },
-        { status: 404 }
-      )
-    }
-
-    return NextResponse.json({ data })
-  } catch (error) {
-    console.error('Book lookup error:', error)
-
-    return NextResponse.json(
-      {
-        error: {
-          code: 'FETCH_FAILED',
-          message: '도서 정보를 조회하는 중 오류가 발생했습니다.',
-        },
-      },
-      { status: 500 }
-    )
-  }
+  )
 }

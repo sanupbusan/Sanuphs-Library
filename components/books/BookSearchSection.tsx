@@ -2,38 +2,17 @@
 
 import { FormEvent, useEffect, useState } from 'react'
 import { BookOpen, Loader2, Search } from 'lucide-react'
+import { displayValue } from '@/lib/display'
+import type { ApiResponseWithMeta, BookSearchResult } from '@/types/library'
 
-type BookSearchResult = {
-  author: string
-  available_copies: number
-  id: string
-  isbn: string | null
-  location: string | null
-  publisher: string | null
-  title: string
-  total_copies: number
-}
-
-type BookSearchResponse = {
-  data?: BookSearchResult[]
-  error?: {
-    code: string
-    message: string
-  }
-  meta?: {
+type BookSearchResponse = ApiResponseWithMeta<
+  BookSearchResult[],
+  {
     count: number
     limit: number
     query: string
   }
-}
-
-function displayValue(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') {
-    return '-'
-  }
-
-  return String(value)
-}
+>
 
 export default function BookSearchSection() {
   const [books, setBooks] = useState<BookSearchResult[]>([])

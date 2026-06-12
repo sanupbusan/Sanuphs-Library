@@ -4,16 +4,9 @@ import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, RotateCcw } from 'lucide-react'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import type { ApiResponse, ReturnableLoan } from '@/types/library'
 
-type ReturnableLoanResponse = {
-  data?: {
-    loan_id: string
-  } | null
-  error?: {
-    code: string
-    message: string
-  }
-}
+type ReturnableLoanResponse = ApiResponse<Pick<ReturnableLoan, 'loan_id'> | null>
 
 export default function MainReturnCodeForm() {
   const router = useRouter()

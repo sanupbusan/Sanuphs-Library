@@ -3,40 +3,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { RotateCcw, ScanBarcode } from 'lucide-react'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { formatKoreanDate } from '@/lib/loan-restrictions'
 import { ScanInput } from '@/components/ui/ScanInput'
 import { StatusMessage } from '@/components/ui/StatusMessage'
+import type { ApiResponse, ReturnedLoan } from '@/types/library'
 
-type ReturnedLoan = {
-  book_title: string
-  loan_banned_until: string | null
-  loan_id: string
-  overdue_days: number
-  returned_on: string
-  school_book_code: string | null
-  student_name: string
-}
-
-type ReturnResponse = {
-  data?: ReturnedLoan[]
-  error?: {
-    code: string
-    message: string
-  }
-}
+type ReturnResponse = ApiResponse<ReturnedLoan[]>
 
 type ReturnStatus = {
   loan: ReturnedLoan
   variant: 'success' | 'error'
-}
-
-function formatKoreanDate(value: string) {
-  const [year, month, day] = value.split('-')
-
-  if (!year || !month || !day) {
-    return value
-  }
-
-  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
 }
 
 function getReturnMessage(loan: ReturnedLoan) {
