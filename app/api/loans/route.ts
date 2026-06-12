@@ -151,6 +151,50 @@ export async function POST(request: Request) {
       )
     }
 
+    const today = getTodayDateKey()
+
+    if (student.loan_banned_until && student.loan_banned_until >= today) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'STUDENT_LOAN_BANNED',
+            message: `연체로 인한 대출 금지 기간입니다. ${student.name} 학생은 ${formatKoreanDate(
+              student.loan_banned_until
+            )}까지 대여할 수 없습니다.`,
+          },
+        },
+        { status: 409 }
+      )
+    }
+
+    const { data: overdueLoan, error: overdueLoanError } = await supabase
+      .from('loans')
+      .select('id, due_on')
+      .eq('student_id', studentId)
+      .eq('status', 'rented')
+      .lt('due_on', today)
+      .order('due_on', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (overdueLoanError) {
+      throw overdueLoanError
+    }
+
+    if (overdueLoan) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'STUDENT_HAS_OVERDUE_LOAN',
+            message: `반납 예정일(${formatKoreanDate(
+              overdueLoan.due_on
+            )})이 지난 도서가 있어 대여할 수 없습니다. 먼저 연체 도서를 반납해주세요.`,
+          },
+        },
+        { status: 409 }
+      )
+    }
+
     const { data: existingLoan, error: existingLoanError } = await supabase
       .from('loans')
       .select('id')
