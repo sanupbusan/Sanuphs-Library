@@ -1,11 +1,15 @@
-import { NextResponse } from 'next/server'
-import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import type { Database } from '@/types/supabase'
+import {
+  createRouteSupabaseClient,
+  jsonDataWithMeta,
+  readJsonBody,
+  runApiRoute,
+  throwApiError,
+  withNoStore,
+} from '@/lib/api-route'
+import type { ReturnedLoan } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
-
-type ReturnedLoan = Database['public']['Functions']['return_loans_by_school_book_codes']['Returns'][number]
 
 type ReturnBooksBody = {
   schoolBookCodes?: unknown
@@ -22,96 +26,45 @@ function getSchoolBookCodes(body: ReturnBooksBody) {
 }
 
 export async function POST(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'SUPABASE_NOT_CONFIGURED',
-          message: 'Supabase 환경변수가 설정되지 않았습니다.',
-        },
+  return runApiRoute(
+    {
+      exposeErrorMessage: true,
+      fallback: {
+        code: 'BOOK_RETURN_FAILED',
+        message: '도서 반납 처리에 실패했습니다.',
       },
-      { status: 503 }
-    )
-  }
+      logLabel: 'Book returns failed:',
+    },
+    async () => {
+      const body = await readJsonBody<ReturnBooksBody>(request)
+      const schoolBookCodes = getSchoolBookCodes(body)
 
-  let body: ReturnBooksBody
+      if (schoolBookCodes.length === 0) {
+        throwApiError(400, 'MISSING_CODE', '도서 코드를 입력해주세요.')
+      }
 
-  try {
-    body = (await request.json()) as ReturnBooksBody
-  } catch {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'INVALID_JSON',
-          message: '요청 본문이 올바른 JSON이어야 합니다.',
-        },
-      },
-      { status: 400 }
-    )
-  }
+      const supabase = createRouteSupabaseClient()
+      const { data, error } = await supabase.rpc('return_loans_by_school_book_codes', {
+        input_school_book_codes: schoolBookCodes,
+      })
 
-  const schoolBookCodes = getSchoolBookCodes(body)
+      if (error) {
+        throw error
+      }
 
-  if (schoolBookCodes.length === 0) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'MISSING_CODE',
-          message: '도서 코드를 입력해주세요.',
-        },
-      },
-      { status: 400 }
-    )
-  }
+      const returnedLoans = (data ?? []) as ReturnedLoan[]
 
-  try {
-    const supabase = createServerSupabaseClient()
-    const { data, error } = await supabase.rpc('return_loans_by_school_book_codes', {
-      input_school_book_codes: schoolBookCodes,
-    })
+      if (returnedLoans.length === 0) {
+        throwApiError(404, 'LOAN_NOT_FOUND', '대여 중인 도서를 찾지 못해 반납 처리하지 못했습니다.')
+      }
 
-    if (error) {
-      throw error
-    }
-
-    const returnedLoans = (data ?? []) as ReturnedLoan[]
-
-    if (returnedLoans.length === 0) {
-      return NextResponse.json(
+      return jsonDataWithMeta(
+        returnedLoans,
         {
-          error: {
-            code: 'LOAN_NOT_FOUND',
-            message: '대여 중인 도서를 찾지 못해 반납 처리하지 못했습니다.',
-          },
-        },
-        { status: 404 }
-      )
-    }
-
-    return NextResponse.json(
-      {
-        data: returnedLoans,
-        meta: {
           count: returnedLoans.length,
         },
-      },
-      {
-        headers: {
-          'Cache-Control': 'no-store, max-age=0',
-        },
-      }
-    )
-  } catch (error) {
-    console.error('Book returns failed:', error)
-
-    return NextResponse.json(
-      {
-        error: {
-          code: 'BOOK_RETURN_FAILED',
-          message: error instanceof Error ? error.message : '도서 반납 처리에 실패했습니다.',
-        },
-      },
-      { status: 500 }
-    )
-  }
+        withNoStore()
+      )
+    }
+  )
 }

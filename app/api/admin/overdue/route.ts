@@ -1,20 +1,8 @@
-import { NextResponse } from 'next/server'
 import { adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
+import { jsonDataWithMeta } from '@/lib/api-route'
+import type { OverdueLoanSelectRow } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
-
-type OverdueLoanRow = {
-  borrowed_on: string
-  books: {
-    title: string | null
-  } | null
-  due_on: string
-  id: string
-  students: {
-    name: string | null
-    student_number: string | null
-  } | null
-}
 
 export async function GET(request: Request) {
   try {
@@ -32,7 +20,7 @@ export async function GET(request: Request) {
       throw error
     }
 
-    const overdueLoans = ((data ?? []) as unknown as OverdueLoanRow[]).map((loan) => ({
+    const overdueLoans = ((data ?? []) as unknown as OverdueLoanSelectRow[]).map((loan) => ({
       bookTitle: loan.books?.title ?? null,
       borrowedOn: loan.borrowed_on,
       dueOn: loan.due_on,
@@ -41,11 +29,8 @@ export async function GET(request: Request) {
       studentNumber: loan.students?.student_number ?? null,
     }))
 
-    return NextResponse.json({
-      data: overdueLoans,
-      meta: {
-        today,
-      },
+    return jsonDataWithMeta(overdueLoans, {
+      today,
     })
   } catch (error) {
     return adminAuthErrorResponse(error)

@@ -4,49 +4,17 @@ import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Loader2, Search, Trash2 } from 'lucide-react'
 import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
+import { readJsonResponse } from '@/lib/api-client'
+import { displayValue } from '@/lib/display'
+import type { ApiResponse, RemovableBook } from '@/types/library'
 
-export type RemovableBook = {
-  author: string
-  available_copies: number
-  id: string
-  isbn: string | null
-  publisher: string | null
-  school_book_code: string | null
-  title: string
-  total_copies: number
-}
-
-type BooksResponse = {
-  data?: RemovableBook[]
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-type DeleteBookResponse = {
-  data?: {
-    id: string
-    title: string
-  }
-  error?: {
-    code: string
-    message: string
-  }
-}
+type BooksResponse = ApiResponse<RemovableBook[]>
+type DeleteBookResponse = ApiResponse<Pick<RemovableBook, 'id' | 'title'>>
 
 type AdminRemoveBookPanelProps = {
   books?: RemovableBook[]
   isLoading?: boolean
   onBookDeleted?: (bookId: string) => void
-}
-
-function displayValue(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') {
-    return '-'
-  }
-
-  return String(value)
 }
 
 function normalize(value: string | null | undefined) {
@@ -83,14 +51,6 @@ function getAddBookUrl(scannedCode: string) {
   }
 
   return `/admin/add_books?${params.toString()}#add-book-form`
-}
-
-async function readJsonResponse<T>(response: Response): Promise<T> {
-  try {
-    return (await response.json()) as T
-  } catch {
-    return {} as T
-  }
 }
 
 export default function AdminRemoveBookPanel({

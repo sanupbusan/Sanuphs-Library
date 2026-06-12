@@ -1,316 +1,32 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
 import { BookPlus, Loader2, Save, Search } from 'lucide-react'
-import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
+import { useAdminAddBookForm } from '@/components/admin/useAdminAddBookForm'
 import { ScanInput } from '@/components/ui/ScanInput'
 import { StatusMessage } from '@/components/ui/StatusMessage'
 import { WorkflowStepCard } from '@/components/ui/WorkflowStepCard'
 
-type CreateBookResponse = {
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-type LookupBookResponse = {
-  data?: {
-    author: string
-    isbn: string
-    publisher: string
-    title: string
-  }
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-type BookFormState = {
-  author: string
-  isbn: string
-  publisher: string
-  schoolBookCode: string
-  title: string
-}
-
-type Step = 'isbn' | 'info' | 'code'
-
-const initialFormState: BookFormState = {
-  author: '',
-  isbn: '',
-  publisher: '',
-  schoolBookCode: '',
-  title: '',
-}
-
-function sanitizeIsbn(value: string) {
-  return normalizeIsbnInput(value)
-}
-
-function sanitizeSchoolBookCode(value: string) {
-  return normalizeBarcodeInput(value)
-}
-
-function trimFormState(form: BookFormState) {
-  return {
-    author: form.author.trim(),
-    isbn: form.isbn.trim(),
-    publisher: form.publisher.trim(),
-    schoolBookCode: form.schoolBookCode.trim(),
-    title: form.title.trim(),
-  }
-}
-
-async function readJsonResponse<T>(response: Response): Promise<T> {
-  try {
-    return (await response.json()) as T
-  } catch {
-    return {} as T
-  }
-}
-
 export default function AdminAddBookForm() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const [form, setForm] = useState<BookFormState>(initialFormState)
-  const [activeStep, setActiveStep] = useState<Step>('isbn')
-  const [errorMessage, setErrorMessage] = useState('')
-  const [infoMessage, setInfoMessage] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
-  const [isCheckingSession, setIsCheckingSession] = useState(true)
-  const [isLookingUpIsbn, setIsLookingUpIsbn] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const isbnInputRef = useRef<HTMLInputElement>(null)
-  const schoolBookCodeInputRef = useRef<HTMLInputElement>(null)
-
-  const isInfoComplete = useMemo(() => {
-    const trimmed = trimFormState(form)
-    return Boolean(trimmed.title && trimmed.author && trimmed.publisher)
-  }, [form])
-
-  useEffect(() => {
-    let didCancel = false
-
-    async function checkSession() {
-      try {
-        const response = await fetch('/api/auth/admin/session', {
-          cache: 'no-store',
-        })
-
-        if (!didCancel && (response.status === 401 || response.status === 403)) {
-          router.replace('/admin/login')
-          return
-        }
-
-        if (!didCancel) {
-          setIsCheckingSession(false)
-        }
-      } catch {
-        if (!didCancel) {
-          setErrorMessage('세션 확인에 실패했습니다.')
-          setIsCheckingSession(false)
-        }
-      }
-    }
-
-    void checkSession()
-
-    return () => {
-      didCancel = true
-    }
-  }, [router])
-
-  useEffect(() => {
-    if (isCheckingSession) return
-
-    const paramIsbn = searchParams.get('isbn') ?? ''
-    const paramSchoolBookCode = searchParams.get('schoolBookCode') ?? ''
-
-    if (paramIsbn || paramSchoolBookCode) {
-      setForm((current) => ({
-        ...current,
-        isbn: sanitizeIsbn(paramIsbn),
-        schoolBookCode: sanitizeSchoolBookCode(paramSchoolBookCode),
-      }))
-    }
-
-    if (paramIsbn) {
-      setActiveStep('isbn')
-      window.setTimeout(() => isbnInputRef.current?.focus(), 0)
-    } else if (paramSchoolBookCode) {
-      setActiveStep('code')
-      window.setTimeout(() => schoolBookCodeInputRef.current?.focus(), 0)
-    } else {
-      setActiveStep('isbn')
-      window.setTimeout(() => isbnInputRef.current?.focus(), 0)
-    }
-  }, [isCheckingSession, searchParams])
-
-  function clearMessages() {
-    setErrorMessage('')
-    setInfoMessage('')
-    setSuccessMessage('')
-  }
-
-  function updateField(field: keyof BookFormState, value: string) {
-    const nextValue =
-      field === 'isbn'
-        ? sanitizeIsbn(value)
-        : field === 'schoolBookCode'
-          ? sanitizeSchoolBookCode(value)
-          : value
-
-    setSuccessMessage('')
-    setForm((current) => ({
-      ...current,
-      [field]: nextValue,
-    }))
-  }
-
-  async function submitBook(nextForm = form) {
-    const input = trimFormState(nextForm)
-
-    if (!input.isbn || !input.schoolBookCode || !input.title || !input.author || !input.publisher) {
-      setErrorMessage('책 이름, 저자, 출판사, ISBN 코드, 학교 내 도서 코드를 모두 입력해주세요.')
-      return
-    }
-
-    setIsSubmitting(true)
-    clearMessages()
-
-    try {
-      const response = await fetch('/api/admin/books', {
-        body: JSON.stringify(input),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-      })
-      const payload = (await response.json()) as CreateBookResponse
-
-      if (response.status === 401 || response.status === 403) {
-        router.replace('/admin/login')
-        return
-      }
-
-      if (!response.ok) {
-        throw new Error(payload.error?.message ?? '책 등록에 실패했습니다.')
-      }
-
-      setForm(initialFormState)
-      setActiveStep('isbn')
-      setSuccessMessage('책이 등록되었습니다. 다음 ISBN 바코드를 스캔해주세요.')
-      if (searchParams.toString()) {
-        router.replace('/admin/add_books', { scroll: false })
-      }
-      router.refresh()
-      window.setTimeout(() => isbnInputRef.current?.focus(), 0)
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '책 등록에 실패했습니다.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  async function lookupIsbn(nextIsbn = form.isbn) {
-    const isbn = sanitizeIsbn(nextIsbn.trim())
-
-    if (!isbn) {
-      setErrorMessage('ISBN 코드를 입력해주세요.')
-      setInfoMessage('')
-      return
-    }
-
-    clearMessages()
-    setIsLookingUpIsbn(true)
-
-    try {
-      const params = new URLSearchParams({ isbn })
-      let response: Response
-
-      try {
-        response = await fetch(`/api/admin/books/isbn?${params.toString()}`, {
-          cache: 'no-store',
-        })
-      } catch {
-        throw new Error('ISBN 조회 API에 연결하지 못했습니다. 개발 서버가 실행 중인지 확인해주세요.')
-      }
-
-      const payload = await readJsonResponse<LookupBookResponse>(response)
-
-      if (response.status === 401 || response.status === 403) {
-        router.replace('/admin/login')
-        return
-      }
-
-      if (response.status === 404) {
-        setForm((current) => ({
-          ...current,
-          isbn,
-        }))
-        setInfoMessage(payload.error?.message ?? 'ISBN 정보를 찾지 못했습니다. 책 정보를 직접 입력해주세요.')
-        setActiveStep('info')
-        return
-      }
-
-      if (!response.ok || !payload.data) {
-        throw new Error(payload.error?.message ?? 'ISBN 정보 조회에 실패했습니다.')
-      }
-
-      const book = payload.data
-
-      setForm((current) => ({
-        ...current,
-        author: book.author || current.author,
-        isbn: book.isbn || isbn,
-        publisher: book.publisher || current.publisher,
-        title: book.title || current.title,
-      }))
-      setInfoMessage('ISBN 정보를 불러왔습니다. 내용을 확인하고 필요하면 수정해주세요.')
-      setActiveStep('info')
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'ISBN 정보 조회에 실패했습니다.')
-    } finally {
-      setIsLookingUpIsbn(false)
-    }
-  }
-
-  function handleIsbnEnter() {
-    void lookupIsbn()
-  }
-
-  function handleSchoolBookCodeEnter() {
-    const nextForm = trimFormState(form)
-
-    if (!isInfoComplete) {
-      setErrorMessage('책 이름, 저자, 출판사를 먼저 입력해주세요.')
-      setActiveStep('info')
-      return
-    }
-
-    void submitBook(nextForm)
-  }
-
-  function moveToCodeStep() {
-    if (!isInfoComplete) {
-      setErrorMessage('책 이름, 저자, 출판사를 모두 입력해주세요.')
-      return
-    }
-
-    clearMessages()
-    setActiveStep('code')
-    window.setTimeout(() => schoolBookCodeInputRef.current?.focus(), 0)
-  }
-
-  function handleReset() {
-    setForm(initialFormState)
-    setActiveStep('isbn')
-    clearMessages()
-    window.setTimeout(() => isbnInputRef.current?.focus(), 0)
-  }
+  const {
+    activeStep,
+    errorMessage,
+    form,
+    handleCancel,
+    handleIsbnEnter,
+    handleReset,
+    handleSchoolBookCodeEnter,
+    infoMessage,
+    isCheckingSession,
+    isInfoComplete,
+    isLookingUpIsbn,
+    isSubmitting,
+    isbnInputRef,
+    moveToCodeStep,
+    schoolBookCodeInputRef,
+    submitBook,
+    successMessage,
+    updateField,
+  } = useAdminAddBookForm()
 
   if (isCheckingSession) {
     return (
@@ -476,7 +192,7 @@ export default function AdminAddBookForm() {
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
           <button
             className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
-            onClick={() => router.push('/admin/books')}
+            onClick={handleCancel}
             type="button"
           >
             취소

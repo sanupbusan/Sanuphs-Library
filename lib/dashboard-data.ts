@@ -7,6 +7,13 @@ import type {
 } from '@/lib/library-queries'
 import type { LucideIcon } from 'lucide-react'
 import { BookOpen, ClipboardList, AlertCircle } from 'lucide-react'
+import {
+  formatKoreanDate,
+  getOverdueDays,
+  getTodayDateKey,
+} from '@/lib/loan-restrictions'
+
+export { formatKoreanDate } from '@/lib/loan-restrictions'
 
 export type RentalStatus = 'rented' | 'overdue' | 'returned'
 
@@ -71,16 +78,6 @@ export function formatDate(value: string) {
   return dateFormatter.format(date)
 }
 
-export function formatKoreanDate(value: string) {
-  const [year, month, day] = value.split('-')
-
-  if (!year || !month || !day) {
-    return value
-  }
-
-  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
-}
-
 export function getReturnSuccessMessage(data: {
   bookTitle: string
   loanBannedUntil: string | null
@@ -94,14 +91,6 @@ export function getReturnSuccessMessage(data: {
   }
 
   return `"${data.bookTitle}" 반납 완료`
-}
-
-function getOverdueDays(dueOn: string) {
-  const dueDate = new Date(`${dueOn}T00:00:00`)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  return Math.max(0, Math.floor((today.getTime() - dueDate.getTime()) / 86_400_000))
 }
 
 export const fallbackStats: DashboardStat[] = [
@@ -174,8 +163,10 @@ export function mapStudentLoanStats(studentStats: StudentLoanStatRow[]): Student
 }
 
 export function mapOverdueLoans(loans: OverdueLoanRow[]): OverdueLoan[] {
+  const today = getTodayDateKey()
+
   return loans.map((loan) => {
-    const overdueDays = getOverdueDays(loan.due_on)
+    const overdueDays = getOverdueDays(loan.due_on, today)
 
     return {
       id: loan.id,

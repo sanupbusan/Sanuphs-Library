@@ -3,50 +3,16 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { BookOpen, Loader2, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { displayValue } from '@/lib/display'
+import type {
+  ApiResponse,
+  ApiResponseWithMeta,
+  ReturnableLoan,
+  ReturnedLoan,
+} from '@/types/library'
 
-type ReturnableLoan = {
-  book_title: string
-  borrowed_on: string
-  due_on: string
-  loan_id: string
-  school_book_code: string | null
-  student_name: string
-}
-
-type ReturnedLoan = {
-  book_title: string
-  loan_id: string
-  returned_on: string
-  school_book_code: string | null
-  student_name: string
-}
-
-type LoanLookupResponse = {
-  data?: ReturnableLoan | null
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-type ReturnBooksResponse = {
-  data?: ReturnedLoan[]
-  error?: {
-    code: string
-    message: string
-  }
-  meta?: {
-    count: number
-  }
-}
-
-function displayValue(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') {
-    return '-'
-  }
-
-  return String(value)
-}
+type LoanLookupResponse = ApiResponse<ReturnableLoan | null>
+type ReturnBooksResponse = ApiResponseWithMeta<ReturnedLoan[], { count: number }>
 
 export default function ReturnBooksSection({ initialSchoolBookCode }: { initialSchoolBookCode: string }) {
   const initialLookupStartedRef = useRef(false)

@@ -5,11 +5,8 @@ import {
   serializeAdminSession,
   setAdminSessionCookie,
 } from '@/lib/admin-auth'
-import {
-  createServerSupabaseClient,
-  createSupabaseClientWithAccessToken,
-  isSupabaseConfigured,
-} from '@/lib/supabase'
+import { createRouteSupabaseClient, readJsonBody } from '@/lib/api-route'
+import { createSupabaseClientWithAccessToken } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,40 +34,23 @@ function getCredentials(body: LoginBody) {
 }
 
 export async function POST(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return adminAuthErrorResponse(
-      new AdminAuthError(
-        503,
-        'SUPABASE_NOT_CONFIGURED',
-        'Supabase 환경변수가 설정되지 않았습니다.'
+  try {
+    const body = await readJsonBody<LoginBody>(request)
+    const { loginId, password } = getCredentials(body)
+
+    if (!loginId || !password) {
+      return adminAuthErrorResponse(
+        new AdminAuthError(400, 'MISSING_CREDENTIALS', '아이디와 비밀번호를 입력해주세요.')
       )
-    )
-  }
+    }
 
-  let body: LoginBody
-  try {
-    body = (await request.json()) as LoginBody
-  } catch {
-    return adminAuthErrorResponse(
-      new AdminAuthError(400, 'INVALID_JSON', '요청 본문이 올바른 JSON이어야 합니다.')
-    )
-  }
+    if (loginId !== getConfiguredAdminLoginId()) {
+      return adminAuthErrorResponse(
+        new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
+      )
+    }
 
-  const { loginId, password } = getCredentials(body)
-  if (!loginId || !password) {
-    return adminAuthErrorResponse(
-      new AdminAuthError(400, 'MISSING_CREDENTIALS', '아이디와 비밀번호를 입력해주세요.')
-    )
-  }
-
-  if (loginId !== getConfiguredAdminLoginId()) {
-    return adminAuthErrorResponse(
-      new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
-    )
-  }
-
-  try {
-    const authClient = createServerSupabaseClient()
+    const authClient = createRouteSupabaseClient()
     const { data, error } = await authClient.auth.signInWithPassword({
       email: getConfiguredAdminAuthEmail(),
       password,

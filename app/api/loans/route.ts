@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { formatKoreanDate } from '@/lib/loan-restrictions'
 import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
-import type { Database } from '@/types/supabase'
+import type { CreatedPublicLoan } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
-
-type CreatedPublicLoan = Database['public']['Functions']['create_public_loan']['Returns'][number]
 
 type CreateLoanBody = {
   bookId?: unknown
@@ -27,16 +26,6 @@ function isLoanLimitError(error: unknown) {
     typeof error.message === 'string' &&
     error.message.includes('최대')
   )
-}
-
-function formatKoreanDate(value: string) {
-  const [year, month, day] = value.split('-')
-
-  if (!year || !month || !day) {
-    return value
-  }
-
-  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
 }
 
 function getLoanCreationErrorResponse(error: unknown) {

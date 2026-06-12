@@ -1,5 +1,8 @@
-import { NextResponse } from 'next/server'
-import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
+import {
+  createRouteSupabaseClient,
+  jsonDataWithMeta,
+  runApiRoute,
+} from '@/lib/api-route'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,60 +21,42 @@ function getSearchParams(request: Request) {
 }
 
 export async function GET(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'SUPABASE_NOT_CONFIGURED',
-          message: 'Supabase 환경변수가 설정되지 않았습니다.',
-        },
-      },
-      { status: 503 }
-    )
-  }
-
   const { limit, query } = getSearchParams(request)
 
-  try {
-    const supabase = createServerSupabaseClient()
-    const { data, error } = await supabase
-      .rpc('search_books', { search_query: query })
-      .limit(limit)
+  return runApiRoute(
+    {
+      fallback: {
+        code: 'BOOK_SEARCH_FAILED',
+        message: '도서 검색에 실패했습니다.',
+      },
+      logLabel: 'Book search failed:',
+    },
+    async () => {
+      const supabase = createRouteSupabaseClient()
+      const { data, error } = await supabase
+        .rpc('search_books', { search_query: query })
+        .limit(limit)
 
-    if (error) {
-      throw error
-    }
+      if (error) {
+        throw error
+      }
 
-    const books = (data ?? []).map((book) => ({
-      id: book.id,
-      isbn: book.isbn,
-      title: book.title,
-      author: book.author,
-      publisher: book.publisher,
-      available_copies: book.available_copies,
-      total_copies: book.total_copies,
-      location: book.location,
-    }))
+      const books = (data ?? []).map((book) => ({
+        id: book.id,
+        isbn: book.isbn,
+        title: book.title,
+        author: book.author,
+        publisher: book.publisher,
+        available_copies: book.available_copies,
+        total_copies: book.total_copies,
+        location: book.location,
+      }))
 
-    return NextResponse.json({
-      data: books,
-      meta: {
+      return jsonDataWithMeta(books, {
         count: books.length,
         limit,
         query,
-      },
-    })
-  } catch (error) {
-    console.error('Book search failed:', error)
-
-    return NextResponse.json(
-      {
-        error: {
-          code: 'BOOK_SEARCH_FAILED',
-          message: '도서 검색에 실패했습니다.',
-        },
-      },
-      { status: 500 }
-    )
-  }
+      })
+    }
+  )
 }

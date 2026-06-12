@@ -1,163 +1,19 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { ClipboardList, Loader2, RotateCcw, AlertCircle, Search, Clock } from 'lucide-react'
-
-type Loan = {
-  borrowed_on: string
-  due_on: string
-  id: string
-  returned_on: string | null
-  status: 'rented' | 'returned'
-  books: { title: string; school_book_code: string | null } | null
-  students: { name: string; student_number: string } | null
-}
-
-function formatLocalDate(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-
-  return `${year}-${month}-${day}`
-}
+import { AlertCircle, ClipboardList, Clock, Loader2, RotateCcw, Search } from 'lucide-react'
+import { isLoanOverdue, useLoanManager } from '@/components/admin/useLoanManager'
 
 export default function LoanManager() {
-  const [loans, setLoans] = useState<Loan[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [errorMessage, setErrorMessage] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
-
-  async function loadLoans() {
-    setIsLoading(true)
-    setErrorMessage('')
-
-    try {
-      const response = await fetch('/api/loans', { cache: 'no-store' })
-      const payload = await response.json() as { data?: Loan[]; error?: { message: string } }
-
-      if (!response.ok) {
-        throw new Error(payload.error?.message ?? '대여 목록을 불러오지 못했습니다.')
-      }
-
-      setLoans(payload.data ?? [])
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '대여 목록을 불러오지 못했습니다.')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  async function updateLoanStatus(loanId: string, status: 'rented' | 'returned') {
-    try {
-      setErrorMessage('')
-      const response = await fetch(`/api/loans/${loanId}`, {
-        body: JSON.stringify({ status }),
-        headers: { 'Content-Type': 'application/json' },
-        method: 'PATCH',
-      })
-
-      if (!response.ok) {
-        const payload = await response.json() as { error?: { message: string } }
-        throw new Error(payload.error?.message ?? '상태 변경에 실패했습니다.')
-      }
-
-      await loadLoans()
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '상태 변경에 실패했습니다.')
-    }
-  }
-
-  async function extendDueDate(loanId: string) {
-    try {
-      setErrorMessage('')
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const newDueDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
-      const dueOnString = formatLocalDate(newDueDate)
-
-      const response = await fetch(`/api/loans/${loanId}`, {
-        body: JSON.stringify({ dueOn: dueOnString }),
-        headers: { 'Content-Type': 'application/json' },
-        method: 'PATCH',
-      })
-
-      if (!response.ok) {
-        const payload = await response.json() as { error?: { message: string } }
-        throw new Error(payload.error?.message ?? '기한 연장에 실패했습니다.')
-      }
-
-      await loadLoans()
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '기한 연장에 실패했습니다.')
-    }
-  }
-
-  async function forceOverdue(loan: Loan) {
-    try {
-      setErrorMessage('')
-      const yesterday = new Date()
-      yesterday.setHours(0, 0, 0, 0)
-      yesterday.setDate(yesterday.getDate() - 1)
-      const overdueDateString = formatLocalDate(yesterday)
-
-      const response = await fetch(`/api/loans/${loan.id}`, {
-        body: JSON.stringify({
-          borrowedOn: overdueDateString,
-          dueOn: overdueDateString,
-        }),
-        headers: { 'Content-Type': 'application/json' },
-        method: 'PATCH',
-      })
-
-      if (!response.ok) {
-        const payload = await response.json() as { error?: { message: string } }
-        throw new Error(payload.error?.message ?? '연체 처리에 실패했습니다.')
-      }
-
-      await loadLoans()
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '연체 처리에 실패했습니다.')
-    }
-  }
-
-  useEffect(() => {
-    void loadLoans()
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') {
-        void loadLoans()
-      }
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [])
-
-  const isOverdue = (dueOn: string) => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const due = new Date(`${dueOn}T00:00:00`)
-    return due < today
-  }
-
-  const filteredLoans = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase()
-    if (!query) return loans
-
-    return loans.filter((loan) => {
-      const bookTitle = loan.books?.title?.toLowerCase() ?? ''
-      const bookCode = loan.books?.school_book_code?.toLowerCase() ?? ''
-      const studentName = loan.students?.name?.toLowerCase() ?? ''
-      const studentNumber = loan.students?.student_number?.toLowerCase() ?? ''
-
-      return (
-        bookTitle.includes(query) ||
-        bookCode.includes(query) ||
-        studentName.includes(query) ||
-        studentNumber.includes(query)
-      )
-    })
-  }, [loans, searchQuery])
+  const {
+    errorMessage,
+    extendDueDate,
+    filteredLoans,
+    forceOverdue,
+    isLoading,
+    searchQuery,
+    setSearchQuery,
+    updateLoanStatus,
+  } = useLoanManager()
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
@@ -176,7 +32,7 @@ export default function LoanManager() {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(event) => setSearchQuery(event.target.value)}
             placeholder="도서명, 학교 도서 코드, 학생 이름, 학번으로 검색"
             className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
             type="text"
@@ -217,7 +73,7 @@ export default function LoanManager() {
             </thead>
             <tbody className="divide-y divide-gray-100 text-gray-700">
               {filteredLoans.map((loan) => {
-                const overdue = isOverdue(loan.due_on)
+                const overdue = isLoanOverdue(loan.due_on)
 
                 return (
                   <tr key={loan.id}>

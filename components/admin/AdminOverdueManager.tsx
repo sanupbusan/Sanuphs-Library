@@ -3,43 +3,16 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Loader2 } from 'lucide-react'
+import { displayValue } from '@/lib/display'
+import { getOverdueDays, getTodayDateKey } from '@/lib/loan-restrictions'
+import type { ApiResponse, OverdueLoanRow } from '@/types/library'
 
-type OverdueRow = {
-  bookTitle: string | null
-  borrowedOn: string
-  dueOn: string
-  id: string
-  studentName: string | null
-  studentNumber: string | null
-}
-
-type OverdueResponse = {
-  data?: OverdueRow[]
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-function displayValue(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') {
-    return '-'
-  }
-
-  return String(value)
-}
-
-function getOverdueDays(dueOn: string) {
-  const dueDate = new Date(`${dueOn}T00:00:00`)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  return Math.max(0, Math.floor((today.getTime() - dueDate.getTime()) / 86_400_000))
-}
+type OverdueResponse = ApiResponse<OverdueLoanRow[]>
 
 export default function AdminOverdueManager() {
   const router = useRouter()
-  const [overdueLoans, setOverdueLoans] = useState<OverdueRow[]>([])
+  const today = getTodayDateKey()
+  const [overdueLoans, setOverdueLoans] = useState<OverdueLoanRow[]>([])
   const [errorMessage, setErrorMessage] = useState('')
   const [isLoading, setIsLoading] = useState(true)
 
@@ -136,7 +109,7 @@ export default function AdminOverdueManager() {
                         <td className="px-4 py-3">{displayValue(loan.borrowedOn)}</td>
                         <td className="px-4 py-3">{displayValue(loan.dueOn)}</td>
                         <td className="px-4 py-3 font-semibold text-red-600">
-                          {getOverdueDays(loan.dueOn)}일
+                          {getOverdueDays(loan.dueOn, today)}일
                         </td>
                       </tr>
                     ))

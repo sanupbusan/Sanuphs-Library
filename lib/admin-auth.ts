@@ -6,6 +6,7 @@ import {
   isSupabaseConfigured,
   type TypedSupabaseClient,
 } from '@/lib/supabase'
+import { ApiRouteError, jsonError } from '@/lib/api-route'
 import type { Database } from '@/types/supabase'
 
 export const ADMIN_ACCESS_TOKEN_COOKIE = 'bb_admin_access_token'
@@ -79,27 +80,15 @@ export function clearAdminSessionCookie(response: NextResponse) {
 
 export function adminAuthErrorResponse(error: unknown) {
   if (error instanceof AdminAuthError) {
-    return NextResponse.json(
-      {
-        error: {
-          code: error.code,
-          message: error.message,
-        },
-      },
-      { status: error.status }
-    )
+    return jsonError(error.code, error.message, error.status)
+  }
+
+  if (error instanceof ApiRouteError) {
+    return jsonError(error.code, error.message, error.status)
   }
 
   console.error('Admin auth failed:', error)
-  return NextResponse.json(
-    {
-      error: {
-        code: 'ADMIN_AUTH_FAILED',
-        message: '관리자 인증 확인에 실패했습니다.',
-      },
-    },
-    { status: 500 }
-  )
+  return jsonError('ADMIN_AUTH_FAILED', '관리자 인증 확인에 실패했습니다.', 500)
 }
 
 export function serializeAdminSession(session: AdminSession) {

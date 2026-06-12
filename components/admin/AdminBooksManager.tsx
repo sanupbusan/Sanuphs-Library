@@ -5,41 +5,15 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { BookOpen, Loader2, Plus, Trash2 } from 'lucide-react'
 import AdminRemoveBookPanel from '@/components/admin/AdminRemoveBookPanel'
+import { displayValue } from '@/lib/display'
+import type { AdminBookRow, ApiResponse } from '@/types/library'
 
-type BookRow = {
-  author: string
-  available_copies: number
-  category: string
-  created_at: string
-  id: string
-  isbn: string | null
-  location: string | null
-  publisher: string | null
-  school_book_code: string | null
-  title: string
-  total_copies: number
-}
-
-type BooksResponse = {
-  data?: BookRow[]
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-function displayValue(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') {
-    return '-'
-  }
-
-  return String(value)
-}
+type BooksResponse = ApiResponse<AdminBookRow[]>
 
 export default function AdminBooksManager() {
   const router = useRouter()
   const removePanelRef = useRef<HTMLDivElement>(null)
-  const [books, setBooks] = useState<BookRow[]>([])
+  const [books, setBooks] = useState<AdminBookRow[]>([])
   const [errorMessage, setErrorMessage] = useState('')
   const [isLoading, setIsLoading] = useState(true)
 
