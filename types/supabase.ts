@@ -234,6 +234,24 @@ export type Database = {
       }
     }
     Functions: {
+      create_public_loan: {
+        Args: {
+          input_book_id: string
+          input_notes?: string | null
+          input_student_id: string
+        }
+        Returns: {
+          active_loan_count: number
+          book_title: string
+          borrower_label: string
+          borrower_type: string
+          due_on: string
+          loan_id: string
+          loan_limit: number
+          remaining_loan_count: number
+          student_name: string
+        }[]
+      }
       get_returnable_loan_by_school_book_code: {
         Args: { input_school_book_code: string }
         Returns: {
@@ -248,6 +266,22 @@ export type Database = {
       is_admin: {
         Args: { check_user_id?: string | null }
         Returns: boolean
+      }
+      lookup_student_for_loan: {
+        Args: { input_student_number: string }
+        Returns: {
+          active_loan_count: number
+          borrower_label: string
+          borrower_type: string
+          class_number: number
+          grade: number
+          id: string
+          loan_limit: number
+          name: string
+          remaining_loan_count: number
+          seat_number: number
+          student_number: string
+        }[]
       }
       return_loans_by_school_book_codes: {
         Args: { input_school_book_codes: string[] }
