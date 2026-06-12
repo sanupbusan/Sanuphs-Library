@@ -3,33 +3,32 @@
 import { useEffect, useRef, useState } from 'react'
 import { RotateCcw, ScanBarcode } from 'lucide-react'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { ScanInput } from '@/components/ui/ScanInput'
+import { StatusMessage } from '@/components/ui/StatusMessage'
+
+type ReturnedLoan = {
+  book_title: string
+  loan_banned_until: string | null
+  loan_id: string
+  overdue_days: number
+  returned_on: string
+  school_book_code: string | null
+  student_name: string
+}
 
 type ReturnResponse = {
-  data?: Array<{
-    book_title: string
-<<<<<<< HEAD
-    loan_banned_until: string | null
-    overdue_days: number
-=======
->>>>>>> origin/main
-    returned_on: string
-    student_name: string
-  }>
+  data?: ReturnedLoan[]
   error?: {
     code: string
     message: string
   }
 }
 
-type Toast = {
-  id: number
-  message: string
-  type: 'success' | 'error'
+type ReturnStatus = {
+  loan: ReturnedLoan
+  variant: 'success' | 'error'
 }
 
-let toastIdCounter = 0
-
-<<<<<<< HEAD
 function formatKoreanDate(value: string) {
   const [year, month, day] = value.split('-')
 
@@ -40,30 +39,25 @@ function formatKoreanDate(value: string) {
   return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
 }
 
-function getReturnSuccessMessage(data: NonNullable<ReturnResponse['data']>[number]) {
-  if (data.overdue_days > 0 && data.loan_banned_until) {
-    return `"${data.book_title}" 반납 완료. ${data.student_name} 학생은 연체 ${data.overdue_days}일로 ${formatKoreanDate(
-      data.loan_banned_until
+function getReturnMessage(loan: ReturnedLoan) {
+  if (loan.overdue_days > 0 && loan.loan_banned_until) {
+    return `"${loan.book_title}" 반납 완료. ${loan.student_name} 학생은 연체 ${loan.overdue_days}일로 ${formatKoreanDate(
+      loan.loan_banned_until
     )}까지 대출할 수 없습니다.`
   }
 
-  return `"${data.book_title}" 반납 완료`
+  return `"${loan.book_title}" 반납 완료`
 }
 
-=======
->>>>>>> origin/main
 export default function AutoReturnForm() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [bookCode, setBookCode] = useState('')
   const [isReturning, setIsReturning] = useState(false)
-  const [toasts, setToasts] = useState<Toast[]>([])
+  const [history, setHistory] = useState<ReturnStatus[]>([])
+  const isComposingRef = useRef(false)
 
-  function addToast(message: string, type: 'success' | 'error') {
-    const id = ++toastIdCounter
-    setToasts((current) => [...current, { id, message, type }])
-    setTimeout(() => {
-      setToasts((current) => current.filter((toast) => toast.id !== id))
-    }, 1000)
+  function addHistory(loan: ReturnedLoan, variant: 'success' | 'error') {
+    setHistory((current) => [{ loan, variant }, ...current.slice(0, 9)])
   }
 
   async function processReturn(code: string) {
@@ -73,8 +67,8 @@ export default function AutoReturnForm() {
     setIsReturning(true)
 
     try {
-      const response = await fetch('/api/returns/loans', {
-        body: JSON.stringify({ code: trimmed }),
+      const response = await fetch('/api/returns', {
+        body: JSON.stringify({ schoolBookCodes: [trimmed] }),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -89,14 +83,24 @@ export default function AutoReturnForm() {
       const returnedLoan = payload.data?.[0]
 
       if (returnedLoan) {
-<<<<<<< HEAD
-        addToast(getReturnSuccessMessage(returnedLoan), 'success')
-=======
-        addToast(`"${returnedLoan.book_title}" 반납 완료`, 'success')
->>>>>>> origin/main
+        addHistory(returnedLoan, 'success')
       }
     } catch (error) {
-      addToast(error instanceof Error ? error.message : '반납 처리에 실패했습니다.', 'error')
+      const message = error instanceof Error ? error.message : '반납 처리에 실패했습니다.'
+      addHistory(
+        {
+          book_title: trimmed,
+          loan_banned_until: null,
+          loan_id: '',
+          overdue_days: 0,
+          returned_on: new Date().toISOString().slice(0, 10),
+          school_book_code: trimmed,
+          student_name: '',
+        },
+        'error'
+      )
+      // eslint-disable-next-line no-console
+      console.error('Return failed:', message)
     } finally {
       setIsReturning(false)
       setBookCode('')
@@ -104,28 +108,17 @@ export default function AutoReturnForm() {
     }
   }
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
-        return
-      }
-
-      if (event.key === 'Enter') {
-        const buffer = bookCode.trim()
-        if (buffer) {
-          void processReturn(buffer)
-        }
-        return
-      }
-
-      if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
-        setBookCode((current) => normalizeBarcodeInput(current + event.key))
-      }
+  function handleEnter() {
+    const trimmed = normalizeBarcodeInput(bookCode)
+    if (trimmed) {
+      void processReturn(trimmed)
     }
+  }
 
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [bookCode])
+  function handleCompositionEnd(value: string) {
+    isComposingRef.current = false
+    setBookCode(normalizeBarcodeInput(value))
+  }
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -143,42 +136,35 @@ export default function AutoReturnForm() {
         </div>
       </div>
 
-      <div className="relative">
-        <ScanBarcode className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-        <input
-          ref={inputRef}
-          value={bookCode}
-          onChange={(event) => setBookCode(normalizeBarcodeInput(event.target.value))}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              void processReturn(bookCode)
-            }
-          }}
-          className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-          placeholder="도서 바코드를 스캔하세요"
-          type="text"
-        />
-      </div>
+      <ScanInput
+        ref={inputRef}
+        id="return-book-code"
+        label="도서 바코드"
+        placeholder="도서 바코드를 스캔하세요"
+        value={bookCode}
+        onChangeValue={(value) => setBookCode(isComposingRef.current ? value : normalizeBarcodeInput(value))}
+        onCompositionStart={() => {
+          isComposingRef.current = true
+        }}
+        onCompositionEnd={handleCompositionEnd}
+        onEnter={handleEnter}
+        loading={isReturning}
+        helperText="스캔하면 즉시 반납 처리됩니다. 연체 시 자동으로 대출 금지 기간이 적용됩니다."
+      />
 
-      {isReturning ? (
-        <div className="mt-3 text-xs text-gray-500">반납 처리 중...</div>
+      {history.length > 0 ? (
+        <div className="mt-4 space-y-2">
+          {history.map((item, index) => (
+            <StatusMessage
+              key={`${item.loan.loan_id ?? item.loan.school_book_code}-${index}`}
+              variant={item.variant}
+              live={false}
+            >
+              {item.variant === 'success' ? getReturnMessage(item.loan) : `"${item.loan.book_title}" 반납 실패`}
+            </StatusMessage>
+          ))}
+        </div>
       ) : null}
-
-      <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`rounded-lg px-4 py-2 text-sm font-medium shadow-lg ${
-              toast.type === 'success'
-                ? 'bg-green-600 text-white'
-                : 'bg-red-600 text-white'
-            }`}
-          >
-            {toast.message}
-          </div>
-        ))}
-      </div>
     </div>
   )
 }

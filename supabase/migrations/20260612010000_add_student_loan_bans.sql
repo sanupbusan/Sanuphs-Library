@@ -61,7 +61,7 @@ as $$
       greatest((updated_loans.returned_on - updated_loans.due_on)::integer, 0) as overdue_days,
       case
         when updated_loans.returned_on > updated_loans.due_on then
-          updated_loans.returned_on + ((updated_loans.returned_on - updated_loans.due_on)::integer - 1)
+          updated_loans.returned_on + ((updated_loans.returned_on - updated_loans.due_on)::integer)
         else null
       end as new_loan_banned_until
     from updated_loans

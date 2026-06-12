@@ -1,32 +1,19 @@
 'use client'
 
-import { type CompositionEvent, type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { BookOpen, Loader2, ScanBarcode, UserCheck } from 'lucide-react'
+import { BookOpen, UserCheck } from 'lucide-react'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import { getBorrowerLookupCodeFromScannedValue, normalizeBorrowerLookupCode } from '@/lib/loan-limits'
+import {
+  getBorrowerLookupCodeFromScannedValue,
+  normalizeBorrowerLookupCode,
+} from '@/lib/loan-limits'
+import { WorkflowStepCard } from '@/components/ui/WorkflowStepCard'
+import { ScanInput } from '@/components/ui/ScanInput'
+import { StatusMessage } from '@/components/ui/StatusMessage'
+import type { Database } from '@/types/supabase'
 
-type Student = {
-  active_loan_count: number
-  borrower_label: string
-  borrower_type: 'staff' | 'student'
-  class_number: number
-  grade: number
-  id: string
-<<<<<<< HEAD
-  loan_ban_remaining_days: number
-  loan_banned_until: string | null
-  loan_limit: number
-  name: string
-  overdue_days: number
-=======
-  loan_limit: number
-  name: string
->>>>>>> origin/main
-  remaining_loan_count: number
-  seat_number: number
-  student_number: string
-}
+type LoanStudent = Database['public']['Functions']['lookup_student_for_loan']['Returns'][number]
 
 type Book = {
   author: string
@@ -47,6 +34,11 @@ type ApiResponse<T> = {
   }
 }
 
+type Status = {
+  message: string
+  variant: 'error' | 'success' | 'info' | 'warning'
+}
+
 async function readJsonResponse<T>(response: Response): Promise<T> {
   try {
     return (await response.json()) as T
@@ -59,25 +51,40 @@ function normalizeRentCode(value: string) {
   return normalizeBarcodeInput(value).toUpperCase()
 }
 
-<<<<<<< HEAD
-function getStudentRestrictionMessage(targetStudent: Student | null) {
+function getBorrowerDisplay(targetStudent: LoanStudent) {
+  if (targetStudent.borrower_type === 'staff') {
+    return `${targetStudent.borrower_label} ${targetStudent.seat_number}번`
+  }
+
+  return `${targetStudent.grade}-${targetStudent.class_number}반 ${targetStudent.seat_number}번`
+}
+
+function getStudentRestrictionMessage(targetStudent: LoanStudent | null): string | null {
   if (!targetStudent) {
-    return ''
+    return null
   }
 
   if (targetStudent.overdue_days > 0) {
-    return `연체된 학생입니다. ${targetStudent.overdue_days}일`
+    return `반납 예정일이 지난 도서가 있습니다. 먼저 연체 도서를 반납해주세요.`
   }
 
-  if (targetStudent.loan_ban_remaining_days > 0) {
-    return `대출 금지 기간입니다. ${targetStudent.loan_ban_remaining_days}일`
+  if (targetStudent.loan_ban_remaining_days > 0 && targetStudent.loan_banned_until) {
+    return `연체로 인한 대출 금지 기간입니다. ${formatKoreanDate(targetStudent.loan_banned_until)}까지 대여할 수 없습니다.`
   }
 
-  return ''
+  return null
 }
 
-=======
->>>>>>> origin/main
+function formatKoreanDate(value: string) {
+  const [year, month, day] = value.split('-')
+
+  if (!year || !month || !day) {
+    return value
+  }
+
+  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
+}
+
 export default function RentBookForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -89,25 +96,22 @@ export default function RentBookForm() {
   const paramStudentNumber = normalizeBorrowerLookupCode(normalizeRentCode(searchParams.get('studentNumber') ?? ''))
 
   const [studentNumber, setStudentNumber] = useState('')
-  const [student, setStudent] = useState<Student | null>(null)
+  const [student, setStudent] = useState<LoanStudent | null>(null)
   const [bookCode, setBookCode] = useState('')
-  const [book, setBook] = useState<Book | null>(null)
-  const [errorMessage, setErrorMessage] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
+  const [status, setStatus] = useState<Status | null>(null)
   const [isLoadingStudent, setIsLoadingStudent] = useState(false)
   const [isLoadingBook, setIsLoadingBook] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-<<<<<<< HEAD
-  const studentRestrictionMessage = getStudentRestrictionMessage(student)
-=======
->>>>>>> origin/main
 
-  function getBorrowerDisplay(targetStudent: Student) {
-    if (targetStudent.borrower_type === 'staff') {
-      return `${targetStudent.borrower_label} ${targetStudent.seat_number}번`
-    }
+  const restrictionMessage = getStudentRestrictionMessage(student)
+  const isStudentEligible = student !== null && restrictionMessage === null
 
-    return `${targetStudent.grade}-${targetStudent.class_number}반 ${targetStudent.seat_number}번`
+  function focusStudentInput() {
+    window.setTimeout(() => {
+      const input = studentInputRef.current
+      input?.focus()
+      input?.select()
+    }, 0)
   }
 
   function focusBookInput() {
@@ -118,44 +122,24 @@ export default function RentBookForm() {
     }, 0)
   }
 
-  function focusStudentInput() {
-    window.setTimeout(() => {
-      const input = studentInputRef.current
-      input?.focus()
-      input?.select()
-    }, 0)
-  }
-
   function clearStudentSelection() {
     setStudent(null)
     setStudentNumber('')
-    setBook(null)
     setBookCode('')
-    setErrorMessage('')
-    setSuccessMessage('')
+    setStatus(null)
     focusStudentInput()
   }
 
-  function isComposingKeyEvent(event: KeyboardEvent<HTMLInputElement>) {
-    return event.nativeEvent.isComposing || event.key === 'Process'
+  function setError(message: string) {
+    setStatus({ message, variant: 'error' })
   }
 
-  function handleStudentCodeChange(value: string) {
-    setStudentNumber(isStudentInputComposingRef.current ? value : normalizeRentCode(value))
+  function setSuccess(message: string) {
+    setStatus({ message, variant: 'success' })
   }
 
-  function handleBookCodeChange(value: string) {
-    setBookCode(isBookInputComposingRef.current ? value : normalizeRentCode(value))
-  }
-
-  function handleStudentCompositionEnd(event: CompositionEvent<HTMLInputElement>) {
-    isStudentInputComposingRef.current = false
-    setStudentNumber(normalizeRentCode(event.currentTarget.value))
-  }
-
-  function handleBookCompositionEnd(event: CompositionEvent<HTMLInputElement>) {
-    isBookInputComposingRef.current = false
-    setBookCode(normalizeRentCode(event.currentTarget.value))
+  function setInfo(message: string) {
+    setStatus({ message, variant: 'info' })
   }
 
   useEffect(() => {
@@ -167,30 +151,26 @@ export default function RentBookForm() {
   }, [paramStudentNumber])
 
   useEffect(() => {
-    if (student) {
+    if (isStudentEligible) {
       focusBookInput()
     }
-  }, [student])
+  }, [isStudentEligible])
 
-  async function lookupStudent(number = studentNumber, options: { clearCurrentStudent?: boolean } = {}) {
+  async function lookupStudent(number = studentNumber) {
     const trimmed = normalizeBorrowerLookupCode(normalizeRentCode(number))
     if (!trimmed) {
-      setErrorMessage('학번을 입력해주세요.')
+      setError('학번을 입력해주세요.')
       return
     }
 
     setIsLoadingStudent(true)
-    setErrorMessage('')
-    setSuccessMessage('')
-    setBook(null)
+    setStatus(null)
+    setStudent(null)
     setBookCode('')
-    if (options.clearCurrentStudent) {
-      setStudent(null)
-    }
 
     try {
       const response = await fetch(`/api/students?studentNumber=${encodeURIComponent(trimmed)}`)
-      const payload = await readJsonResponse<ApiResponse<Student>>(response)
+      const payload = await readJsonResponse<ApiResponse<LoanStudent>>(response)
 
       if (!response.ok) {
         throw new Error(payload.error?.message ?? '학생 정보 조회에 실패했습니다.')
@@ -199,10 +179,16 @@ export default function RentBookForm() {
       if (payload.data) {
         setStudentNumber(payload.data.student_number)
         setStudent(payload.data)
-        focusBookInput()
+
+        const restriction = getStudentRestrictionMessage(payload.data)
+        if (restriction) {
+          setError(restriction)
+        } else {
+          setInfo(`${payload.data.name} ${getBorrowerDisplay(payload.data)} 확인되었습니다. 도서 바코드를 스캔하세요.`)
+        }
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '학생 정보 조회에 실패했습니다.')
+      setError(error instanceof Error ? error.message : '학생 정보 조회에 실패했습니다.')
     } finally {
       setIsLoadingStudent(false)
     }
@@ -211,23 +197,25 @@ export default function RentBookForm() {
   async function lookupBook(code = bookCode) {
     const trimmed = normalizeRentCode(code)
     if (!trimmed) {
-      setErrorMessage('도서 코드를 입력해주세요.')
+      setError('도서 코드를 입력해주세요.')
       return
     }
 
     const borrowerCode = getBorrowerLookupCodeFromScannedValue(trimmed)
     if (borrowerCode) {
+      clearStudentSelection()
       setStudentNumber(borrowerCode)
-      setBookCode('')
-      setBook(null)
-      await lookupStudent(borrowerCode, { clearCurrentStudent: true })
+      await lookupStudent(borrowerCode)
+      return
+    }
+
+    if (!isStudentEligible) {
+      setError('학생 확인 후 도서를 스캔하세요.')
       return
     }
 
     setIsLoadingBook(true)
-    setErrorMessage('')
-    setSuccessMessage('')
-    setBook(null)
+    setStatus(null)
 
     try {
       const response = await fetch(`/api/books/lookup?code=${encodeURIComponent(trimmed)}`)
@@ -238,44 +226,28 @@ export default function RentBookForm() {
       }
 
       if (payload.data) {
-        setBook(payload.data)
-
-        if (payload.data.available_copies > 0) {
-          await handleRent(payload.data)
-        } else {
-          setErrorMessage('이미 대여 중인 도서입니다.')
+        if (payload.data.available_copies <= 0) {
+          setError('이미 대여 중인 도서입니다.')
+          return
         }
+
+        await handleRent(payload.data)
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '도서 정보 조회에 실패했습니다.')
+      setError(error instanceof Error ? error.message : '도서 정보 조회에 실패했습니다.')
     } finally {
       setIsLoadingBook(false)
     }
   }
 
-  async function handleRent(targetBook = book) {
-    if (!student || !targetBook) {
-      setErrorMessage('학생과 도서를 모두 확인해주세요.')
-      return
-    }
-
-<<<<<<< HEAD
-    const restrictionMessage = getStudentRestrictionMessage(student)
-    if (restrictionMessage) {
-      setErrorMessage(restrictionMessage)
-      return
-    }
-
-=======
->>>>>>> origin/main
-    if (targetBook.available_copies <= 0) {
-      setErrorMessage('이미 대여 중인 도서입니다.')
+  async function handleRent(targetBook: Book) {
+    if (!student) {
+      setError('학생 정보를 먼저 확인해주세요.')
       return
     }
 
     setIsSubmitting(true)
-    setErrorMessage('')
-    setSuccessMessage('')
+    setStatus(null)
 
     try {
       const response = await fetch('/api/loans', {
@@ -288,17 +260,19 @@ export default function RentBookForm() {
         },
         method: 'POST',
       })
-      const payload = await readJsonResponse<ApiResponse<{
-        activeLoanCount: number
-        bookTitle: string
-        borrowerLabel: string
-        borrowerType: 'staff' | 'student'
-        dueOn: string
-        loanId: string
-        loanLimit: number
-        remainingLoanCount: number
-        studentName: string
-      }>>(response)
+      const payload = await readJsonResponse<
+        ApiResponse<{
+          activeLoanCount: number
+          bookTitle: string
+          borrowerLabel: string
+          borrowerType: 'staff' | 'student'
+          dueOn: string
+          loanId: string
+          loanLimit: number
+          remainingLoanCount: number
+          studentName: string
+        }>
+      >(response)
 
       if (!response.ok) {
         throw new Error(payload.error?.message ?? '대여 처리에 실패했습니다.')
@@ -306,8 +280,10 @@ export default function RentBookForm() {
 
       if (payload.data) {
         const loanResult = payload.data
-        setSuccessMessage(
-          `${loanResult.studentName} ${loanResult.borrowerLabel}이 "${loanResult.bookTitle}" 도서를 대여했습니다. (반납 예정일: ${loanResult.dueOn})`
+        setSuccess(
+          `${loanResult.studentName} ${loanResult.borrowerLabel}이 "${loanResult.bookTitle}" 도서를 대여했습니다. 반납 예정일: ${formatKoreanDate(
+            loanResult.dueOn
+          )}. 다음 도서를 스캔하세요.`
         )
         setStudent((current) =>
           current
@@ -321,21 +297,17 @@ export default function RentBookForm() {
               }
             : current
         )
-        setBook(null)
         setBookCode('')
         focusBookInput()
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '대여 처리에 실패했습니다.')
+      setError(error instanceof Error ? error.message : '대여 처리에 실패했습니다.')
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  function handleStudentKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key !== 'Enter') return
-    if (isComposingKeyEvent(event)) return
-    event.preventDefault()
+  function handleStudentEnter() {
     if (student) {
       focusBookInput()
       return
@@ -343,30 +315,18 @@ export default function RentBookForm() {
     void lookupStudent()
   }
 
-  function handleBookKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'Enter' && isComposingKeyEvent(event)) {
-      event.preventDefault()
-    }
-  }
-
-  function handleStudentSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (isStudentInputComposingRef.current) {
-      return
-    }
-    if (student) {
-      focusBookInput()
-      return
-    }
-    void lookupStudent()
-  }
-
-  function handleBookSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (isBookInputComposingRef.current) {
-      return
-    }
+  function handleBookEnter() {
     void lookupBook()
+  }
+
+  function handleStudentCompositionEnd(value: string) {
+    isStudentInputComposingRef.current = false
+    setStudentNumber(normalizeRentCode(value))
+  }
+
+  function handleBookCompositionEnd(value: string) {
+    isBookInputComposingRef.current = false
+    setBookCode(normalizeRentCode(value))
   }
 
   return (
@@ -381,140 +341,94 @@ export default function RentBookForm() {
         </div>
       </div>
 
-      <form onSubmit={handleStudentSubmit} className="mb-4 rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
-        <label htmlFor="student-number" className="mb-2 block text-sm font-medium text-gray-700">
-          학생 바코드 (학번)
-        </label>
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <ScanBarcode className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <input
-              id="student-number"
-              ref={studentInputRef}
-              value={studentNumber}
-              onChange={(event) => handleStudentCodeChange(event.target.value)}
-              onCompositionEnd={handleStudentCompositionEnd}
-              onCompositionStart={() => {
-                isStudentInputComposingRef.current = true
-              }}
-              onFocus={() => {
-                if (student) {
-                  focusBookInput()
-                }
-              }}
-              onKeyDown={handleStudentKeyDown}
-              className="h-11 w-full rounded-lg border border-gray-200 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-              placeholder="학생/교직원 바코드 스캔"
-              readOnly={Boolean(student)}
-              type="text"
-            />
-          </div>
-          <button
-            className="inline-flex h-11 items-center justify-center rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
-            disabled={isLoadingStudent || Boolean(student)}
-            type="submit"
-          >
-            {isLoadingStudent ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
-            <span className="ml-2">확인</span>
-          </button>
-        </div>
-
-        {student ? (
-          <div className="mt-4 rounded-lg bg-green-50 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-sm font-medium text-green-800">
-                <UserCheck className="h-4 w-4" />
-                {student.name} ({getBorrowerDisplay(student)})
-              </div>
+      <div className="space-y-4">
+        <WorkflowStepCard
+          step={1}
+          state={student ? 'complete' : 'current'}
+          title="학생 확인"
+          description="학생 또는 교직원 바코드를 스캔하세요."
+          action={
+            student ? (
               <button
-                className="rounded-md px-2 py-1 text-xs font-semibold text-green-700 transition-colors hover:bg-green-100"
+                className="rounded-md px-2 py-1 text-xs font-semibold text-primary-700 transition-colors hover:bg-primary-50"
                 onClick={clearStudentSelection}
                 type="button"
               >
                 변경
               </button>
-            </div>
-            <p className="mt-1 text-xs text-green-600">
-              코드: {student.student_number} · 대여: {student.active_loan_count}/{student.loan_limit}권 · 남은 가능 권수:{' '}
-              {student.remaining_loan_count}권
-            </p>
-<<<<<<< HEAD
-            {studentRestrictionMessage ? (
-              <div className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-                {studentRestrictionMessage}
+            ) : null
+          }
+        >
+          <div className="space-y-3">
+            <ScanInput
+              ref={studentInputRef}
+              id="student-number"
+              label="학생/교직원 바코드"
+              placeholder="학생/교직원 바코드 스캔"
+              value={studentNumber}
+              onChangeValue={(value) =>
+                setStudentNumber(isStudentInputComposingRef.current ? value : normalizeRentCode(value))
+              }
+              onCompositionStart={() => {
+                isStudentInputComposingRef.current = true
+              }}
+              onCompositionEnd={handleStudentCompositionEnd}
+              onEnter={handleStudentEnter}
+              loading={isLoadingStudent}
+              helperText={student ? 'Enter를 눌러 도서 단계로 이동하세요.' : '스캔 후 Enter를 누륨녀 자동으로 확인됩니다.'}
+              disabled={Boolean(student)}
+            />
+
+            {student ? (
+              <div className="rounded-lg bg-green-50 p-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-green-800">
+                  <UserCheck className="h-4 w-4" />
+                  {student.name} ({getBorrowerDisplay(student)})
+                </div>
+                <p className="mt-1 text-xs text-green-700">
+                  코드: {student.student_number} · 대여: {student.active_loan_count}/{student.loan_limit}권 · 남은 가능 권수:{student.remaining_loan_count}권
+                </p>
               </div>
             ) : null}
-=======
->>>>>>> origin/main
           </div>
+        </WorkflowStepCard>
+
+        <WorkflowStepCard
+          step={2}
+          state={!student ? 'locked' : isStudentEligible ? 'current' : 'error'}
+          title="도서 스캔"
+          description={
+            !student
+              ? '학생 확인 후 도서 바코드를 스캔하세요.'
+              : isStudentEligible
+                ? '대여할 도서 바코드를 스캔하세요.'
+                : '현재 대여할 수 없는 상태입니다.'
+          }
+        >
+          <div className="space-y-3">
+            <ScanInput
+              ref={bookInputRef}
+              id="book-code"
+              label="도서 바코드 (ISBN 또는 학교 도서 코드)"
+              placeholder="도서 바코드 스캔"
+              value={bookCode}
+              onChangeValue={(value) => setBookCode(isBookInputComposingRef.current ? value : normalizeRentCode(value))}
+              onCompositionStart={() => {
+                isBookInputComposingRef.current = true
+              }}
+              onCompositionEnd={handleBookCompositionEnd}
+              onEnter={handleBookEnter}
+              loading={isLoadingBook || isSubmitting}
+              helperText={isStudentEligible ? '스캔하면 자동으로 대여됩니다.' : '학생 확인 단계를 먼저 완료하세요.'}
+              disabled={!isStudentEligible}
+            />
+          </div>
+        </WorkflowStepCard>
+
+        {status ? (
+          <StatusMessage variant={status.variant}>{status.message}</StatusMessage>
         ) : null}
-      </form>
-
-<<<<<<< HEAD
-      {student && !studentRestrictionMessage ? (
-=======
-      {student ? (
->>>>>>> origin/main
-        <form onSubmit={handleBookSubmit} className="mb-4 rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
-          <label htmlFor="book-code" className="mb-2 block text-sm font-medium text-gray-700">
-            도서 바코드 (ISBN 또는 학교 도서 코드)
-          </label>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <ScanBarcode className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input
-                id="book-code"
-                ref={bookInputRef}
-                value={bookCode}
-                onChange={(event) => handleBookCodeChange(event.target.value)}
-                onCompositionEnd={handleBookCompositionEnd}
-                onCompositionStart={() => {
-                  isBookInputComposingRef.current = true
-                }}
-                onKeyDown={handleBookKeyDown}
-                className="h-11 w-full rounded-lg border border-gray-200 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-                placeholder="도서 바코드 스캔"
-                type="text"
-              />
-            </div>
-            <button
-              className="inline-flex h-11 items-center justify-center rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
-              disabled={isLoadingBook}
-              type="submit"
-            >
-              {isLoadingBook ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
-              <span className="ml-2">조회</span>
-            </button>
-          </div>
-
-          {book ? (
-            <div className="mt-4 rounded-lg border border-gray-100 p-4">
-              <div className="mb-2 text-sm font-semibold text-gray-900">{book.title}</div>
-              <div className="text-xs text-gray-500">
-                저자: {book.author} | 출판사: {book.publisher ?? '-'} | 남은 권수: {book.available_copies}/{book.total_copies}
-              </div>
-              {isSubmitting ? (
-                <div className="mt-2 flex items-center gap-2 text-xs text-primary-600">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  대여 처리 중...
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </form>
-      ) : null}
-
-      {errorMessage ? (
-        <div className="mb-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {errorMessage}
-        </div>
-      ) : null}
-
-      {successMessage ? (
-        <div className="mb-4 rounded-lg border border-green-100 bg-green-50 px-3 py-2 text-sm text-green-700">
-          {successMessage}
-        </div>
-      ) : null}
+      </div>
     </div>
   )
 }
