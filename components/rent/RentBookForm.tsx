@@ -13,8 +13,16 @@ type Student = {
   class_number: number
   grade: number
   id: string
+<<<<<<< HEAD
+  loan_ban_remaining_days: number
+  loan_banned_until: string | null
   loan_limit: number
   name: string
+  overdue_days: number
+=======
+  loan_limit: number
+  name: string
+>>>>>>> origin/main
   remaining_loan_count: number
   seat_number: number
   student_number: string
@@ -51,6 +59,25 @@ function normalizeRentCode(value: string) {
   return normalizeBarcodeInput(value).toUpperCase()
 }
 
+<<<<<<< HEAD
+function getStudentRestrictionMessage(targetStudent: Student | null) {
+  if (!targetStudent) {
+    return ''
+  }
+
+  if (targetStudent.overdue_days > 0) {
+    return `연체된 학생입니다. ${targetStudent.overdue_days}일`
+  }
+
+  if (targetStudent.loan_ban_remaining_days > 0) {
+    return `대출 금지 기간입니다. ${targetStudent.loan_ban_remaining_days}일`
+  }
+
+  return ''
+}
+
+=======
+>>>>>>> origin/main
 export default function RentBookForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -70,6 +97,10 @@ export default function RentBookForm() {
   const [isLoadingStudent, setIsLoadingStudent] = useState(false)
   const [isLoadingBook, setIsLoadingBook] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+<<<<<<< HEAD
+  const studentRestrictionMessage = getStudentRestrictionMessage(student)
+=======
+>>>>>>> origin/main
 
   function getBorrowerDisplay(targetStudent: Student) {
     if (targetStudent.borrower_type === 'staff') {
@@ -228,6 +259,15 @@ export default function RentBookForm() {
       return
     }
 
+<<<<<<< HEAD
+    const restrictionMessage = getStudentRestrictionMessage(student)
+    if (restrictionMessage) {
+      setErrorMessage(restrictionMessage)
+      return
+    }
+
+=======
+>>>>>>> origin/main
     if (targetBook.available_copies <= 0) {
       setErrorMessage('이미 대여 중인 도서입니다.')
       return
@@ -398,11 +438,23 @@ export default function RentBookForm() {
               코드: {student.student_number} · 대여: {student.active_loan_count}/{student.loan_limit}권 · 남은 가능 권수:{' '}
               {student.remaining_loan_count}권
             </p>
+<<<<<<< HEAD
+            {studentRestrictionMessage ? (
+              <div className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                {studentRestrictionMessage}
+              </div>
+            ) : null}
+=======
+>>>>>>> origin/main
           </div>
         ) : null}
       </form>
 
+<<<<<<< HEAD
+      {student && !studentRestrictionMessage ? (
+=======
       {student ? (
+>>>>>>> origin/main
         <form onSubmit={handleBookSubmit} className="mb-4 rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
           <label htmlFor="book-code" className="mb-2 block text-sm font-medium text-gray-700">
             도서 바코드 (ISBN 또는 학교 도서 코드)

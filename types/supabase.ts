@@ -180,6 +180,10 @@ export type Database = {
           email: string | null
           grade: number
           id: string
+<<<<<<< HEAD
+          loan_banned_until: string | null
+=======
+>>>>>>> origin/main
           name: string
           seat_number: number
           student_number: string
@@ -191,6 +195,10 @@ export type Database = {
           email?: string | null
           grade: number
           id?: string
+<<<<<<< HEAD
+          loan_banned_until?: string | null
+=======
+>>>>>>> origin/main
           name: string
           seat_number: number
           student_number: string
@@ -202,6 +210,10 @@ export type Database = {
           email?: string | null
           grade?: number
           id?: string
+<<<<<<< HEAD
+          loan_banned_until?: string | null
+=======
+>>>>>>> origin/main
           name?: string
           seat_number?: number
           student_number?: string
@@ -234,6 +246,8 @@ export type Database = {
       }
     }
     Functions: {
+<<<<<<< HEAD
+=======
       create_public_loan: {
         Args: {
           input_book_id: string
@@ -252,6 +266,7 @@ export type Database = {
           student_name: string
         }[]
       }
+>>>>>>> origin/main
       get_returnable_loan_by_school_book_code: {
         Args: { input_school_book_code: string }
         Returns: {
@@ -267,6 +282,8 @@ export type Database = {
         Args: { check_user_id?: string | null }
         Returns: boolean
       }
+<<<<<<< HEAD
+=======
       lookup_student_for_loan: {
         Args: { input_student_number: string }
         Returns: {
@@ -283,11 +300,17 @@ export type Database = {
           student_number: string
         }[]
       }
+>>>>>>> origin/main
       return_loans_by_school_book_codes: {
         Args: { input_school_book_codes: string[] }
         Returns: {
           book_title: string
           loan_id: string
+<<<<<<< HEAD
+          loan_banned_until: string | null
+          overdue_days: number
+=======
+>>>>>>> origin/main
           returned_on: string
           school_book_code: string | null
           student_name: string
