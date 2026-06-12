@@ -22,8 +22,9 @@ const developers = [
     role: 'Backend',
     name: '김건우',
     icon: LibraryBig,
+    history:'개발 이력 :\n 無',
     description:
-      '',
+      '현재 부산산업학교 IT컨텐츠학과에 재학 중이며 프로그레밍을 \n 배워 가는 중입니다. 산업학교 도서 대여 서비스를 개발하며 \n 경험을 쌓아 나가고 있습니다.',
   },
 ]
 
