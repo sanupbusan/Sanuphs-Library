@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { BookOpen, Loader2, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { normalizeBarcodeInput } from '@/lib/barcode-input'
 
 type ReturnableLoan = {
   book_title: string
@@ -57,7 +58,7 @@ export default function ReturnBooksSection({ initialSchoolBookCode }: { initialS
   const [successMessage, setSuccessMessage] = useState('')
 
   async function addReturnableLoan(nextSchoolBookCode: string) {
-    const normalizedSchoolBookCode = nextSchoolBookCode.trim()
+    const normalizedSchoolBookCode = normalizeBarcodeInput(nextSchoolBookCode)
 
     if (!normalizedSchoolBookCode) {
       return
@@ -183,7 +184,7 @@ export default function ReturnBooksSection({ initialSchoolBookCode }: { initialS
             <input
               id="return-page-school-book-code"
               value={schoolBookCode}
-              onChange={(event) => setSchoolBookCode(event.target.value)}
+              onChange={(event) => setSchoolBookCode(normalizeBarcodeInput(event.target.value))}
               className="h-11 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
               placeholder="추가 반납할 학교 도서 코드"
               type="text"

@@ -53,6 +53,15 @@ npx supabase@2.105.0 db push
 
 초기 데이터는 Supabase SQL Editor, CSV import, 또는 운영용 import 스크립트로 별도 등록합니다. 마이그레이션과 seed 파일은 샘플 데이터를 생성하지 않습니다.
 
+## Annual loan reset
+
+`supabase/migrations/20260612100000_schedule_annual_loan_reset.sql`은 매년 1월 1일 00:00(KST)에 대여 기록을 초기화합니다.
+
+- Supabase의 `pg_cron`을 사용합니다.
+- Supabase cron은 UTC 기준으로 실행되므로 `0 15 31 12 *`에 예약합니다. 이는 한국시간 1월 1일 00:00입니다.
+- 실행 함수는 `public.reset_annual_loan_records()`입니다.
+- 초기화 시 `public.loans`의 모든 대여 기록을 삭제하고, 모든 도서의 `available_copies`를 `total_copies`로 맞춥니다.
+
 ## Deployment
 
 Vercel, Netlify, GitHub Actions 같은 배포 환경에는 다음 값을 secret/environment variable로 등록합니다.

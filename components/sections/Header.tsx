@@ -38,7 +38,7 @@ export default function Header({ className }: HeaderProps) {
 
     async function checkSession() {
       try {
-        const response = await fetch('/api/auth/admin/session', {
+        const response = await fetch('/api/auth/admin/session?optional=1', {
           cache: 'no-store',
         })
         const payload = (await response.json()) as SessionResponse

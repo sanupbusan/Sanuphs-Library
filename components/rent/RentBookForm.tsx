@@ -3,6 +3,7 @@
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { BookOpen, Loader2, ScanBarcode, UserCheck } from 'lucide-react'
+import { normalizeBarcodeInput } from '@/lib/barcode-input'
 
 type Student = {
   class_number: number
@@ -102,7 +103,7 @@ export default function RentBookForm() {
   }
 
   async function lookupBook(code = bookCode) {
-    const trimmed = code.trim()
+    const trimmed = normalizeBarcodeInput(code)
     if (!trimmed) {
       setErrorMessage('도서 코드를 입력해주세요.')
       return
@@ -266,7 +267,7 @@ export default function RentBookForm() {
                 id="book-code"
                 ref={bookInputRef}
                 value={bookCode}
-                onChange={(event) => setBookCode(event.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
+                onChange={(event) => setBookCode(normalizeBarcodeInput(event.target.value))}
                 className="h-11 w-full rounded-lg border border-gray-200 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
                 placeholder="도서 바코드 스캔"
                 type="text"
