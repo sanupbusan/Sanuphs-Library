@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Loader2, Search, Trash2 } from 'lucide-react'
+import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
 
 export type RemovableBook = {
   author: string
@@ -53,11 +54,11 @@ function normalize(value: string | null | undefined) {
 }
 
 function getBarcodeCandidate(value: string) {
-  return value.trim().replace(/\s+/g, '')
+  return normalizeBarcodeInput(value)
 }
 
 function getIsbnCandidate(value: string) {
-  return getBarcodeCandidate(value).replace(/[^0-9Xx]/g, '')
+  return normalizeIsbnInput(value)
 }
 
 function isLikelyBarcode(value: string) {
@@ -158,6 +159,7 @@ export default function AdminRemoveBookPanel({
   const isPanelLoading = isLoading || isFetching
   const filteredBooks = useMemo(() => {
     const keyword = query.trim().toLowerCase()
+    const barcodeKeyword = normalizeBarcodeInput(query).toLowerCase()
 
     if (!keyword) {
       return sourceBooks
@@ -170,7 +172,7 @@ export default function AdminRemoveBookPanel({
         book.publisher,
         book.isbn,
         book.school_book_code,
-      ].some((value) => normalize(value).includes(keyword))
+      ].some((value) => normalize(value).includes(keyword) || (!!barcodeKeyword && normalize(value).includes(barcodeKeyword)))
     )
   }, [query, sourceBooks])
 

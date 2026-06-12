@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+
 export default function Footer() {
   return (
     <footer className="border-t border-gray-100 bg-white">
@@ -9,11 +11,17 @@ export default function Footer() {
             <img src="/logo.png" alt="SanupHs Library" className="h-6 w-auto" />
           </div>
 
-          <p className="text-sm text-gray-500">
-            © 2026 IT contents. All rights reserved.
-          </p>
-
-
+          <div className="flex flex-col items-center gap-3 text-sm text-gray-500 sm:flex-row">
+            <p>
+              © 2026 IT contents. All rights reserved.
+            </p>
+            <Link
+              href="/dev"
+              className="font-medium text-gray-600 transition-colors hover:text-primary-600"
+            >
+              개발진 소개
+            </Link>
+          </div>
         </div>
       </div>
     </footer>

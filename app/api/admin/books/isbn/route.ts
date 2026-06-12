@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { normalizeIsbnInput } from '@/lib/barcode-input'
 import { adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
 
 export const dynamic = 'force-dynamic'
@@ -40,7 +41,7 @@ function getNationalLibraryApiUrl() {
 function getIsbnFromRequest(request: Request) {
   const url = new URL(request.url)
 
-  return cleanText(url.searchParams.get('isbn')).replace(/[^0-9Xx]/g, '')
+  return normalizeIsbnInput(cleanText(url.searchParams.get('isbn')))
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

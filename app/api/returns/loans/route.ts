@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
+import { normalizeBarcodeInput } from '@/lib/barcode-input'
 import type { Database } from '@/types/supabase'
 
 export const dynamic = 'force-dynamic'
@@ -10,7 +11,7 @@ type ReturnedLoan = Database['public']['Functions']['return_loans_by_school_book
 function getCode(request: Request) {
   const url = new URL(request.url)
 
-  return (url.searchParams.get('code') ?? '').trim()
+  return normalizeBarcodeInput(url.searchParams.get('code') ?? '')
 }
 
 export async function GET(request: Request) {

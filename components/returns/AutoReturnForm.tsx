@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { RotateCcw, ScanBarcode } from 'lucide-react'
+import { normalizeBarcodeInput } from '@/lib/barcode-input'
 
 type ReturnResponse = {
   data?: {
@@ -60,7 +61,7 @@ export default function AutoReturnForm() {
   }
 
   async function processReturn(code: string) {
-    const trimmed = code.trim()
+    const trimmed = normalizeBarcodeInput(code)
     if (!trimmed || isReturning) return
 
     setIsReturning(true)
@@ -100,7 +101,7 @@ export default function AutoReturnForm() {
       }
 
       if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
-        setBookCode((current) => current + event.key)
+        setBookCode((current) => normalizeBarcodeInput(current + event.key))
       }
     }
 
@@ -129,7 +130,7 @@ export default function AutoReturnForm() {
         <input
           ref={inputRef}
           value={bookCode}
-          onChange={(event) => setBookCode(event.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
+          onChange={(event) => setBookCode(normalizeBarcodeInput(event.target.value))}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault()

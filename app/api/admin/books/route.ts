@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
+import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,9 +23,9 @@ function getText(value: unknown) {
 function getCreateBookInput(body: CreateBookBody) {
   return {
     author: getText(body.author),
-    isbn: getText(body.isbn),
+    isbn: normalizeIsbnInput(getText(body.isbn)),
     publisher: getText(body.publisher),
-    schoolBookCode: getText(body.schoolBookCode),
+    schoolBookCode: normalizeBarcodeInput(getText(body.schoolBookCode)),
     title: getText(body.title),
   }
 }

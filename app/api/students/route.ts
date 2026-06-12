@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase'
+import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +25,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = createServerSupabaseClient()
+    const session = await requireAdminSession(request)
+    const supabase = session.supabase
     const { data, error } = await supabase
       .from('students')
       .select('id, student_number, name, grade, class_number, seat_number')
@@ -49,7 +50,13 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({ data })
-  } catch {
+  } catch (error) {
+    if (error instanceof AdminAuthError) {
+      return adminAuthErrorResponse(error)
+    }
+
+    console.error('Student fetch error:', error)
+
     return NextResponse.json(
       {
         error: {

@@ -29,6 +29,7 @@ import {
   type RecentLoan,
   type StudentLoanStat as StudentLoanStatRow,
 } from '@/lib/library-queries'
+import { normalizeBarcodeInput } from '@/lib/barcode-input'
 import { getBrowserSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 
@@ -795,7 +796,7 @@ export default function HeroWithDashboard() {
       }
 
       if (event.key === 'Enter') {
-        const buffer = barcodeBufferRef.current.trim()
+        const buffer = normalizeBarcodeInput(barcodeBufferRef.current)
         barcodeBufferRef.current = ''
         if (barcodeTimeoutRef.current) {
           clearTimeout(barcodeTimeoutRef.current)
@@ -812,7 +813,7 @@ export default function HeroWithDashboard() {
       }
 
       if (event.key.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
-        barcodeBufferRef.current += event.key
+        barcodeBufferRef.current = normalizeBarcodeInput(barcodeBufferRef.current + event.key)
         if (barcodeTimeoutRef.current) {
           clearTimeout(barcodeTimeoutRef.current)
         }

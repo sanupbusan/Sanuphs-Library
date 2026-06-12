@@ -3,6 +3,7 @@
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Barcode, BookPlus, Loader2, Save, Search } from 'lucide-react'
+import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
 
 type CreateBookResponse = {
   error?: {
@@ -41,11 +42,11 @@ const initialFormState: BookFormState = {
 }
 
 function sanitizeIsbn(value: string) {
-  return value.replace(/[^0-9Xx]/g, '')
+  return normalizeIsbnInput(value)
 }
 
 function sanitizeSchoolBookCode(value: string) {
-  return value.replace(/[^0-9A-Za-z-]/g, '')
+  return normalizeBarcodeInput(value)
 }
 
 function trimFormState(form: BookFormState) {
