@@ -12,6 +12,14 @@ type LoginResponse = {
   }
 }
 
+type SessionResponse = {
+  data?: {
+    user: {
+      loginId: string
+    }
+  } | null
+}
+
 export default function AdminLoginForm() {
   const router = useRouter()
   const [loginId, setLoginId] = useState('')
@@ -24,11 +32,12 @@ export default function AdminLoginForm() {
 
     async function redirectIfLoggedIn() {
       try {
-        const response = await fetch('/api/auth/admin/session', {
+        const response = await fetch('/api/auth/admin/session?optional=1', {
           cache: 'no-store',
         })
+        const payload = (await response.json()) as SessionResponse
 
-        if (!didCancel && response.ok) {
+        if (!didCancel && response.ok && payload.data?.user.loginId) {
           router.replace('/admin')
         }
       } catch {

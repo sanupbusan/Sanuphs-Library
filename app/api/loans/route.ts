@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase'
+import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,9 +13,10 @@ function getText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const supabase = createServerSupabaseClient()
+    const session = await requireAdminSession(request)
+    const supabase = session.supabase
     const { data, error } = await supabase
       .from('loans')
       .select('id, book_id, student_id, borrowed_on, due_on, returned_on, status, books(title, school_book_code), students(name, student_number)')
@@ -34,7 +35,13 @@ export async function GET() {
         },
       }
     )
-  } catch {
+  } catch (error) {
+    if (error instanceof AdminAuthError) {
+      return adminAuthErrorResponse(error)
+    }
+
+    console.error('Loan fetch error:', error)
+
     return NextResponse.json(
       {
         error: {
@@ -80,7 +87,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const supabase = createServerSupabaseClient()
+    const session = await requireAdminSession(request)
+    const supabase = session.supabase
 
     const { data: book, error: bookError } = await supabase
       .from('books')
@@ -180,6 +188,10 @@ export async function POST(request: Request) {
       { status: 201 }
     )
   } catch (error) {
+    if (error instanceof AdminAuthError) {
+      return adminAuthErrorResponse(error)
+    }
+
     console.error('Loan creation error:', error)
     return NextResponse.json(
       {

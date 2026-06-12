@@ -3,6 +3,7 @@
 import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, RotateCcw } from 'lucide-react'
+import { normalizeBarcodeInput } from '@/lib/barcode-input'
 
 type ReturnableLoanResponse = {
   data?: {
@@ -23,7 +24,7 @@ export default function MainReturnCodeForm() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    const nextSchoolBookCode = schoolBookCode.trim()
+    const nextSchoolBookCode = normalizeBarcodeInput(schoolBookCode)
 
     if (!nextSchoolBookCode || isChecking) {
       return
@@ -62,7 +63,7 @@ export default function MainReturnCodeForm() {
         <input
           id="return-school-book-code"
           value={schoolBookCode}
-          onChange={(event) => setSchoolBookCode(event.target.value)}
+          onChange={(event) => setSchoolBookCode(normalizeBarcodeInput(event.target.value))}
           className="h-11 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
           placeholder="학교 도서 코드 입력"
           type="text"

@@ -13,6 +13,14 @@ type Loan = {
   students: { name: string; student_number: string } | null
 }
 
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
 export default function LoanManager() {
   const [loans, setLoans] = useState<Loan[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -41,6 +49,7 @@ export default function LoanManager() {
 
   async function updateLoanStatus(loanId: string, status: 'rented' | 'returned') {
     try {
+      setErrorMessage('')
       const response = await fetch(`/api/loans/${loanId}`, {
         body: JSON.stringify({ status }),
         headers: { 'Content-Type': 'application/json' },
@@ -60,10 +69,11 @@ export default function LoanManager() {
 
   async function extendDueDate(loanId: string) {
     try {
+      setErrorMessage('')
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const newDueDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
-      const dueOnString = newDueDate.toISOString().slice(0, 10)
+      const dueOnString = formatLocalDate(newDueDate)
 
       const response = await fetch(`/api/loans/${loanId}`, {
         body: JSON.stringify({ dueOn: dueOnString }),
@@ -82,15 +92,19 @@ export default function LoanManager() {
     }
   }
 
-  async function forceOverdue(loanId: string) {
+  async function forceOverdue(loan: Loan) {
     try {
+      setErrorMessage('')
       const yesterday = new Date()
       yesterday.setHours(0, 0, 0, 0)
       yesterday.setDate(yesterday.getDate() - 1)
-      const dueOnString = yesterday.toISOString().slice(0, 10)
+      const overdueDateString = formatLocalDate(yesterday)
 
-      const response = await fetch(`/api/loans/${loanId}`, {
-        body: JSON.stringify({ dueOn: dueOnString }),
+      const response = await fetch(`/api/loans/${loan.id}`, {
+        body: JSON.stringify({
+          borrowedOn: overdueDateString,
+          dueOn: overdueDateString,
+        }),
         headers: { 'Content-Type': 'application/json' },
         method: 'PATCH',
       })
@@ -261,7 +275,7 @@ export default function LoanManager() {
                               <button
                                 className="inline-flex h-8 items-center gap-1 rounded-lg bg-red-50 px-2.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100"
                                 onClick={() => {
-                                  void forceOverdue(loan.id)
+                                  void forceOverdue(loan)
                                 }}
                                 type="button"
                               >

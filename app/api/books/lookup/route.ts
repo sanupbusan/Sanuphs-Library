@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase'
+import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
+import { normalizeBarcodeInput } from '@/lib/barcode-input'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,7 +11,7 @@ function getCode(request: Request) {
 }
 
 function normalizeCode(value: string) {
-  return value.replace(/\s+/g, '').replace(/[^0-9A-Za-z-]/g, '')
+  return normalizeBarcodeInput(value)
 }
 
 function isLikelyIsbn(value: string) {
@@ -35,9 +36,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = createServerSupabaseClient()
+    const session = await requireAdminSession(request)
+    const supabase = session.supabase
     const normalizedCode = normalizeCode(code)
-    const isIsbn = isLikelyIsbn(code)
+    const isIsbn = isLikelyIsbn(normalizedCode)
 
     let query = supabase
       .from('books')
@@ -68,7 +70,13 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({ data })
-  } catch {
+  } catch (error) {
+    if (error instanceof AdminAuthError) {
+      return adminAuthErrorResponse(error)
+    }
+
+    console.error('Book lookup error:', error)
+
     return NextResponse.json(
       {
         error: {
