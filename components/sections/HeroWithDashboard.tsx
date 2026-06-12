@@ -122,6 +122,26 @@ function formatDate(value: string) {
   return dateFormatter.format(date)
 }
 
+function formatKoreanDate(value: string) {
+  const [year, month, day] = value.split('-')
+
+  if (!year || !month || !day) {
+    return value
+  }
+
+  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
+}
+
+function getReturnSuccessMessage(data: { bookTitle: string; loanBannedUntil: string | null; overdueDays: number; studentName: string }) {
+  if (data.overdueDays > 0 && data.loanBannedUntil) {
+    return `"${data.bookTitle}" 반납 완료. ${data.studentName} 학생은 연체 ${data.overdueDays}일로 ${formatKoreanDate(
+      data.loanBannedUntil
+    )}까지 대출할 수 없습니다.`
+  }
+
+  return `"${data.bookTitle}" 반납 완료`
+}
+
 function getOverdueDays(dueOn: string) {
   const dueDate = new Date(`${dueOn}T00:00:00`)
   const today = new Date()
@@ -738,14 +758,17 @@ export default function HeroWithDashboard() {
   async function processReturn(code: string) {
     try {
       const response = await fetch(`/api/returns/loans?code=${encodeURIComponent(code)}`)
-      const payload = await response.json() as { data?: { bookTitle: string }; error?: { message: string } }
+      const payload = await response.json() as {
+        data?: { bookTitle: string; loanBannedUntil: string | null; overdueDays: number; studentName: string }
+        error?: { message: string }
+      }
 
       if (!response.ok) {
         throw new Error(payload.error?.message ?? '반납 처리에 실패했습니다.')
       }
 
       if (payload.data) {
-        addToast(`"${payload.data.bookTitle}" 반납 완료`, 'success')
+        addToast(getReturnSuccessMessage(payload.data), 'success')
         await loadDashboardData()
       }
     } catch (error) {
