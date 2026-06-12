@@ -1,15 +1,21 @@
 'use client'
 
-import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { type CompositionEvent, type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { BookOpen, Loader2, ScanBarcode, UserCheck } from 'lucide-react'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { getBorrowerLookupCodeFromScannedValue, normalizeBorrowerLookupCode } from '@/lib/loan-limits'
 
 type Student = {
+  active_loan_count: number
+  borrower_label: string
+  borrower_type: 'staff' | 'student'
   class_number: number
   grade: number
   id: string
+  loan_limit: number
   name: string
+  remaining_loan_count: number
   seat_number: number
   student_number: string
 }
@@ -41,11 +47,19 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
   }
 }
 
+function normalizeRentCode(value: string) {
+  return normalizeBarcodeInput(value).toUpperCase()
+}
+
 export default function RentBookForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const studentInputRef = useRef<HTMLInputElement>(null)
   const bookInputRef = useRef<HTMLInputElement>(null)
+  const isStudentInputComposingRef = useRef(false)
+  const isBookInputComposingRef = useRef(false)
+  const lastParamStudentNumberRef = useRef('')
+  const paramStudentNumber = normalizeBorrowerLookupCode(normalizeRentCode(searchParams.get('studentNumber') ?? ''))
 
   const [studentNumber, setStudentNumber] = useState('')
   const [student, setStudent] = useState<Student | null>(null)
@@ -57,22 +71,78 @@ export default function RentBookForm() {
   const [isLoadingBook, setIsLoadingBook] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  function getBorrowerDisplay(targetStudent: Student) {
+    if (targetStudent.borrower_type === 'staff') {
+      return `${targetStudent.borrower_label} ${targetStudent.seat_number}번`
+    }
+
+    return `${targetStudent.grade}-${targetStudent.class_number}반 ${targetStudent.seat_number}번`
+  }
+
+  function focusBookInput() {
+    window.setTimeout(() => {
+      const input = bookInputRef.current
+      input?.focus()
+      input?.select()
+    }, 0)
+  }
+
+  function focusStudentInput() {
+    window.setTimeout(() => {
+      const input = studentInputRef.current
+      input?.focus()
+      input?.select()
+    }, 0)
+  }
+
+  function clearStudentSelection() {
+    setStudent(null)
+    setStudentNumber('')
+    setBook(null)
+    setBookCode('')
+    setErrorMessage('')
+    setSuccessMessage('')
+    focusStudentInput()
+  }
+
+  function isComposingKeyEvent(event: KeyboardEvent<HTMLInputElement>) {
+    return event.nativeEvent.isComposing || event.key === 'Process'
+  }
+
+  function handleStudentCodeChange(value: string) {
+    setStudentNumber(isStudentInputComposingRef.current ? value : normalizeRentCode(value))
+  }
+
+  function handleBookCodeChange(value: string) {
+    setBookCode(isBookInputComposingRef.current ? value : normalizeRentCode(value))
+  }
+
+  function handleStudentCompositionEnd(event: CompositionEvent<HTMLInputElement>) {
+    isStudentInputComposingRef.current = false
+    setStudentNumber(normalizeRentCode(event.currentTarget.value))
+  }
+
+  function handleBookCompositionEnd(event: CompositionEvent<HTMLInputElement>) {
+    isBookInputComposingRef.current = false
+    setBookCode(normalizeRentCode(event.currentTarget.value))
+  }
+
   useEffect(() => {
-    const paramStudentNumber = searchParams.get('studentNumber') ?? ''
-    if (paramStudentNumber) {
+    if (paramStudentNumber && lastParamStudentNumberRef.current !== paramStudentNumber) {
+      lastParamStudentNumberRef.current = paramStudentNumber
       setStudentNumber(paramStudentNumber)
       void lookupStudent(paramStudentNumber)
     }
-  }, [searchParams])
+  }, [paramStudentNumber])
 
   useEffect(() => {
-    if (student && bookInputRef.current) {
-      bookInputRef.current.focus()
+    if (student) {
+      focusBookInput()
     }
   }, [student])
 
-  async function lookupStudent(number = studentNumber) {
-    const trimmed = number.trim()
+  async function lookupStudent(number = studentNumber, options: { clearCurrentStudent?: boolean } = {}) {
+    const trimmed = normalizeBorrowerLookupCode(normalizeRentCode(number))
     if (!trimmed) {
       setErrorMessage('학번을 입력해주세요.')
       return
@@ -81,8 +151,11 @@ export default function RentBookForm() {
     setIsLoadingStudent(true)
     setErrorMessage('')
     setSuccessMessage('')
-    setStudent(null)
     setBook(null)
+    setBookCode('')
+    if (options.clearCurrentStudent) {
+      setStudent(null)
+    }
 
     try {
       const response = await fetch(`/api/students?studentNumber=${encodeURIComponent(trimmed)}`)
@@ -93,7 +166,9 @@ export default function RentBookForm() {
       }
 
       if (payload.data) {
+        setStudentNumber(payload.data.student_number)
         setStudent(payload.data)
+        focusBookInput()
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '학생 정보 조회에 실패했습니다.')
@@ -103,9 +178,18 @@ export default function RentBookForm() {
   }
 
   async function lookupBook(code = bookCode) {
-    const trimmed = normalizeBarcodeInput(code)
+    const trimmed = normalizeRentCode(code)
     if (!trimmed) {
       setErrorMessage('도서 코드를 입력해주세요.')
+      return
+    }
+
+    const borrowerCode = getBorrowerLookupCodeFromScannedValue(trimmed)
+    if (borrowerCode) {
+      setStudentNumber(borrowerCode)
+      setBookCode('')
+      setBook(null)
+      await lookupStudent(borrowerCode, { clearCurrentStudent: true })
       return
     }
 
@@ -164,21 +248,42 @@ export default function RentBookForm() {
         },
         method: 'POST',
       })
-      const payload = await readJsonResponse<ApiResponse<{ bookTitle: string; dueOn: string; loanId: string; studentName: string }>>(response)
+      const payload = await readJsonResponse<ApiResponse<{
+        activeLoanCount: number
+        bookTitle: string
+        borrowerLabel: string
+        borrowerType: 'staff' | 'student'
+        dueOn: string
+        loanId: string
+        loanLimit: number
+        remainingLoanCount: number
+        studentName: string
+      }>>(response)
 
       if (!response.ok) {
         throw new Error(payload.error?.message ?? '대여 처리에 실패했습니다.')
       }
 
       if (payload.data) {
+        const loanResult = payload.data
         setSuccessMessage(
-          `${payload.data.studentName} 학생이 "${payload.data.bookTitle}" 도서를 대여했습니다. (반납 예정일: ${payload.data.dueOn})`
+          `${loanResult.studentName} ${loanResult.borrowerLabel}이 "${loanResult.bookTitle}" 도서를 대여했습니다. (반납 예정일: ${loanResult.dueOn})`
+        )
+        setStudent((current) =>
+          current
+            ? {
+                ...current,
+                active_loan_count: loanResult.activeLoanCount,
+                borrower_label: loanResult.borrowerLabel,
+                borrower_type: loanResult.borrowerType,
+                loan_limit: loanResult.loanLimit,
+                remaining_loan_count: loanResult.remainingLoanCount,
+              }
+            : current
         )
         setBook(null)
         setBookCode('')
-        setTimeout(() => {
-          bookInputRef.current?.focus()
-        }, 0)
+        focusBookInput()
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '대여 처리에 실패했습니다.')
@@ -189,17 +294,38 @@ export default function RentBookForm() {
 
   function handleStudentKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== 'Enter') return
+    if (isComposingKeyEvent(event)) return
     event.preventDefault()
+    if (student) {
+      focusBookInput()
+      return
+    }
     void lookupStudent()
+  }
+
+  function handleBookKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Enter' && isComposingKeyEvent(event)) {
+      event.preventDefault()
+    }
   }
 
   function handleStudentSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (isStudentInputComposingRef.current) {
+      return
+    }
+    if (student) {
+      focusBookInput()
+      return
+    }
     void lookupStudent()
   }
 
   function handleBookSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (isBookInputComposingRef.current) {
+      return
+    }
     void lookupBook()
   }
 
@@ -226,17 +352,26 @@ export default function RentBookForm() {
               id="student-number"
               ref={studentInputRef}
               value={studentNumber}
-              onChange={(event) => setStudentNumber(event.target.value)}
+              onChange={(event) => handleStudentCodeChange(event.target.value)}
+              onCompositionEnd={handleStudentCompositionEnd}
+              onCompositionStart={() => {
+                isStudentInputComposingRef.current = true
+              }}
+              onFocus={() => {
+                if (student) {
+                  focusBookInput()
+                }
+              }}
               onKeyDown={handleStudentKeyDown}
               className="h-11 w-full rounded-lg border border-gray-200 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-              inputMode="numeric"
-              placeholder="학생 바코드 스캔"
+              placeholder="학생/교직원 바코드 스캔"
+              readOnly={Boolean(student)}
               type="text"
             />
           </div>
           <button
             className="inline-flex h-11 items-center justify-center rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
-            disabled={isLoadingStudent}
+            disabled={isLoadingStudent || Boolean(student)}
             type="submit"
           >
             {isLoadingStudent ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
@@ -246,11 +381,23 @@ export default function RentBookForm() {
 
         {student ? (
           <div className="mt-4 rounded-lg bg-green-50 p-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-green-800">
-              <UserCheck className="h-4 w-4" />
-              {student.name} ({student.grade}-{student.class_number}반 {student.seat_number}번)
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-green-800">
+                <UserCheck className="h-4 w-4" />
+                {student.name} ({getBorrowerDisplay(student)})
+              </div>
+              <button
+                className="rounded-md px-2 py-1 text-xs font-semibold text-green-700 transition-colors hover:bg-green-100"
+                onClick={clearStudentSelection}
+                type="button"
+              >
+                변경
+              </button>
             </div>
-            <p className="mt-1 text-xs text-green-600">학번: {student.student_number}</p>
+            <p className="mt-1 text-xs text-green-600">
+              코드: {student.student_number} · 대여: {student.active_loan_count}/{student.loan_limit}권 · 남은 가능 권수:{' '}
+              {student.remaining_loan_count}권
+            </p>
           </div>
         ) : null}
       </form>
@@ -267,7 +414,12 @@ export default function RentBookForm() {
                 id="book-code"
                 ref={bookInputRef}
                 value={bookCode}
-                onChange={(event) => setBookCode(normalizeBarcodeInput(event.target.value))}
+                onChange={(event) => handleBookCodeChange(event.target.value)}
+                onCompositionEnd={handleBookCompositionEnd}
+                onCompositionStart={() => {
+                  isBookInputComposingRef.current = true
+                }}
+                onKeyDown={handleBookKeyDown}
                 className="h-11 w-full rounded-lg border border-gray-200 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
                 placeholder="도서 바코드 스캔"
                 type="text"

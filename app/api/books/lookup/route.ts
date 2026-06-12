@@ -11,7 +11,7 @@ function getCode(request: Request) {
 }
 
 function normalizeCode(value: string) {
-  return normalizeBarcodeInput(value)
+  return normalizeBarcodeInput(value).toUpperCase()
 }
 
 function isLikelyIsbn(value: string) {

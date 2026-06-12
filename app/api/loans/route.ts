@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
+import { getBorrowerLoanLimit } from '@/lib/loan-limits'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,29 +14,19 @@ function getText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function getTodayDateKey() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    day: '2-digit',
-    month: '2-digit',
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-  }).formatToParts(new Date())
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
-
-  return `${values.year}-${values.month}-${values.day}`
+function isLoanLimitError(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === '23514' &&
+    'message' in error &&
+    typeof error.message === 'string' &&
+    error.message.includes('최대')
+  )
 }
 
-function formatKoreanDate(value: string) {
-  const [year, month, day] = value.split('-')
-
-  if (!year || !month || !day) {
-    return value
-  }
-
-  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
-}
-
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await requireAdminSession(request)
     const supabase = session.supabase
@@ -144,7 +135,7 @@ export async function POST(request: Request) {
 
     const { data: student, error: studentError } = await supabase
       .from('students')
-      .select('id, name, loan_banned_until')
+      .select('id, name, student_number, class_number')
       .eq('id', studentId)
       .single()
 
@@ -228,6 +219,31 @@ export async function POST(request: Request) {
       )
     }
 
+    const { count: activeLoanCount, error: activeLoanCountError } = await supabase
+      .from('loans')
+      .select('id', { count: 'exact', head: true })
+      .eq('student_id', studentId)
+      .eq('status', 'rented')
+
+    if (activeLoanCountError) {
+      throw activeLoanCountError
+    }
+
+    const currentActiveLoanCount = activeLoanCount ?? 0
+    const { borrowerLabel, borrowerType, loanLimit } = getBorrowerLoanLimit(student)
+
+    if (currentActiveLoanCount >= loanLimit) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'LOAN_LIMIT_EXCEEDED',
+            message: `${borrowerLabel}은 최대 ${loanLimit}권까지 대여할 수 있습니다. 현재 ${currentActiveLoanCount}권 대여 중입니다.`,
+          },
+        },
+        { status: 409 }
+      )
+    }
+
     const { data: loan, error: loanError } = await supabase
       .from('loans')
       .insert({
@@ -246,8 +262,13 @@ export async function POST(request: Request) {
       {
         data: {
           bookTitle: book.title,
+          activeLoanCount: currentActiveLoanCount + 1,
+          borrowerLabel,
+          borrowerType,
           dueOn: loan.due_on,
+          loanLimit,
           loanId: loan.id,
+          remainingLoanCount: Math.max(loanLimit - currentActiveLoanCount - 1, 0),
           studentName: student.name,
         },
       },
@@ -256,6 +277,18 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof AdminAuthError) {
       return adminAuthErrorResponse(error)
+    }
+
+    if (isLoanLimitError(error)) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'LOAN_LIMIT_EXCEEDED',
+            message: error instanceof Error ? error.message : '대여 가능 권수를 초과했습니다.',
+          },
+        },
+        { status: 409 }
+      )
     }
 
     console.error('Loan creation error:', error)

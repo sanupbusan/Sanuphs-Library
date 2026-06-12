@@ -5,13 +5,11 @@ import { RotateCcw, ScanBarcode } from 'lucide-react'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
 
 type ReturnResponse = {
-  data?: {
-    bookTitle: string
-    loanBannedUntil: string | null
-    overdueDays: number
-    returnedOn: string
-    studentName: string
-  }
+  data?: Array<{
+    book_title: string
+    returned_on: string
+    student_name: string
+  }>
   error?: {
     code: string
     message: string
@@ -67,15 +65,23 @@ export default function AutoReturnForm() {
     setIsReturning(true)
 
     try {
-      const response = await fetch(`/api/returns/loans?code=${encodeURIComponent(trimmed)}`)
+      const response = await fetch('/api/returns/loans', {
+        body: JSON.stringify({ code: trimmed }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      })
       const payload = (await response.json()) as ReturnResponse
 
       if (!response.ok) {
         throw new Error(payload.error?.message ?? '반납 처리에 실패했습니다.')
       }
 
-      if (payload.data) {
-        addToast(getReturnSuccessMessage(payload.data), 'success')
+      const returnedLoan = payload.data?.[0]
+
+      if (returnedLoan) {
+        addToast(`"${returnedLoan.book_title}" 반납 완료`, 'success')
       }
     } catch (error) {
       addToast(error instanceof Error ? error.message : '반납 처리에 실패했습니다.', 'error')

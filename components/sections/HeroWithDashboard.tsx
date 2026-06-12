@@ -758,18 +758,24 @@ export default function HeroWithDashboard() {
 
   async function processReturn(code: string) {
     try {
-      const response = await fetch(`/api/returns/loans?code=${encodeURIComponent(code)}`)
-      const payload = await response.json() as {
-        data?: { bookTitle: string; loanBannedUntil: string | null; overdueDays: number; studentName: string }
-        error?: { message: string }
-      }
+      const normalizedCode = normalizeBarcodeInput(code)
+      const response = await fetch('/api/returns/loans', {
+        body: JSON.stringify({ code: normalizedCode }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      })
+      const payload = await response.json() as { data?: Array<{ book_title: string }>; error?: { message: string } }
 
       if (!response.ok) {
         throw new Error(payload.error?.message ?? '반납 처리에 실패했습니다.')
       }
 
-      if (payload.data) {
-        addToast(getReturnSuccessMessage(payload.data), 'success')
+      const returnedLoan = payload.data?.[0]
+
+      if (returnedLoan) {
+        addToast(`"${returnedLoan.book_title}" 반납 완료`, 'success')
         await loadDashboardData()
       }
     } catch (error) {
