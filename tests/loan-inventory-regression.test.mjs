@@ -47,3 +47,27 @@ test('public return function migration leaves availability updates to the trigge
   assert.match(source, /update public\.loans/i)
   assert.doesNotMatch(source, /update public\.books/i)
 })
+
+test('overdue return migration stores student loan ban through overdue days', async () => {
+  const source = await readProjectFile('supabase/migrations/20260612010000_add_student_loan_bans.sql')
+
+  assert.match(source, /add column if not exists loan_banned_until date/i)
+  assert.match(source, /drop function if exists public\.return_loans_by_school_book_codes\(text\[\]\)/i)
+  assert.match(source, /update public\.students/i)
+  assert.match(source, /updated_loans\.returned_on - updated_loans\.due_on/i)
+  assert.match(source, /new_loan_banned_until/i)
+  assert.match(source, /loan_banned_until/i)
+})
+
+test('loan creation blocks overdue and currently banned students before inserting', async () => {
+  const source = await readProjectFile('app/api/loans/route.ts')
+  const insertIndex = source.indexOf('.insert({')
+
+  assert.notEqual(insertIndex, -1, 'loan insert should exist')
+  assert.match(source, /select\('id, name, loan_banned_until'\)/)
+  assert.match(source, /STUDENT_LOAN_BANNED/)
+  assert.match(source, /STUDENT_HAS_OVERDUE_LOAN/)
+  assert.match(source, /\.lt\('due_on', today\)/)
+  assert.ok(source.indexOf('STUDENT_LOAN_BANNED') < insertIndex, 'ban check must happen before loan insert')
+  assert.ok(source.indexOf('STUDENT_HAS_OVERDUE_LOAN') < insertIndex, 'overdue check must happen before loan insert')
+})

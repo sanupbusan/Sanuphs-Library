@@ -117,6 +117,8 @@ export async function GET(request: Request) {
       {
         data: {
           bookTitle: returnedLoan.book_title,
+          loanBannedUntil: returnedLoan.loan_banned_until,
+          overdueDays: returnedLoan.overdue_days,
           returnedOn: returnedLoan.returned_on,
           studentName: returnedLoan.student_name,
         },

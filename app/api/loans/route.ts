@@ -13,7 +13,29 @@ function getText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-export async function GET(request: Request) {
+function getTodayDateKey() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function formatKoreanDate(value: string) {
+  const [year, month, day] = value.split('-')
+
+  if (!year || !month || !day) {
+    return value
+  }
+
+  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
+}
+
+export async function GET() {
   try {
     const session = await requireAdminSession(request)
     const supabase = session.supabase
@@ -122,7 +144,7 @@ export async function POST(request: Request) {
 
     const { data: student, error: studentError } = await supabase
       .from('students')
-      .select('id, name')
+      .select('id, name, loan_banned_until')
       .eq('id', studentId)
       .single()
 
@@ -135,6 +157,50 @@ export async function POST(request: Request) {
           },
         },
         { status: 404 }
+      )
+    }
+
+    const today = getTodayDateKey()
+
+    if (student.loan_banned_until && student.loan_banned_until >= today) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'STUDENT_LOAN_BANNED',
+            message: `연체로 인한 대출 금지 기간입니다. ${student.name} 학생은 ${formatKoreanDate(
+              student.loan_banned_until
+            )}까지 대여할 수 없습니다.`,
+          },
+        },
+        { status: 409 }
+      )
+    }
+
+    const { data: overdueLoan, error: overdueLoanError } = await supabase
+      .from('loans')
+      .select('id, due_on')
+      .eq('student_id', studentId)
+      .eq('status', 'rented')
+      .lt('due_on', today)
+      .order('due_on', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (overdueLoanError) {
+      throw overdueLoanError
+    }
+
+    if (overdueLoan) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'STUDENT_HAS_OVERDUE_LOAN',
+            message: `반납 예정일(${formatKoreanDate(
+              overdueLoan.due_on
+            )})이 지난 도서가 있어 대여할 수 없습니다. 먼저 연체 도서를 반납해주세요.`,
+          },
+        },
+        { status: 409 }
       )
     }
 

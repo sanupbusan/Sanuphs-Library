@@ -7,6 +7,8 @@ import { normalizeBarcodeInput } from '@/lib/barcode-input'
 type ReturnResponse = {
   data?: {
     bookTitle: string
+    loanBannedUntil: string | null
+    overdueDays: number
     returnedOn: string
     studentName: string
   }
@@ -23,6 +25,26 @@ type Toast = {
 }
 
 let toastIdCounter = 0
+
+function formatKoreanDate(value: string) {
+  const [year, month, day] = value.split('-')
+
+  if (!year || !month || !day) {
+    return value
+  }
+
+  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
+}
+
+function getReturnSuccessMessage(data: NonNullable<ReturnResponse['data']>) {
+  if (data.overdueDays > 0 && data.loanBannedUntil) {
+    return `"${data.bookTitle}" 반납 완료. ${data.studentName} 학생은 연체 ${data.overdueDays}일로 ${formatKoreanDate(
+      data.loanBannedUntil
+    )}까지 대출할 수 없습니다.`
+  }
+
+  return `"${data.bookTitle}" 반납 완료`
+}
 
 export default function AutoReturnForm() {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -53,7 +75,7 @@ export default function AutoReturnForm() {
       }
 
       if (payload.data) {
-        addToast(`"${payload.data.bookTitle}" 반납 완료`, 'success')
+        addToast(getReturnSuccessMessage(payload.data), 'success')
       }
     } catch (error) {
       addToast(error instanceof Error ? error.message : '반납 처리에 실패했습니다.', 'error')

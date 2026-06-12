@@ -180,6 +180,7 @@ export type Database = {
           email: string | null
           grade: number
           id: string
+          loan_banned_until: string | null
           name: string
           seat_number: number
           student_number: string
@@ -191,6 +192,7 @@ export type Database = {
           email?: string | null
           grade: number
           id?: string
+          loan_banned_until?: string | null
           name: string
           seat_number: number
           student_number: string
@@ -202,6 +204,7 @@ export type Database = {
           email?: string | null
           grade?: number
           id?: string
+          loan_banned_until?: string | null
           name?: string
           seat_number?: number
           student_number?: string
@@ -254,6 +257,8 @@ export type Database = {
         Returns: {
           book_title: string
           loan_id: string
+          loan_banned_until: string | null
+          overdue_days: number
           returned_on: string
           school_book_code: string | null
           student_name: string
