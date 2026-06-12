@@ -739,15 +739,23 @@ export default function HeroWithDashboard() {
   async function processReturn(code: string) {
     try {
       const normalizedCode = normalizeBarcodeInput(code)
-      const response = await fetch(`/api/returns/loans?code=${encodeURIComponent(normalizedCode)}`)
-      const payload = await response.json() as { data?: { bookTitle: string }; error?: { message: string } }
+      const response = await fetch('/api/returns/loans', {
+        body: JSON.stringify({ code: normalizedCode }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      })
+      const payload = await response.json() as { data?: Array<{ book_title: string }>; error?: { message: string } }
 
       if (!response.ok) {
         throw new Error(payload.error?.message ?? '반납 처리에 실패했습니다.')
       }
 
-      if (payload.data) {
-        addToast(`"${payload.data.bookTitle}" 반납 완료`, 'success')
+      const returnedLoan = payload.data?.[0]
+
+      if (returnedLoan) {
+        addToast(`"${returnedLoan.book_title}" 반납 완료`, 'success')
         await loadDashboardData()
       }
     } catch (error) {

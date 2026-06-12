@@ -79,6 +79,7 @@ export default function AdminAddBookForm() {
   const [isLookingUpIsbn, setIsLookingUpIsbn] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [lookupMessage, setLookupMessage] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
 
   useEffect(() => {
     let didCancel = false
@@ -143,10 +144,19 @@ export default function AdminAddBookForm() {
           ? sanitizeSchoolBookCode(value)
           : value
 
+    setSuccessMessage('')
     setForm((current) => ({
       ...current,
       [field]: nextValue,
     }))
+  }
+
+  function focusIsbnInput() {
+    window.setTimeout(() => {
+      const input = isbnInputRef.current
+      input?.focus()
+      input?.select()
+    }, 0)
   }
 
   async function submitBook(nextForm = form) {
@@ -159,6 +169,7 @@ export default function AdminAddBookForm() {
 
     setIsSubmitting(true)
     setErrorMessage('')
+    setSuccessMessage('')
 
     try {
       const response = await fetch('/api/admin/books', {
@@ -179,8 +190,14 @@ export default function AdminAddBookForm() {
         throw new Error(payload.error?.message ?? '책 등록에 실패했습니다.')
       }
 
-      router.push('/admin/books')
+      setForm(initialFormState)
+      setLookupMessage('')
+      setSuccessMessage('책이 등록되었습니다. 다음 ISBN 바코드를 스캔해주세요.')
+      if (searchParams.toString()) {
+        router.replace('/admin/add_books', { scroll: false })
+      }
       router.refresh()
+      focusIsbnInput()
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '책 등록에 실패했습니다.')
     } finally {
@@ -198,6 +215,7 @@ export default function AdminAddBookForm() {
 
     setErrorMessage('')
     setLookupMessage('')
+    setSuccessMessage('')
     setIsLookingUpIsbn(true)
 
     try {
@@ -413,6 +431,12 @@ export default function AdminAddBookForm() {
           {errorMessage ? (
             <div className="mt-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
               {errorMessage}
+            </div>
+          ) : null}
+
+          {successMessage ? (
+            <div className="mt-4 rounded-lg border border-green-100 bg-green-50 px-3 py-2 text-sm text-green-700">
+              {successMessage}
             </div>
           ) : null}
 
