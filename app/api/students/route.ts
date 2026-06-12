@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server'
-import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import { getBorrowerLoanLimit, normalizeBorrowerLookupCode } from '@/lib/loan-limits'
+import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
+import { normalizeBorrowerLookupCode } from '@/lib/loan-limits'
+import type { Database } from '@/types/supabase'
 
 export const dynamic = 'force-dynamic'
+
+type LoanStudent = Database['public']['Functions']['lookup_student_for_loan']['Returns'][number]
 
 function getStudentNumber(request: Request) {
   const url = new URL(request.url)
@@ -12,6 +15,18 @@ function getStudentNumber(request: Request) {
 }
 
 export async function GET(request: Request) {
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'SUPABASE_NOT_CONFIGURED',
+          message: 'Supabase 환경변수가 설정되지 않았습니다.',
+        },
+      },
+      { status: 503 }
+    )
+  }
+
   const studentNumber = getStudentNumber(request)
 
   if (!studentNumber) {
@@ -27,19 +42,18 @@ export async function GET(request: Request) {
   }
 
   try {
-    const session = await requireAdminSession(request)
-    const supabase = session.supabase
-    const { data, error } = await supabase
-      .from('students')
-      .select('id, student_number, name, grade, class_number, seat_number')
-      .eq('student_number', studentNumber)
-      .maybeSingle()
+    const supabase = createServerSupabaseClient()
+    const { data, error } = await supabase.rpc('lookup_student_for_loan', {
+      input_student_number: studentNumber,
+    })
 
     if (error) {
       throw error
     }
 
-    if (!data) {
+    const student = (data ?? [])[0] as LoanStudent | undefined
+
+    if (!student) {
       return NextResponse.json(
         {
           error: {
@@ -51,34 +65,8 @@ export async function GET(request: Request) {
       )
     }
 
-    const { count, error: countError } = await supabase
-      .from('loans')
-      .select('id', { count: 'exact', head: true })
-      .eq('student_id', data.id)
-      .eq('status', 'rented')
-
-    if (countError) {
-      throw countError
-    }
-
-    const activeLoanCount = count ?? 0
-    const { borrowerLabel, borrowerType, loanLimit } = getBorrowerLoanLimit(data)
-
-    return NextResponse.json({
-      data: {
-        ...data,
-        active_loan_count: activeLoanCount,
-        borrower_label: borrowerLabel,
-        borrower_type: borrowerType,
-        loan_limit: loanLimit,
-        remaining_loan_count: Math.max(loanLimit - activeLoanCount, 0),
-      },
-    })
+    return NextResponse.json({ data: student })
   } catch (error) {
-    if (error instanceof AdminAuthError) {
-      return adminAuthErrorResponse(error)
-    }
-
     console.error('Student fetch error:', error)
 
     return NextResponse.json(

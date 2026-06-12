@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
 import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
-import { getBorrowerLoanLimit } from '@/lib/loan-limits'
+import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
+import type { Database } from '@/types/supabase'
 
 export const dynamic = 'force-dynamic'
+
+type CreatedPublicLoan = Database['public']['Functions']['create_public_loan']['Returns'][number]
 
 type CreateLoanBody = {
   bookId?: unknown
@@ -24,6 +27,78 @@ function isLoanLimitError(error: unknown) {
     typeof error.message === 'string' &&
     error.message.includes('최대')
   )
+}
+
+function getLoanCreationErrorResponse(error: unknown) {
+  const message =
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+      ? error.message
+      : ''
+
+  if (message.includes('BOOK_NOT_FOUND')) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'BOOK_NOT_FOUND',
+          message: '해당 도서를 찾을 수 없습니다.',
+        },
+      },
+      { status: 404 }
+    )
+  }
+
+  if (message.includes('STUDENT_NOT_FOUND')) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'STUDENT_NOT_FOUND',
+          message: '해당 학생을 찾을 수 없습니다.',
+        },
+      },
+      { status: 404 }
+    )
+  }
+
+  if (message.includes('NO_AVAILABLE_COPIES')) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'NO_AVAILABLE_COPIES',
+          message: '이미 대여 중인 도서입니다.',
+        },
+      },
+      { status: 409 }
+    )
+  }
+
+  if (message.includes('ALREADY_RENTED')) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'ALREADY_RENTED',
+          message: '이미 대여 중인 도서입니다.',
+        },
+      },
+      { status: 409 }
+    )
+  }
+
+  if (isLoanLimitError(error)) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'LOAN_LIMIT_EXCEEDED',
+          message: error instanceof Error ? error.message : '대여 가능 권수를 초과했습니다.',
+        },
+      },
+      { status: 409 }
+    )
+  }
+
+  return null
 }
 
 export async function GET(request: Request) {
@@ -68,6 +143,18 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'SUPABASE_NOT_CONFIGURED',
+          message: 'Supabase 환경변수가 설정되지 않았습니다.',
+        },
+      },
+      { status: 503 }
+    )
+  }
+
   let body: CreateLoanBody
 
   try {
@@ -100,151 +187,58 @@ export async function POST(request: Request) {
   }
 
   try {
-    const session = await requireAdminSession(request)
-    const supabase = session.supabase
+    const supabase = createServerSupabaseClient()
+    const { data, error } = await supabase.rpc('create_public_loan', {
+      input_book_id: bookId,
+      input_notes: getText(body.notes) || null,
+      input_student_id: studentId,
+    })
 
-    const { data: book, error: bookError } = await supabase
-      .from('books')
-      .select('id, title, available_copies')
-      .eq('id', bookId)
-      .single()
+    if (error) {
+      const errorResponse = getLoanCreationErrorResponse(error)
 
-    if (bookError || !book) {
+      if (errorResponse) {
+        return errorResponse
+      }
+
+      throw error
+    }
+
+    const loan = (data ?? [])[0] as CreatedPublicLoan | undefined
+
+    if (!loan) {
       return NextResponse.json(
         {
           error: {
-            code: 'BOOK_NOT_FOUND',
-            message: '해당 도서를 찾을 수 없습니다.',
-          },
-        },
-        { status: 404 }
-      )
-    }
-
-    if (book.available_copies <= 0) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'NO_AVAILABLE_COPIES',
-            message: '이미 대여 중인 도서입니다.',
-          },
-        },
-        { status: 409 }
-      )
-    }
-
-    const { data: student, error: studentError } = await supabase
-      .from('students')
-      .select('id, name, student_number, class_number')
-      .eq('id', studentId)
-      .single()
-
-    if (studentError || !student) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'STUDENT_NOT_FOUND',
-            message: '해당 학생을 찾을 수 없습니다.',
-          },
-        },
-        { status: 404 }
-      )
-    }
-
-    const { data: existingLoan, error: existingLoanError } = await supabase
-      .from('loans')
-      .select('id')
-      .eq('book_id', bookId)
-      .eq('student_id', studentId)
-      .eq('status', 'rented')
-      .maybeSingle()
-
-    if (existingLoanError) {
-      throw existingLoanError
-    }
-
-    if (existingLoan) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'ALREADY_RENTED',
-            message: '이미 대여 중인 도서입니다.',
+            code: 'CREATE_LOAN_FAILED',
+            message: '대여 처리 결과를 확인하지 못했습니다. 다시 시도해주세요.',
           },
         },
         { status: 409 }
       )
-    }
-
-    const { count: activeLoanCount, error: activeLoanCountError } = await supabase
-      .from('loans')
-      .select('id', { count: 'exact', head: true })
-      .eq('student_id', studentId)
-      .eq('status', 'rented')
-
-    if (activeLoanCountError) {
-      throw activeLoanCountError
-    }
-
-    const currentActiveLoanCount = activeLoanCount ?? 0
-    const { borrowerLabel, borrowerType, loanLimit } = getBorrowerLoanLimit(student)
-
-    if (currentActiveLoanCount >= loanLimit) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'LOAN_LIMIT_EXCEEDED',
-            message: `${borrowerLabel}은 최대 ${loanLimit}권까지 대여할 수 있습니다. 현재 ${currentActiveLoanCount}권 대여 중입니다.`,
-          },
-        },
-        { status: 409 }
-      )
-    }
-
-    const { data: loan, error: loanError } = await supabase
-      .from('loans')
-      .insert({
-        book_id: bookId,
-        student_id: studentId,
-        notes: getText(body.notes) || null,
-      })
-      .select('id, book_id, student_id, borrowed_on, due_on, status')
-      .single()
-
-    if (loanError) {
-      throw loanError
     }
 
     return NextResponse.json(
       {
         data: {
-          bookTitle: book.title,
-          activeLoanCount: currentActiveLoanCount + 1,
-          borrowerLabel,
-          borrowerType,
+          bookTitle: loan.book_title,
+          activeLoanCount: loan.active_loan_count,
+          borrowerLabel: loan.borrower_label,
+          borrowerType: loan.borrower_type,
           dueOn: loan.due_on,
-          loanLimit,
-          loanId: loan.id,
-          remainingLoanCount: Math.max(loanLimit - currentActiveLoanCount - 1, 0),
-          studentName: student.name,
+          loanLimit: loan.loan_limit,
+          loanId: loan.loan_id,
+          remainingLoanCount: loan.remaining_loan_count,
+          studentName: loan.student_name,
         },
       },
       { status: 201 }
     )
   } catch (error) {
-    if (error instanceof AdminAuthError) {
-      return adminAuthErrorResponse(error)
-    }
+    const errorResponse = getLoanCreationErrorResponse(error)
 
-    if (isLoanLimitError(error)) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'LOAN_LIMIT_EXCEEDED',
-            message: error instanceof Error ? error.message : '대여 가능 권수를 초과했습니다.',
-          },
-        },
-        { status: 409 }
-      )
+    if (errorResponse) {
+      return errorResponse
     }
 
     console.error('Loan creation error:', error)
