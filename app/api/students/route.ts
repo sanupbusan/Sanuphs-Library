@@ -1,16 +1,29 @@
 import { NextResponse } from 'next/server'
+<<<<<<< HEAD
 import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
 import { getBorrowerLoanLimit, normalizeBorrowerLookupCode } from '@/lib/loan-limits'
 
 export const dynamic = 'force-dynamic'
 
+=======
+import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
+import { normalizeBorrowerLookupCode } from '@/lib/loan-limits'
+import type { Database } from '@/types/supabase'
+
+export const dynamic = 'force-dynamic'
+
+type LoanStudent = Database['public']['Functions']['lookup_student_for_loan']['Returns'][number]
+
+>>>>>>> origin/main
 function getStudentNumber(request: Request) {
   const url = new URL(request.url)
 
   return normalizeBorrowerLookupCode(normalizeBarcodeInput(url.searchParams.get('studentNumber') ?? ''))
 }
 
+<<<<<<< HEAD
 function getTodayDateKey() {
   const parts = new Intl.DateTimeFormat('en-CA', {
     day: '2-digit',
@@ -42,6 +55,21 @@ function getLoanBanRemainingDays(loanBannedUntil: string | null, today: string) 
 }
 
 export async function GET(request: Request) {
+=======
+export async function GET(request: Request) {
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'SUPABASE_NOT_CONFIGURED',
+          message: 'Supabase 환경변수가 설정되지 않았습니다.',
+        },
+      },
+      { status: 503 }
+    )
+  }
+
+>>>>>>> origin/main
   const studentNumber = getStudentNumber(request)
 
   if (!studentNumber) {
@@ -57,6 +85,7 @@ export async function GET(request: Request) {
   }
 
   try {
+<<<<<<< HEAD
     const session = await requireAdminSession(request)
     const supabase = session.supabase
     const { data, error } = await supabase
@@ -64,12 +93,24 @@ export async function GET(request: Request) {
       .select('id, student_number, name, grade, class_number, seat_number, loan_banned_until')
       .eq('student_number', studentNumber)
       .maybeSingle()
+=======
+    const supabase = createServerSupabaseClient()
+    const { data, error } = await supabase.rpc('lookup_student_for_loan', {
+      input_student_number: studentNumber,
+    })
+>>>>>>> origin/main
 
     if (error) {
       throw error
     }
 
+<<<<<<< HEAD
     if (!data) {
+=======
+    const student = (data ?? [])[0] as LoanStudent | undefined
+
+    if (!student) {
+>>>>>>> origin/main
       return NextResponse.json(
         {
           error: {
@@ -81,6 +122,7 @@ export async function GET(request: Request) {
       )
     }
 
+<<<<<<< HEAD
     const { count, error: countError } = await supabase
       .from('loans')
       .select('id', { count: 'exact', head: true })
@@ -128,6 +170,10 @@ export async function GET(request: Request) {
       return adminAuthErrorResponse(error)
     }
 
+=======
+    return NextResponse.json({ data: student })
+  } catch (error) {
+>>>>>>> origin/main
     console.error('Student fetch error:', error)
 
     return NextResponse.json(

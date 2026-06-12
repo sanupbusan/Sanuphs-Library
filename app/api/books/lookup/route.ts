@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server'
+<<<<<<< HEAD
 import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
+=======
+import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
+>>>>>>> origin/main
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +26,21 @@ function isLikelyIsbn(value: string) {
 }
 
 export async function GET(request: Request) {
+<<<<<<< HEAD
+=======
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'SUPABASE_NOT_CONFIGURED',
+          message: 'Supabase 환경변수가 설정되지 않았습니다.',
+        },
+      },
+      { status: 503 }
+    )
+  }
+
+>>>>>>> origin/main
   const code = getCode(request)
 
   if (!code) {
@@ -36,8 +56,12 @@ export async function GET(request: Request) {
   }
 
   try {
+<<<<<<< HEAD
     const session = await requireAdminSession(request)
     const supabase = session.supabase
+=======
+    const supabase = createServerSupabaseClient()
+>>>>>>> origin/main
     const normalizedCode = normalizeCode(code)
     const isIsbn = isLikelyIsbn(normalizedCode)
 
@@ -71,10 +95,13 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ data })
   } catch (error) {
+<<<<<<< HEAD
     if (error instanceof AdminAuthError) {
       return adminAuthErrorResponse(error)
     }
 
+=======
+>>>>>>> origin/main
     console.error('Book lookup error:', error)
 
     return NextResponse.json(

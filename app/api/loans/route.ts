@@ -1,9 +1,19 @@
 import { NextResponse } from 'next/server'
 import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
+<<<<<<< HEAD
 import { getBorrowerLoanLimit } from '@/lib/loan-limits'
 
 export const dynamic = 'force-dynamic'
 
+=======
+import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
+import type { Database } from '@/types/supabase'
+
+export const dynamic = 'force-dynamic'
+
+type CreatedPublicLoan = Database['public']['Functions']['create_public_loan']['Returns'][number]
+
+>>>>>>> origin/main
 type CreateLoanBody = {
   bookId?: unknown
   studentId?: unknown
@@ -26,6 +36,7 @@ function isLoanLimitError(error: unknown) {
   )
 }
 
+<<<<<<< HEAD
 function getTodayDateKey() {
   const parts = new Intl.DateTimeFormat('en-CA', {
     day: '2-digit',
@@ -46,6 +57,78 @@ function formatKoreanDate(value: string) {
   }
 
   return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
+=======
+function getLoanCreationErrorResponse(error: unknown) {
+  const message =
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+      ? error.message
+      : ''
+
+  if (message.includes('BOOK_NOT_FOUND')) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'BOOK_NOT_FOUND',
+          message: '해당 도서를 찾을 수 없습니다.',
+        },
+      },
+      { status: 404 }
+    )
+  }
+
+  if (message.includes('STUDENT_NOT_FOUND')) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'STUDENT_NOT_FOUND',
+          message: '해당 학생을 찾을 수 없습니다.',
+        },
+      },
+      { status: 404 }
+    )
+  }
+
+  if (message.includes('NO_AVAILABLE_COPIES')) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'NO_AVAILABLE_COPIES',
+          message: '이미 대여 중인 도서입니다.',
+        },
+      },
+      { status: 409 }
+    )
+  }
+
+  if (message.includes('ALREADY_RENTED')) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'ALREADY_RENTED',
+          message: '이미 대여 중인 도서입니다.',
+        },
+      },
+      { status: 409 }
+    )
+  }
+
+  if (isLoanLimitError(error)) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'LOAN_LIMIT_EXCEEDED',
+          message: error instanceof Error ? error.message : '대여 가능 권수를 초과했습니다.',
+        },
+      },
+      { status: 409 }
+    )
+  }
+
+  return null
+>>>>>>> origin/main
 }
 
 export async function GET(request: Request) {
@@ -90,6 +173,21 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+<<<<<<< HEAD
+=======
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'SUPABASE_NOT_CONFIGURED',
+          message: 'Supabase 환경변수가 설정되지 않았습니다.',
+        },
+      },
+      { status: 503 }
+    )
+  }
+
+>>>>>>> origin/main
   let body: CreateLoanBody
 
   try {
@@ -122,6 +220,7 @@ export async function POST(request: Request) {
   }
 
   try {
+<<<<<<< HEAD
     const session = await requireAdminSession(request)
     const supabase = session.supabase
 
@@ -149,12 +248,40 @@ export async function POST(request: Request) {
           error: {
             code: 'NO_AVAILABLE_COPIES',
             message: '이미 대여 중인 도서입니다.',
+=======
+    const supabase = createServerSupabaseClient()
+    const { data, error } = await supabase.rpc('create_public_loan', {
+      input_book_id: bookId,
+      input_notes: getText(body.notes) || null,
+      input_student_id: studentId,
+    })
+
+    if (error) {
+      const errorResponse = getLoanCreationErrorResponse(error)
+
+      if (errorResponse) {
+        return errorResponse
+      }
+
+      throw error
+    }
+
+    const loan = (data ?? [])[0] as CreatedPublicLoan | undefined
+
+    if (!loan) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'CREATE_LOAN_FAILED',
+            message: '대여 처리 결과를 확인하지 못했습니다. 다시 시도해주세요.',
+>>>>>>> origin/main
           },
         },
         { status: 409 }
       )
     }
 
+<<<<<<< HEAD
     const { data: student, error: studentError } = await supabase
       .from('students')
       .select('id, name, student_number, class_number, loan_banned_until')
@@ -292,11 +419,26 @@ export async function POST(request: Request) {
           loanId: loan.id,
           remainingLoanCount: Math.max(loanLimit - currentActiveLoanCount - 1, 0),
           studentName: student.name,
+=======
+    return NextResponse.json(
+      {
+        data: {
+          bookTitle: loan.book_title,
+          activeLoanCount: loan.active_loan_count,
+          borrowerLabel: loan.borrower_label,
+          borrowerType: loan.borrower_type,
+          dueOn: loan.due_on,
+          loanLimit: loan.loan_limit,
+          loanId: loan.loan_id,
+          remainingLoanCount: loan.remaining_loan_count,
+          studentName: loan.student_name,
+>>>>>>> origin/main
         },
       },
       { status: 201 }
     )
   } catch (error) {
+<<<<<<< HEAD
     if (error instanceof AdminAuthError) {
       return adminAuthErrorResponse(error)
     }
@@ -311,6 +453,12 @@ export async function POST(request: Request) {
         },
         { status: 409 }
       )
+=======
+    const errorResponse = getLoanCreationErrorResponse(error)
+
+    if (errorResponse) {
+      return errorResponse
+>>>>>>> origin/main
     }
 
     console.error('Loan creation error:', error)

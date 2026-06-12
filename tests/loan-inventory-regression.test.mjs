@@ -47,6 +47,7 @@ test('public return function migration leaves availability updates to the trigge
   assert.match(source, /update public\.loans/i)
   assert.doesNotMatch(source, /update public\.books/i)
 })
+<<<<<<< HEAD
 
 test('overdue return migration stores student loan ban through overdue days', async () => {
   const source = await readProjectFile('supabase/migrations/20260612010000_add_student_loan_bans.sql')
@@ -86,3 +87,5 @@ test('student barcode lookup exposes active overdue days in the rent form', asyn
   assert.match(rentFormSource, /대출 금지 기간입니다\.\s*\$\{targetStudent\.loan_ban_remaining_days\}일/)
   assert.match(rentFormSource, /student && !studentRestrictionMessage/)
 })
+=======
+>>>>>>> origin/main

@@ -123,6 +123,7 @@ function formatDate(value: string) {
   return dateFormatter.format(date)
 }
 
+<<<<<<< HEAD
 function formatKoreanDate(value: string) {
   const [year, month, day] = value.split('-')
 
@@ -143,6 +144,8 @@ function getReturnSuccessMessage(data: { bookTitle: string; loanBannedUntil: str
   return `"${data.bookTitle}" 반납 완료`
 }
 
+=======
+>>>>>>> origin/main
 function getOverdueDays(dueOn: string) {
   const dueDate = new Date(`${dueOn}T00:00:00`)
   const today = new Date()
