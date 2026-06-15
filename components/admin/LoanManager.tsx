@@ -1,9 +1,13 @@
 'use client'
 
 import { AlertCircle, ClipboardList, Clock, Loader2, RotateCcw, Search } from 'lucide-react'
-import { isLoanOverdue, useLoanManager } from '@/components/admin/useLoanManager'
+import { isLoanOverdue, useLoanManager, type Loan } from '@/components/admin/useLoanManager'
 
-export default function LoanManager() {
+type LoanManagerProps = {
+  initialLoans: Loan[]
+}
+
+export default function LoanManager({ initialLoans }: LoanManagerProps) {
   const {
     errorMessage,
     extendDueDate,
@@ -13,7 +17,7 @@ export default function LoanManager() {
     searchQuery,
     setSearchQuery,
     updateLoanStatus,
-  } = useLoanManager()
+  } = useLoanManager(initialLoans)
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">

@@ -7,9 +7,10 @@ import {
   type TypedSupabaseClient,
 } from '@/lib/supabase'
 import { ApiRouteError, jsonError } from '@/lib/api-route'
+import { ADMIN_ACCESS_TOKEN_COOKIE, AdminAuthError } from '@/lib/admin-auth-shared'
 import type { Database } from '@/types/supabase'
 
-export const ADMIN_ACCESS_TOKEN_COOKIE = 'bb_admin_access_token'
+export { ADMIN_ACCESS_TOKEN_COOKIE, AdminAuthError } from '@/lib/admin-auth-shared'
 
 type AdminRole = Database['public']['Enums']['admin_role']
 
@@ -22,16 +23,9 @@ export type AdminSession = {
   }
 }
 
-export class AdminAuthError extends Error {
-  code: string
-  status: number
-
-  constructor(status: number, code: string, message: string) {
-    super(message)
-    this.name = 'AdminAuthError'
-    this.status = status
-    this.code = code
-  }
+export type SerializedAdminSession = {
+  role: AdminRole
+  user: AdminSession['user']
 }
 
 const cookieOptions = {
@@ -91,14 +85,14 @@ export function adminAuthErrorResponse(error: unknown) {
   return jsonError('ADMIN_AUTH_FAILED', '관리자 인증 확인에 실패했습니다.', 500)
 }
 
-export function serializeAdminSession(session: AdminSession) {
+export function serializeAdminSession(session: AdminSession): SerializedAdminSession {
   return {
     role: session.role,
     user: session.user,
   }
 }
 
-export async function requireAdminSession(request: Request): Promise<AdminSession> {
+export async function createAdminSessionFromAccessToken(accessToken: string): Promise<AdminSession> {
   if (!isSupabaseConfigured()) {
     throw new AdminAuthError(
       503,
@@ -107,7 +101,6 @@ export async function requireAdminSession(request: Request): Promise<AdminSessio
     )
   }
 
-  const accessToken = getAccessTokenFromRequest(request)
   if (!accessToken) {
     throw new AdminAuthError(401, 'UNAUTHENTICATED', '로그인이 필요합니다.')
   }
@@ -145,4 +138,8 @@ export async function requireAdminSession(request: Request): Promise<AdminSessio
       loginId: adminUser.login_id,
     },
   }
+}
+
+export async function requireAdminSession(request: Request): Promise<AdminSession> {
+  return createAdminSessionFromAccessToken(getAccessTokenFromRequest(request))
 }

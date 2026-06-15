@@ -1,18 +1,14 @@
 'use client'
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { AlertTriangle, Loader2, Search, Trash2 } from 'lucide-react'
+import { deleteBookAction } from '@/app/admin/books/actions'
 import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
-import { readJsonResponse } from '@/lib/api-client'
 import { displayValue } from '@/lib/display'
-import type { ApiResponse, RemovableBook } from '@/types/library'
-
-type BooksResponse = ApiResponse<RemovableBook[]>
-type DeleteBookResponse = ApiResponse<Pick<RemovableBook, 'id' | 'title'>>
+import type { RemovableBook } from '@/types/library'
 
 type AdminRemoveBookPanelProps = {
-  books?: RemovableBook[]
+  books: RemovableBook[]
   isLoading?: boolean
   onBookDeleted?: (bookId: string) => void
 }
@@ -58,74 +54,26 @@ export default function AdminRemoveBookPanel({
   isLoading = false,
   onBookDeleted,
 }: AdminRemoveBookPanelProps) {
-  const router = useRouter()
-  const [loadedBooks, setLoadedBooks] = useState<RemovableBook[]>([])
+  const [localBooks, setLocalBooks] = useState<RemovableBook[]>(books)
   const [query, setQuery] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
-  const [isFetching, setIsFetching] = useState(books === undefined)
   const [deletingBookId, setDeletingBookId] = useState<string | null>(null)
 
   useEffect(() => {
-    if (books !== undefined) {
-      return
-    }
+    setLocalBooks(books)
+  }, [books])
 
-    let didCancel = false
-
-    async function loadBooks() {
-      setIsFetching(true)
-      setErrorMessage('')
-
-      try {
-        const response = await fetch('/api/admin/books', {
-          cache: 'no-store',
-        })
-        const payload = await readJsonResponse<BooksResponse>(response)
-
-        if (didCancel) {
-          return
-        }
-
-        if (response.status === 401 || response.status === 403) {
-          router.replace('/admin/login')
-          return
-        }
-
-        if (!response.ok) {
-          throw new Error(payload.error?.message ?? '도서 목록을 불러오지 못했습니다.')
-        }
-
-        setLoadedBooks(payload.data ?? [])
-      } catch (error) {
-        if (!didCancel) {
-          setErrorMessage(error instanceof Error ? error.message : '도서 목록을 불러오지 못했습니다.')
-        }
-      } finally {
-        if (!didCancel) {
-          setIsFetching(false)
-        }
-      }
-    }
-
-    void loadBooks()
-
-    return () => {
-      didCancel = true
-    }
-  }, [books, router])
-
-  const sourceBooks = books ?? loadedBooks
-  const isPanelLoading = isLoading || isFetching
+  const isPanelLoading = isLoading
   const filteredBooks = useMemo(() => {
     const keyword = query.trim().toLowerCase()
     const barcodeKeyword = normalizeBarcodeInput(query).toLowerCase()
 
     if (!keyword) {
-      return sourceBooks
+      return localBooks
     }
 
-    return sourceBooks.filter((book) =>
+    return localBooks.filter((book) =>
       [
         book.title,
         book.author,
@@ -134,7 +82,7 @@ export default function AdminRemoveBookPanel({
         book.school_book_code,
       ].some((value) => normalize(value).includes(keyword) || (!!barcodeKeyword && normalize(value).includes(barcodeKeyword)))
     )
-  }, [query, sourceBooks])
+  }, [query, localBooks])
 
   async function deleteBook(book: RemovableBook) {
     const confirmed = window.confirm(`"${book.title}" 도서를 제거할까요? 이 작업은 되돌릴 수 없습니다.`)
@@ -148,24 +96,15 @@ export default function AdminRemoveBookPanel({
     setSuccessMessage('')
 
     try {
-      const params = new URLSearchParams({ id: book.id })
-      const response = await fetch(`/api/admin/books?${params.toString()}`, {
-        method: 'DELETE',
-      })
-      const payload = await readJsonResponse<DeleteBookResponse>(response)
+      const result = await deleteBookAction(book.id)
 
-      if (response.status === 401 || response.status === 403) {
-        router.replace('/admin/login')
-        return
+      if (result.error) {
+        throw new Error(result.error.message)
       }
 
-      if (!response.ok) {
-        throw new Error(payload.error?.message ?? '도서 제거에 실패했습니다.')
-      }
-
-      setLoadedBooks((current) => current.filter((item) => item.id !== book.id))
+      setLocalBooks((current) => current.filter((item) => item.id !== book.id))
       onBookDeleted?.(book.id)
-      setSuccessMessage(`"${payload.data?.title ?? book.title}" 도서를 제거했습니다.`)
+      setSuccessMessage(`"${result.data?.title ?? book.title}" 도서를 제거했습니다.`)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '도서 제거에 실패했습니다.')
     } finally {
