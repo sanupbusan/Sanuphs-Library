@@ -110,6 +110,8 @@ components/
     AdminOverdueManager.tsx
     AdminRemoveBookPanel.tsx
     LoanManager.tsx
+    useAdminAddBookForm.ts
+    useLoanManager.ts
   books/
     BookSearchSection.tsx
   dashboard/
@@ -125,6 +127,7 @@ components/
     StatCard.tsx
   rent/
     RentBookForm.tsx
+    useRentBookForm.ts
   returns/
     AutoReturnForm.tsx
     MainReturnCodeForm.tsx
@@ -146,8 +149,11 @@ hooks/
   useDashboardBarcodeListener.ts
 lib/
   admin-auth.ts
+  api-client.ts
+  api-route.ts
   barcode-input.ts
   dashboard-data.ts
+  display.ts
   library-queries.ts
   loan-limits.ts
   loan-restrictions.ts
@@ -184,6 +190,7 @@ tests/
   loan-inventory-regression.test.mjs
 types/
   index.ts
+  library.ts
   supabase.ts
 .env.example
 .gitignore
@@ -200,6 +207,505 @@ tsconfig.json
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="components/admin/useAdminAddBookForm.ts">
+'use client'
+
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
+import { readJsonResponse } from '@/lib/api-client'
+import type { ApiResponse, IsbnLookupResult } from '@/types/library'
+
+type CreateBookResponse = ApiResponse<unknown>
+type LookupBookResponse = ApiResponse<IsbnLookupResult>
+
+type BookFormState = {
+  author: string
+  isbn: string
+  publisher: string
+  schoolBookCode: string
+  title: string
+}
+
+type Step = 'isbn' | 'info' | 'code'
+
+const initialFormState: BookFormState = {
+  author: '',
+  isbn: '',
+  publisher: '',
+  schoolBookCode: '',
+  title: '',
+}
+
+function sanitizeIsbn(value: string) {
+  return normalizeIsbnInput(value)
+}
+
+function sanitizeSchoolBookCode(value: string) {
+  return normalizeBarcodeInput(value)
+}
+
+function trimFormState(form: BookFormState) {
+  return {
+    author: form.author.trim(),
+    isbn: form.isbn.trim(),
+    publisher: form.publisher.trim(),
+    schoolBookCode: form.schoolBookCode.trim(),
+    title: form.title.trim(),
+  }
+}
+
+export function useAdminAddBookForm() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [form, setForm] = useState<BookFormState>(initialFormState)
+  const [activeStep, setActiveStep] = useState<Step>('isbn')
+  const [errorMessage, setErrorMessage] = useState('')
+  const [infoMessage, setInfoMessage] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
+  const [isCheckingSession, setIsCheckingSession] = useState(true)
+  const [isLookingUpIsbn, setIsLookingUpIsbn] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const isbnInputRef = useRef<HTMLInputElement>(null)
+  const schoolBookCodeInputRef = useRef<HTMLInputElement>(null)
+
+  const isInfoComplete = useMemo(() => {
+    const trimmed = trimFormState(form)
+
+    return Boolean(trimmed.title && trimmed.author && trimmed.publisher)
+  }, [form])
+
+  function focusIsbnInput() {
+    window.setTimeout(() => isbnInputRef.current?.focus(), 0)
+  }
+
+  function focusSchoolBookCodeInput() {
+    window.setTimeout(() => schoolBookCodeInputRef.current?.focus(), 0)
+  }
+
+  function clearMessages() {
+    setErrorMessage('')
+    setInfoMessage('')
+    setSuccessMessage('')
+  }
+
+  function updateField(field: keyof BookFormState, value: string) {
+    const nextValue =
+      field === 'isbn'
+        ? sanitizeIsbn(value)
+        : field === 'schoolBookCode'
+          ? sanitizeSchoolBookCode(value)
+          : value
+
+    setSuccessMessage('')
+    setForm((current) => ({
+      ...current,
+      [field]: nextValue,
+    }))
+  }
+
+  async function submitBook(nextForm = form) {
+    const input = trimFormState(nextForm)
+
+    if (!input.isbn || !input.schoolBookCode || !input.title || !input.author || !input.publisher) {
+      setErrorMessage('책 이름, 저자, 출판사, ISBN 코드, 학교 내 도서 코드를 모두 입력해주세요.')
+      return
+    }
+
+    setIsSubmitting(true)
+    clearMessages()
+
+    try {
+      const response = await fetch('/api/admin/books', {
+        body: JSON.stringify(input),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      })
+      const payload = await readJsonResponse<CreateBookResponse>(response)
+
+      if (response.status === 401 || response.status === 403) {
+        router.replace('/admin/login')
+        return
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.error?.message ?? '책 등록에 실패했습니다.')
+      }
+
+      setForm(initialFormState)
+      setActiveStep('isbn')
+      setSuccessMessage('책이 등록되었습니다. 다음 ISBN 바코드를 스캔해주세요.')
+
+      if (searchParams.toString()) {
+        router.replace('/admin/add_books', { scroll: false })
+      }
+
+      router.refresh()
+      focusIsbnInput()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '책 등록에 실패했습니다.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function lookupIsbn(nextIsbn = form.isbn) {
+    const isbn = sanitizeIsbn(nextIsbn.trim())
+
+    if (!isbn) {
+      setErrorMessage('ISBN 코드를 입력해주세요.')
+      setInfoMessage('')
+      return
+    }
+
+    clearMessages()
+    setIsLookingUpIsbn(true)
+
+    try {
+      const params = new URLSearchParams({ isbn })
+      let response: Response
+
+      try {
+        response = await fetch(`/api/admin/books/isbn?${params.toString()}`, {
+          cache: 'no-store',
+        })
+      } catch {
+        throw new Error('ISBN 조회 API에 연결하지 못했습니다. 개발 서버가 실행 중인지 확인해주세요.')
+      }
+
+      const payload = await readJsonResponse<LookupBookResponse>(response)
+
+      if (response.status === 401 || response.status === 403) {
+        router.replace('/admin/login')
+        return
+      }
+
+      if (response.status === 404) {
+        setForm((current) => ({
+          ...current,
+          isbn,
+        }))
+        setInfoMessage(payload.error?.message ?? 'ISBN 정보를 찾지 못했습니다. 책 정보를 직접 입력해주세요.')
+        setActiveStep('info')
+        return
+      }
+
+      if (!response.ok || !payload.data) {
+        throw new Error(payload.error?.message ?? 'ISBN 정보 조회에 실패했습니다.')
+      }
+
+      const book = payload.data
+
+      setForm((current) => ({
+        ...current,
+        author: book.author || current.author,
+        isbn: book.isbn || isbn,
+        publisher: book.publisher || current.publisher,
+        title: book.title || current.title,
+      }))
+      setInfoMessage('ISBN 정보를 불러왔습니다. 내용을 확인하고 필요하면 수정해주세요.')
+      setActiveStep('info')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'ISBN 정보 조회에 실패했습니다.')
+    } finally {
+      setIsLookingUpIsbn(false)
+    }
+  }
+
+  function handleIsbnEnter() {
+    void lookupIsbn()
+  }
+
+  function handleSchoolBookCodeEnter() {
+    const nextForm = trimFormState(form)
+
+    if (!isInfoComplete) {
+      setErrorMessage('책 이름, 저자, 출판사를 먼저 입력해주세요.')
+      setActiveStep('info')
+      return
+    }
+
+    void submitBook(nextForm)
+  }
+
+  function moveToCodeStep() {
+    if (!isInfoComplete) {
+      setErrorMessage('책 이름, 저자, 출판사를 모두 입력해주세요.')
+      return
+    }
+
+    clearMessages()
+    setActiveStep('code')
+    focusSchoolBookCodeInput()
+  }
+
+  function handleReset() {
+    setForm(initialFormState)
+    setActiveStep('isbn')
+    clearMessages()
+    focusIsbnInput()
+  }
+
+  function handleCancel() {
+    router.push('/admin/books')
+  }
+
+  useEffect(() => {
+    let didCancel = false
+
+    async function checkSession() {
+      try {
+        const response = await fetch('/api/auth/admin/session', {
+          cache: 'no-store',
+        })
+
+        if (!didCancel && (response.status === 401 || response.status === 403)) {
+          router.replace('/admin/login')
+          return
+        }
+
+        if (!didCancel) {
+          setIsCheckingSession(false)
+        }
+      } catch {
+        if (!didCancel) {
+          setErrorMessage('세션 확인에 실패했습니다.')
+          setIsCheckingSession(false)
+        }
+      }
+    }
+
+    void checkSession()
+
+    return () => {
+      didCancel = true
+    }
+  }, [router])
+
+  useEffect(() => {
+    if (isCheckingSession) {
+      return
+    }
+
+    const paramIsbn = searchParams.get('isbn') ?? ''
+    const paramSchoolBookCode = searchParams.get('schoolBookCode') ?? ''
+
+    if (paramIsbn || paramSchoolBookCode) {
+      setForm((current) => ({
+        ...current,
+        isbn: sanitizeIsbn(paramIsbn),
+        schoolBookCode: sanitizeSchoolBookCode(paramSchoolBookCode),
+      }))
+    }
+
+    if (paramIsbn) {
+      setActiveStep('isbn')
+      focusIsbnInput()
+    } else if (paramSchoolBookCode) {
+      setActiveStep('code')
+      focusSchoolBookCodeInput()
+    } else {
+      setActiveStep('isbn')
+      focusIsbnInput()
+    }
+  }, [isCheckingSession, searchParams])
+
+  return {
+    activeStep,
+    errorMessage,
+    form,
+    handleCancel,
+    handleIsbnEnter,
+    handleReset,
+    handleSchoolBookCodeEnter,
+    infoMessage,
+    isCheckingSession,
+    isInfoComplete,
+    isLookingUpIsbn,
+    isSubmitting,
+    isbnInputRef,
+    moveToCodeStep,
+    schoolBookCodeInputRef,
+    submitBook,
+    successMessage,
+    updateField,
+  }
+}
+</file>
+
+<file path="components/admin/useLoanManager.ts">
+'use client'
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { readJsonResponse } from '@/lib/api-client'
+import type { ApiResponse, LoanStatus, LoanWithBookAndStudent } from '@/types/library'
+
+export type Loan = LoanWithBookAndStudent
+type LoansResponse = ApiResponse<Loan[]>
+type LoanMutationResponse = ApiResponse<null>
+
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+export function isLoanOverdue(dueOn: string) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const due = new Date(`${dueOn}T00:00:00`)
+
+  return due < today
+}
+
+async function fetchLoans() {
+  const response = await fetch('/api/loans', { cache: 'no-store' })
+  const payload = await readJsonResponse<LoansResponse>(response)
+
+  if (!response.ok) {
+    throw new Error(payload.error?.message ?? '대여 목록을 불러오지 못했습니다.')
+  }
+
+  return payload.data ?? []
+}
+
+async function patchLoan(loanId: string, body: Record<string, string | null>) {
+  const response = await fetch(`/api/loans/${loanId}`, {
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'PATCH',
+  })
+
+  if (!response.ok) {
+    const payload = await readJsonResponse<LoanMutationResponse>(response)
+
+    throw new Error(payload.error?.message ?? '상태 변경에 실패했습니다.')
+  }
+}
+
+export function useLoanManager() {
+  const [loans, setLoans] = useState<Loan[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const loadLoans = useCallback(async () => {
+    setIsLoading(true)
+    setErrorMessage('')
+
+    try {
+      setLoans(await fetchLoans())
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '대여 목록을 불러오지 못했습니다.')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  const updateLoanStatus = useCallback(
+    async (loanId: string, status: LoanStatus) => {
+      try {
+        setErrorMessage('')
+        await patchLoan(loanId, { status })
+        await loadLoans()
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : '상태 변경에 실패했습니다.')
+      }
+    },
+    [loadLoans]
+  )
+
+  const extendDueDate = useCallback(
+    async (loanId: string) => {
+      try {
+        setErrorMessage('')
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const newDueDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
+
+        await patchLoan(loanId, { dueOn: formatLocalDate(newDueDate) })
+        await loadLoans()
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : '기한 연장에 실패했습니다.')
+      }
+    },
+    [loadLoans]
+  )
+
+  const forceOverdue = useCallback(
+    async (loan: Loan) => {
+      try {
+        setErrorMessage('')
+        const yesterday = new Date()
+        yesterday.setHours(0, 0, 0, 0)
+        yesterday.setDate(yesterday.getDate() - 1)
+        const overdueDateString = formatLocalDate(yesterday)
+
+        await patchLoan(loan.id, {
+          borrowedOn: overdueDateString,
+          dueOn: overdueDateString,
+        })
+        await loadLoans()
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : '연체 처리에 실패했습니다.')
+      }
+    },
+    [loadLoans]
+  )
+
+  useEffect(() => {
+    void loadLoans()
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        void loadLoans()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [loadLoans])
+
+  const filteredLoans = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+
+    if (!query) {
+      return loans
+    }
+
+    return loans.filter((loan) => {
+      const bookTitle = loan.books?.title?.toLowerCase() ?? ''
+      const bookCode = loan.books?.school_book_code?.toLowerCase() ?? ''
+      const studentName = loan.students?.name?.toLowerCase() ?? ''
+      const studentNumber = loan.students?.student_number?.toLowerCase() ?? ''
+
+      return (
+        bookTitle.includes(query) ||
+        bookCode.includes(query) ||
+        studentName.includes(query) ||
+        studentNumber.includes(query)
+      )
+    })
+  }, [loans, searchQuery])
+
+  return {
+    errorMessage,
+    extendDueDate,
+    filteredLoans,
+    forceOverdue,
+    isLoading,
+    searchQuery,
+    setSearchQuery,
+    updateLoanStatus,
+  }
+}
+</file>
 
 <file path="components/dashboard/panels/BookManagementPanel.tsx">
 'use client'
@@ -769,6 +1275,348 @@ export function StatCard({ icon: Icon, label, value, color }: DashboardStat) {
 }
 </file>
 
+<file path="components/rent/useRentBookForm.ts">
+'use client'
+
+import {
+  type CompositionEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
+import { useSearchParams } from 'next/navigation'
+import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { readJsonResponse } from '@/lib/api-client'
+import { getBorrowerLookupCodeFromScannedValue, normalizeBorrowerLookupCode } from '@/lib/loan-limits'
+import type {
+  ApiResponse,
+  BookLookupResult,
+  LoanCreationResult,
+  LoanStudent,
+} from '@/types/library'
+
+type Student = LoanStudent
+type Book = BookLookupResult
+type LoanResult = LoanCreationResult
+
+function normalizeRentCode(value: string) {
+  return normalizeBarcodeInput(value).toUpperCase()
+}
+
+export function useRentBookForm() {
+  const searchParams = useSearchParams()
+  const studentInputRef = useRef<HTMLInputElement>(null)
+  const bookInputRef = useRef<HTMLInputElement>(null)
+  const isStudentInputComposingRef = useRef(false)
+  const isBookInputComposingRef = useRef(false)
+  const lastParamStudentNumberRef = useRef('')
+  const paramStudentNumber = normalizeBorrowerLookupCode(normalizeRentCode(searchParams.get('studentNumber') ?? ''))
+
+  const [studentNumber, setStudentNumber] = useState('')
+  const [student, setStudent] = useState<Student | null>(null)
+  const [bookCode, setBookCode] = useState('')
+  const [book, setBook] = useState<Book | null>(null)
+  const [errorMessage, setErrorMessage] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
+  const [isLoadingStudent, setIsLoadingStudent] = useState(false)
+  const [isLoadingBook, setIsLoadingBook] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  function getBorrowerDisplay(targetStudent: Student) {
+    if (targetStudent.borrower_type === 'staff') {
+      return `${targetStudent.borrower_label} ${targetStudent.seat_number}번`
+    }
+
+    return `${targetStudent.grade}-${targetStudent.class_number}반 ${targetStudent.seat_number}번`
+  }
+
+  function focusBookInput() {
+    window.setTimeout(() => {
+      const input = bookInputRef.current
+      input?.focus()
+      input?.select()
+    }, 0)
+  }
+
+  function focusStudentInput() {
+    window.setTimeout(() => {
+      const input = studentInputRef.current
+      input?.focus()
+      input?.select()
+    }, 0)
+  }
+
+  function clearStudentSelection() {
+    setStudent(null)
+    setStudentNumber('')
+    setBook(null)
+    setBookCode('')
+    setErrorMessage('')
+    setSuccessMessage('')
+    focusStudentInput()
+  }
+
+  function isComposingKeyEvent(event: KeyboardEvent<HTMLInputElement>) {
+    return event.nativeEvent.isComposing || event.key === 'Process'
+  }
+
+  function handleStudentCodeChange(value: string) {
+    setStudentNumber(isStudentInputComposingRef.current ? value : normalizeRentCode(value))
+  }
+
+  function handleBookCodeChange(value: string) {
+    setBookCode(isBookInputComposingRef.current ? value : normalizeRentCode(value))
+  }
+
+  function handleStudentCompositionEnd(event: CompositionEvent<HTMLInputElement>) {
+    isStudentInputComposingRef.current = false
+    setStudentNumber(normalizeRentCode(event.currentTarget.value))
+  }
+
+  function handleBookCompositionEnd(event: CompositionEvent<HTMLInputElement>) {
+    isBookInputComposingRef.current = false
+    setBookCode(normalizeRentCode(event.currentTarget.value))
+  }
+
+  async function lookupStudent(number = studentNumber, options: { clearCurrentStudent?: boolean } = {}) {
+    const trimmed = normalizeBorrowerLookupCode(normalizeRentCode(number))
+
+    if (!trimmed) {
+      setErrorMessage('학번을 입력해주세요.')
+      return
+    }
+
+    setIsLoadingStudent(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+    setBook(null)
+    setBookCode('')
+
+    if (options.clearCurrentStudent) {
+      setStudent(null)
+    }
+
+    try {
+      const response = await fetch(`/api/students?studentNumber=${encodeURIComponent(trimmed)}`)
+      const payload = await readJsonResponse<ApiResponse<Student>>(response)
+
+      if (!response.ok) {
+        throw new Error(payload.error?.message ?? '학생 정보 조회에 실패했습니다.')
+      }
+
+      if (payload.data) {
+        setStudentNumber(payload.data.student_number)
+        setStudent(payload.data)
+        focusBookInput()
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '학생 정보 조회에 실패했습니다.')
+    } finally {
+      setIsLoadingStudent(false)
+    }
+  }
+
+  async function handleRent(targetBook = book) {
+    if (!student || !targetBook) {
+      setErrorMessage('학생과 도서를 모두 확인해주세요.')
+      return
+    }
+
+    if (targetBook.available_copies <= 0) {
+      setErrorMessage('이미 대여 중인 도서입니다.')
+      return
+    }
+
+    setIsSubmitting(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+
+    try {
+      const response = await fetch('/api/loans', {
+        body: JSON.stringify({
+          bookId: targetBook.id,
+          studentId: student.id,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      })
+      const payload = await readJsonResponse<ApiResponse<LoanResult>>(response)
+
+      if (!response.ok) {
+        throw new Error(payload.error?.message ?? '대여 처리에 실패했습니다.')
+      }
+
+      if (payload.data) {
+        const loanResult = payload.data
+        setSuccessMessage(
+          `${loanResult.studentName} ${loanResult.borrowerLabel}이 "${loanResult.bookTitle}" 도서를 대여했습니다. (반납 예정일: ${loanResult.dueOn})`
+        )
+        setStudent((current) =>
+          current
+            ? {
+                ...current,
+                active_loan_count: loanResult.activeLoanCount,
+                borrower_label: loanResult.borrowerLabel,
+                borrower_type: loanResult.borrowerType,
+                loan_limit: loanResult.loanLimit,
+                remaining_loan_count: loanResult.remainingLoanCount,
+              }
+            : current
+        )
+        setBook(null)
+        setBookCode('')
+        focusBookInput()
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '대여 처리에 실패했습니다.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function lookupBook(code = bookCode) {
+    const trimmed = normalizeRentCode(code)
+
+    if (!trimmed) {
+      setErrorMessage('도서 코드를 입력해주세요.')
+      return
+    }
+
+    const borrowerCode = getBorrowerLookupCodeFromScannedValue(trimmed)
+
+    if (borrowerCode) {
+      setStudentNumber(borrowerCode)
+      setBookCode('')
+      setBook(null)
+      await lookupStudent(borrowerCode, { clearCurrentStudent: true })
+      return
+    }
+
+    setIsLoadingBook(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+    setBook(null)
+
+    try {
+      const response = await fetch(`/api/books/lookup?code=${encodeURIComponent(trimmed)}`)
+      const payload = await readJsonResponse<ApiResponse<Book>>(response)
+
+      if (!response.ok) {
+        throw new Error(payload.error?.message ?? '도서 정보 조회에 실패했습니다.')
+      }
+
+      if (payload.data) {
+        setBook(payload.data)
+
+        if (payload.data.available_copies > 0) {
+          await handleRent(payload.data)
+        } else {
+          setErrorMessage('이미 대여 중인 도서입니다.')
+        }
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '도서 정보 조회에 실패했습니다.')
+    } finally {
+      setIsLoadingBook(false)
+    }
+  }
+
+  function handleStudentKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') {
+      return
+    }
+
+    if (isComposingKeyEvent(event)) {
+      return
+    }
+
+    event.preventDefault()
+
+    if (student) {
+      focusBookInput()
+      return
+    }
+
+    void lookupStudent()
+  }
+
+  function handleBookKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Enter' && isComposingKeyEvent(event)) {
+      event.preventDefault()
+    }
+  }
+
+  function handleStudentSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (isStudentInputComposingRef.current) {
+      return
+    }
+
+    if (student) {
+      focusBookInput()
+      return
+    }
+
+    void lookupStudent()
+  }
+
+  function handleBookSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (isBookInputComposingRef.current) {
+      return
+    }
+
+    void lookupBook()
+  }
+
+  useEffect(() => {
+    if (paramStudentNumber && lastParamStudentNumberRef.current !== paramStudentNumber) {
+      lastParamStudentNumberRef.current = paramStudentNumber
+      setStudentNumber(paramStudentNumber)
+      void lookupStudent(paramStudentNumber)
+    }
+  }, [paramStudentNumber])
+
+  useEffect(() => {
+    if (student) {
+      focusBookInput()
+    }
+  }, [student])
+
+  return {
+    book,
+    bookCode,
+    bookInputRef,
+    clearStudentSelection,
+    errorMessage,
+    getBorrowerDisplay,
+    handleBookCodeChange,
+    handleBookCompositionEnd,
+    handleBookKeyDown,
+    handleBookSubmit,
+    handleStudentCodeChange,
+    handleStudentCompositionEnd,
+    handleStudentKeyDown,
+    handleStudentSubmit,
+    isBookInputComposingRef,
+    isLoadingBook,
+    isLoadingStudent,
+    isSubmitting,
+    isStudentInputComposingRef,
+    student,
+    studentInputRef,
+    studentNumber,
+    successMessage,
+  }
+}
+</file>
+
 <file path="components/ui/ScanInput.tsx">
 import { type CompositionEvent, type KeyboardEvent, forwardRef, type InputHTMLAttributes } from 'react'
 import { Loader2, ScanBarcode } from 'lucide-react'
@@ -1103,217 +1951,166 @@ export function useDashboardBarcodeListener({ onStudentNumber, onReturnCode }: U
 }
 </file>
 
-<file path="lib/dashboard-data.ts">
-import type {
-  DashboardSummary,
-  OverdueLoan as OverdueLoanRow,
-  RecentBook as RecentBookRow,
-  RecentLoan,
-  StudentLoanStat as StudentLoanStatRow,
-} from '@/lib/library-queries'
-import type { LucideIcon } from 'lucide-react'
-import { BookOpen, ClipboardList, AlertCircle } from 'lucide-react'
+<file path="lib/api-client.ts">
+export async function readJsonResponse<T>(response: Response): Promise<T> {
+  try {
+    return (await response.json()) as T
+  } catch {
+    return {} as T
+  }
+}
+</file>
 
-export type RentalStatus = 'rented' | 'overdue' | 'returned'
+<file path="lib/api-route.ts">
+import { NextResponse } from 'next/server'
+import {
+  createServerSupabaseClient,
+  isSupabaseConfigured,
+  type TypedSupabaseClient,
+} from '@/lib/supabase'
 
-export type DashboardStat = {
-  icon: LucideIcon
-  label: string
-  value: string
-  color: string
+type ApiRouteFallback = {
+  code: string
+  message: string
+  status?: number
 }
 
-export type RecentRental = {
-  id: string
-  studentName: string
-  bookTitle: string
-  rentalDate: string
-  returnDate: string
-  status: RentalStatus
+type ApiRouteOptions = {
+  exposeErrorMessage?: boolean
+  fallback: ApiRouteFallback
+  logLabel: string
 }
 
-export type RecentBook = {
-  id: string
-  title: string
-  author: string
-  category: string
-  createdAt: string
-  availableCopies: number
-  totalCopies: number
+export class ApiRouteError extends Error {
+  code: string
+  status: number
+
+  constructor(status: number, code: string, message: string) {
+    super(message)
+    this.name = 'ApiRouteError'
+    this.code = code
+    this.status = status
+  }
 }
 
-export type StudentLoanStatistic = {
-  id: string
-  studentName: string
-  totalLoans: number
-  totalLoansLabel: string
+function getStructuredApiError(error: unknown) {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    'message' in error &&
+    'status' in error &&
+    typeof error.code === 'string' &&
+    typeof error.message === 'string' &&
+    typeof error.status === 'number'
+  ) {
+    return {
+      code: error.code,
+      message: error.message,
+      status: error.status,
+    }
+  }
+
+  return null
 }
 
-export type OverdueLoan = {
-  id: string
-  overdueDays: number
-  overdueDaysLabel: string
-  studentName: string
+export function jsonData<T>(data: T, init?: ResponseInit) {
+  return NextResponse.json({ data }, init)
 }
 
-const numberFormatter = new Intl.NumberFormat('ko-KR')
-const dateFormatter = new Intl.DateTimeFormat('ko-KR', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-})
-
-export function formatNumber(value: number | null | undefined) {
-  return numberFormatter.format(value ?? 0)
+export function jsonDataWithMeta<TData, TMeta>(
+  data: TData,
+  meta: TMeta,
+  init?: ResponseInit
+) {
+  return NextResponse.json({ data, meta }, init)
 }
 
-export function formatDate(value: string) {
-  const date = new Date(value)
+export function jsonError(code: string, message: string, status: number) {
+  return NextResponse.json(
+    {
+      error: {
+        code,
+        message,
+      },
+    },
+    { status }
+  )
+}
 
-  if (Number.isNaN(date.getTime())) {
+export function withNoStore(init: ResponseInit = {}): ResponseInit {
+  const headers = new Headers(init.headers)
+  headers.set('Cache-Control', 'no-store, max-age=0')
+
+  return {
+    ...init,
+    headers,
+  }
+}
+
+export function getText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+export async function readJsonBody<T>(request: Request): Promise<T> {
+  try {
+    return (await request.json()) as T
+  } catch {
+    throw new ApiRouteError(400, 'INVALID_JSON', '요청 본문은 올바른 JSON이어야 합니다.')
+  }
+}
+
+export function throwApiError(status: number, code: string, message: string): never {
+  throw new ApiRouteError(status, code, message)
+}
+
+export function createRouteSupabaseClient(): TypedSupabaseClient {
+  if (!isSupabaseConfigured()) {
+    throw new ApiRouteError(
+      503,
+      'SUPABASE_NOT_CONFIGURED',
+      'Supabase 환경변수가 설정되지 않았습니다.'
+    )
+  }
+
+  return createServerSupabaseClient()
+}
+
+export function handleApiRouteError(error: unknown, options: ApiRouteOptions) {
+  const structuredError = getStructuredApiError(error)
+
+  if (structuredError) {
+    return jsonError(structuredError.code, structuredError.message, structuredError.status)
+  }
+
+  console.error(options.logLabel, error)
+
+  return jsonError(
+    options.fallback.code,
+    options.exposeErrorMessage && error instanceof Error ? error.message : options.fallback.message,
+    options.fallback.status ?? 500
+  )
+}
+
+export async function runApiRoute(
+  options: ApiRouteOptions,
+  handler: () => Promise<NextResponse>
+) {
+  try {
+    return await handler()
+  } catch (error) {
+    return handleApiRouteError(error, options)
+  }
+}
+</file>
+
+<file path="lib/display.ts">
+export function displayValue(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === '') {
     return '-'
   }
 
-  return dateFormatter.format(date)
-}
-
-export function formatKoreanDate(value: string) {
-  const [year, month, day] = value.split('-')
-
-  if (!year || !month || !day) {
-    return value
-  }
-
-  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
-}
-
-export function getReturnSuccessMessage(data: {
-  bookTitle: string
-  loanBannedUntil: string | null
-  overdueDays: number
-  studentName: string
-}) {
-  if (data.overdueDays > 0 && data.loanBannedUntil) {
-    return `"${data.bookTitle}" 반납 완료. ${data.studentName} 학생은 연체 ${data.overdueDays}일로 ${formatKoreanDate(
-      data.loanBannedUntil
-    )}까지 대출할 수 없습니다.`
-  }
-
-  return `"${data.bookTitle}" 반납 완료`
-}
-
-function getOverdueDays(dueOn: string) {
-  const dueDate = new Date(`${dueOn}T00:00:00`)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  return Math.max(0, Math.floor((today.getTime() - dueDate.getTime()) / 86_400_000))
-}
-
-export const fallbackStats: DashboardStat[] = [
-  { icon: BookOpen, label: '전체 도서', value: '-', color: 'bg-blue-50 text-blue-600' },
-  { icon: ClipboardList, label: '대여 중', value: '-', color: 'bg-green-50 text-green-600' },
-  { icon: AlertCircle, label: '연체', value: '-', color: 'bg-red-50 text-red-600' },
-]
-
-export function buildStats(summary: DashboardSummary): DashboardStat[] {
-  return [
-    {
-      icon: BookOpen,
-      label: '전체 도서',
-      value: formatNumber(summary.total_books),
-      color: 'bg-blue-50 text-blue-600',
-    },
-    {
-      icon: ClipboardList,
-      label: '대여 중',
-      value: formatNumber(summary.active_loans),
-      color: 'bg-green-50 text-green-600',
-    },
-    {
-      icon: AlertCircle,
-      label: '연체',
-      value: formatNumber(summary.overdue_loans),
-      color: 'bg-red-50 text-red-600',
-    },
-  ]
-}
-
-function normalizeRentalStatus(status: RecentLoan['status']): RentalStatus {
-  if (status === 'overdue' || status === 'returned') {
-    return status
-  }
-
-  return 'rented'
-}
-
-export function mapRecentLoans(loans: RecentLoan[]): RecentRental[] {
-  return loans.map((loan, index) => ({
-    id: loan.id ?? `loan-${index}`,
-    studentName: loan.student_name ?? '-',
-    bookTitle: loan.book_title ?? '-',
-    rentalDate: loan.rental_date ?? '-',
-    returnDate: loan.return_date ?? '-',
-    status: normalizeRentalStatus(loan.status),
-  }))
-}
-
-export function mapRecentBooks(books: RecentBookRow[]): RecentBook[] {
-  return books.map((book) => ({
-    id: book.id,
-    title: book.title,
-    author: book.author,
-    category: book.category,
-    createdAt: formatDate(book.created_at),
-    availableCopies: book.available_copies,
-    totalCopies: book.total_copies,
-  }))
-}
-
-export function mapStudentLoanStats(studentStats: StudentLoanStatRow[]): StudentLoanStatistic[] {
-  return studentStats.map((studentStat) => ({
-    id: studentStat.student_id,
-    studentName: studentStat.student_name,
-    totalLoans: studentStat.total_loans,
-    totalLoansLabel: formatNumber(studentStat.total_loans),
-  }))
-}
-
-export function mapOverdueLoans(loans: OverdueLoanRow[]): OverdueLoan[] {
-  return loans.map((loan) => {
-    const overdueDays = getOverdueDays(loan.due_on)
-
-    return {
-      id: loan.id,
-      overdueDays,
-      overdueDaysLabel: formatNumber(overdueDays),
-      studentName: loan.student_name,
-    }
-  })
-}
-
-export function getStatusLabel(status: RentalStatus) {
-  if (status === 'overdue') {
-    return '연체'
-  }
-
-  if (status === 'returned') {
-    return '반납'
-  }
-
-  return '대여 중'
-}
-
-export function getStatusColor(status: RentalStatus) {
-  if (status === 'overdue') {
-    return 'bg-red-50 text-red-700'
-  }
-
-  if (status === 'returned') {
-    return 'bg-gray-100 text-gray-600'
-  }
-
-  return 'bg-green-50 text-green-700'
+  return String(value)
 }
 </file>
 
@@ -1850,6 +2647,155 @@ grant execute on function public.lookup_student_for_loan(text) to anon, authenti
 grant execute on function public.create_public_loan(uuid, uuid, text) to anon, authenticated;
 </file>
 
+<file path="types/library.ts">
+import type { Database } from '@/types/supabase'
+
+export type BookRow = Database['public']['Tables']['books']['Row']
+export type StudentRow = Database['public']['Tables']['students']['Row']
+export type LoanRow = Database['public']['Tables']['loans']['Row']
+export type LoanStatus = Database['public']['Enums']['loan_status']
+export type DashboardSummary = Database['public']['Views']['dashboard_summary']['Row']
+export type RecentLoan = Database['public']['Views']['dashboard_recent_loans']['Row']
+
+export type ApiError = {
+  code?: string
+  message: string
+}
+
+export type ApiResponse<T> = {
+  data?: T
+  error?: ApiError
+}
+
+export type ApiResponseWithMeta<T, TMeta extends Record<string, unknown> = Record<string, unknown>> =
+  ApiResponse<T> & {
+    meta?: TMeta
+  }
+
+export type BookSearchResult = Omit<
+  Database['public']['Functions']['search_books']['Returns'][number],
+  'category'
+>
+export type SearchBook = Database['public']['Functions']['search_books']['Returns'][number]
+
+export type AdminBookRow = Pick<
+  BookRow,
+  | 'author'
+  | 'available_copies'
+  | 'category'
+  | 'created_at'
+  | 'id'
+  | 'isbn'
+  | 'location'
+  | 'publisher'
+  | 'school_book_code'
+  | 'title'
+  | 'total_copies'
+>
+
+export type RemovableBook = Pick<
+  BookRow,
+  | 'author'
+  | 'available_copies'
+  | 'id'
+  | 'isbn'
+  | 'publisher'
+  | 'school_book_code'
+  | 'title'
+  | 'total_copies'
+>
+
+export type BookLookupResult = Pick<
+  BookRow,
+  | 'author'
+  | 'available_copies'
+  | 'id'
+  | 'isbn'
+  | 'publisher'
+  | 'school_book_code'
+  | 'title'
+  | 'total_copies'
+>
+
+export type IsbnLookupResult = Pick<BookRow, 'author' | 'isbn' | 'publisher' | 'title'>
+export type RecentBook = Pick<
+  BookRow,
+  'available_copies' | 'author' | 'category' | 'created_at' | 'id' | 'title' | 'total_copies'
+>
+
+export type BorrowerType = 'staff' | 'student'
+
+export type LoanStudent = Omit<
+  Database['public']['Functions']['lookup_student_for_loan']['Returns'][number],
+  'borrower_type'
+> & {
+  borrower_type: BorrowerType
+}
+
+export type CreatedPublicLoan =
+  Database['public']['Functions']['create_public_loan']['Returns'][number]
+
+export type LoanCreationResult = {
+  activeLoanCount: number
+  bookTitle: string
+  borrowerLabel: string
+  borrowerType: BorrowerType
+  dueOn: string
+  loanId: string
+  loanLimit: number
+  remainingLoanCount: number
+  studentName: string
+}
+
+export type LoanWithBookAndStudent = Pick<
+  LoanRow,
+  'book_id' | 'borrowed_on' | 'due_on' | 'id' | 'returned_on' | 'status' | 'student_id'
+> & {
+  books: Pick<BookRow, 'school_book_code' | 'title'> | null
+  students: Pick<StudentRow, 'name' | 'student_number'> | null
+}
+
+export type ReturnableLoan =
+  Database['public']['Functions']['get_returnable_loan_by_school_book_code']['Returns'][number]
+
+export type ReturnedLoan =
+  Database['public']['Functions']['return_loans_by_school_book_codes']['Returns'][number]
+
+export type OverdueLoanRow = {
+  bookTitle: string | null
+  borrowedOn: string
+  dueOn: string
+  id: string
+  studentName: string | null
+  studentNumber: string | null
+}
+
+export type OverdueLoanSelectRow = Pick<LoanRow, 'borrowed_on' | 'due_on' | 'id'> & {
+  books: Pick<BookRow, 'title'> | null
+  students: Pick<StudentRow, 'name' | 'student_number'> | null
+}
+
+export type StudentLoanStat = {
+  student_id: string
+  student_name: string
+  total_loans: number
+}
+
+export type DashboardOverdueLoan = {
+  due_on: string
+  id: string
+  student_name: string
+}
+
+export type ActiveLoanWithStudent = Pick<LoanRow, 'id' | 'student_id'> & {
+  students: Pick<StudentRow, 'name'> | null
+}
+
+export type DashboardOverdueLoanWithStudent = Pick<LoanRow, 'due_on' | 'id'> & {
+  students: Pick<StudentRow, 'name'> | null
+}
+</file>
+
 <file path=".omo/run-continuation/ses_14b659608ffekBh0L8umz9TxL7.json">
 {
   "sessionID": "ses_14b659608ffekBh0L8umz9TxL7",
@@ -1989,183 +2935,6 @@ export default function AdminPage() {
       <Footer />
     </main>
   )
-}
-</file>
-
-<file path="app/api/admin/overdue/route.ts">
-import { NextResponse } from 'next/server'
-import { adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
-
-export const dynamic = 'force-dynamic'
-
-type OverdueLoanRow = {
-  borrowed_on: string
-  books: {
-    title: string | null
-  } | null
-  due_on: string
-  id: string
-  students: {
-    name: string | null
-    student_number: string | null
-  } | null
-}
-
-export async function GET(request: Request) {
-  try {
-    const session = await requireAdminSession(request)
-    const today = new Date().toISOString().slice(0, 10)
-    const { data, error } = await session.supabase
-      .from('loans')
-      .select('id, borrowed_on, due_on, books(title), students(name, student_number)')
-      .eq('status', 'rented')
-      .lt('due_on', today)
-      .order('due_on', { ascending: true })
-      .limit(100)
-
-    if (error) {
-      throw error
-    }
-
-    const overdueLoans = ((data ?? []) as unknown as OverdueLoanRow[]).map((loan) => ({
-      bookTitle: loan.books?.title ?? null,
-      borrowedOn: loan.borrowed_on,
-      dueOn: loan.due_on,
-      id: loan.id,
-      studentName: loan.students?.name ?? null,
-      studentNumber: loan.students?.student_number ?? null,
-    }))
-
-    return NextResponse.json({
-      data: overdueLoans,
-      meta: {
-        today,
-      },
-    })
-  } catch (error) {
-    return adminAuthErrorResponse(error)
-  }
-}
-</file>
-
-<file path="app/api/auth/admin/login/route.ts">
-import { NextResponse } from 'next/server'
-import {
-  AdminAuthError,
-  adminAuthErrorResponse,
-  serializeAdminSession,
-  setAdminSessionCookie,
-} from '@/lib/admin-auth'
-import {
-  createServerSupabaseClient,
-  createSupabaseClientWithAccessToken,
-  isSupabaseConfigured,
-} from '@/lib/supabase'
-
-export const dynamic = 'force-dynamic'
-
-type LoginBody = {
-  loginId?: unknown
-  password?: unknown
-}
-
-const DEFAULT_ADMIN_LOGIN_ID = 'SanupLib'
-const DEFAULT_ADMIN_AUTH_EMAIL = 'sanuplib-admin@sanuplib.local'
-
-function getConfiguredAdminLoginId() {
-  return process.env.ADMIN_LOGIN_ID?.trim() || DEFAULT_ADMIN_LOGIN_ID
-}
-
-function getConfiguredAdminAuthEmail() {
-  return process.env.ADMIN_AUTH_EMAIL?.trim() || DEFAULT_ADMIN_AUTH_EMAIL
-}
-
-function getCredentials(body: LoginBody) {
-  const loginId = typeof body.loginId === 'string' ? body.loginId.trim() : ''
-  const password = typeof body.password === 'string' ? body.password : ''
-
-  return { loginId, password }
-}
-
-export async function POST(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return adminAuthErrorResponse(
-      new AdminAuthError(
-        503,
-        'SUPABASE_NOT_CONFIGURED',
-        'Supabase 환경변수가 설정되지 않았습니다.'
-      )
-    )
-  }
-
-  let body: LoginBody
-  try {
-    body = (await request.json()) as LoginBody
-  } catch {
-    return adminAuthErrorResponse(
-      new AdminAuthError(400, 'INVALID_JSON', '요청 본문이 올바른 JSON이어야 합니다.')
-    )
-  }
-
-  const { loginId, password } = getCredentials(body)
-  if (!loginId || !password) {
-    return adminAuthErrorResponse(
-      new AdminAuthError(400, 'MISSING_CREDENTIALS', '아이디와 비밀번호를 입력해주세요.')
-    )
-  }
-
-  if (loginId !== getConfiguredAdminLoginId()) {
-    return adminAuthErrorResponse(
-      new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
-    )
-  }
-
-  try {
-    const authClient = createServerSupabaseClient()
-    const { data, error } = await authClient.auth.signInWithPassword({
-      email: getConfiguredAdminAuthEmail(),
-      password,
-    })
-
-    if (error || !data.session || !data.user) {
-      return adminAuthErrorResponse(
-        new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
-      )
-    }
-
-    const authedClient = createSupabaseClientWithAccessToken(data.session.access_token)
-    const { data: adminUser, error: adminUserError } = await authedClient
-      .from('admin_users')
-      .select('login_id, role')
-      .eq('user_id', data.user.id)
-      .maybeSingle()
-
-    if (adminUserError) {
-      throw adminUserError
-    }
-
-    if (!adminUser || adminUser.login_id !== loginId) {
-      return adminAuthErrorResponse(
-        new AdminAuthError(403, 'FORBIDDEN', '관리자 권한이 필요합니다.')
-      )
-    }
-
-    const response = NextResponse.json({
-      data: serializeAdminSession({
-        role: adminUser.role,
-        supabase: authedClient,
-        user: {
-          id: data.user.id,
-          loginId: adminUser.login_id,
-        },
-      }),
-    })
-    setAdminSessionCookie(response, data.session)
-
-    return response
-  } catch (error) {
-    return adminAuthErrorResponse(error)
-  }
 }
 </file>
 
@@ -2473,323 +3242,6 @@ export default function AdminDashboard() {
 }
 </file>
 
-<file path="components/admin/AdminOverdueManager.tsx">
-'use client'
-
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { AlertTriangle, Loader2 } from 'lucide-react'
-
-type OverdueRow = {
-  bookTitle: string | null
-  borrowedOn: string
-  dueOn: string
-  id: string
-  studentName: string | null
-  studentNumber: string | null
-}
-
-type OverdueResponse = {
-  data?: OverdueRow[]
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-function displayValue(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') {
-    return '-'
-  }
-
-  return String(value)
-}
-
-function getOverdueDays(dueOn: string) {
-  const dueDate = new Date(`${dueOn}T00:00:00`)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  return Math.max(0, Math.floor((today.getTime() - dueDate.getTime()) / 86_400_000))
-}
-
-export default function AdminOverdueManager() {
-  const router = useRouter()
-  const [overdueLoans, setOverdueLoans] = useState<OverdueRow[]>([])
-  const [errorMessage, setErrorMessage] = useState('')
-  const [isLoading, setIsLoading] = useState(true)
-
-  useEffect(() => {
-    let didCancel = false
-
-    async function loadOverdueLoans() {
-      try {
-        const response = await fetch('/api/admin/overdue', {
-          cache: 'no-store',
-        })
-        const payload = (await response.json()) as OverdueResponse
-
-        if (didCancel) {
-          return
-        }
-
-        if (response.status === 401 || response.status === 403) {
-          router.replace('/admin/login')
-          return
-        }
-
-        if (!response.ok) {
-          throw new Error(payload.error?.message ?? '연체 목록을 불러오지 못했습니다.')
-        }
-
-        setOverdueLoans(payload.data ?? [])
-      } catch (error) {
-        if (!didCancel) {
-          setErrorMessage(error instanceof Error ? error.message : '연체 목록을 불러오지 못했습니다.')
-        }
-      } finally {
-        if (!didCancel) {
-          setIsLoading(false)
-        }
-      }
-    }
-
-    void loadOverdueLoans()
-
-    return () => {
-      didCancel = true
-    }
-  }, [router])
-
-  return (
-    <section className="bg-gray-50 py-14 sm:py-16">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="mb-8 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-600">
-            <AlertTriangle className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">연체관리</h1>
-            <p className="mt-1 text-sm text-gray-600">반납 예정일이 지난 대여 목록</p>
-          </div>
-        </div>
-
-        <div className="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
-          {isLoading ? (
-            <div className="flex min-h-[280px] items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
-            </div>
-          ) : errorMessage ? (
-            <div className="px-4 py-3 text-sm text-red-700">{errorMessage}</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-100 text-sm">
-                <thead className="bg-gray-50 text-left text-xs font-semibold uppercase text-gray-500">
-                  <tr>
-                    <th className="px-4 py-3">학생</th>
-                    <th className="px-4 py-3">학번</th>
-                    <th className="px-4 py-3">도서명</th>
-                    <th className="px-4 py-3">대여일</th>
-                    <th className="px-4 py-3">반납 예정일</th>
-                    <th className="px-4 py-3">연체일</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 text-gray-700">
-                  {overdueLoans.length === 0 ? (
-                    <tr>
-                      <td className="px-4 py-8 text-center text-gray-500" colSpan={6}>
-                        -
-                      </td>
-                    </tr>
-                  ) : (
-                    overdueLoans.map((loan) => (
-                      <tr key={loan.id}>
-                        <td className="px-4 py-3 font-medium text-gray-900">
-                          {displayValue(loan.studentName)}
-                        </td>
-                        <td className="px-4 py-3">{displayValue(loan.studentNumber)}</td>
-                        <td className="max-w-[280px] px-4 py-3">{displayValue(loan.bookTitle)}</td>
-                        <td className="px-4 py-3">{displayValue(loan.borrowedOn)}</td>
-                        <td className="px-4 py-3">{displayValue(loan.dueOn)}</td>
-                        <td className="px-4 py-3 font-semibold text-red-600">
-                          {getOverdueDays(loan.dueOn)}일
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-    </section>
-  )
-}
-</file>
-
-<file path="lib/admin-auth.ts">
-import { NextResponse } from 'next/server'
-import type { Session } from '@supabase/supabase-js'
-import {
-  createServerSupabaseClient,
-  createSupabaseClientWithAccessToken,
-  isSupabaseConfigured,
-  type TypedSupabaseClient,
-} from '@/lib/supabase'
-import type { Database } from '@/types/supabase'
-
-export const ADMIN_ACCESS_TOKEN_COOKIE = 'bb_admin_access_token'
-
-type AdminRole = Database['public']['Enums']['admin_role']
-
-export type AdminSession = {
-  role: AdminRole
-  supabase: TypedSupabaseClient
-  user: {
-    id: string
-    loginId: string
-  }
-}
-
-export class AdminAuthError extends Error {
-  code: string
-  status: number
-
-  constructor(status: number, code: string, message: string) {
-    super(message)
-    this.name = 'AdminAuthError'
-    this.status = status
-    this.code = code
-  }
-}
-
-const cookieOptions = {
-  httpOnly: true,
-  path: '/',
-  sameSite: 'lax' as const,
-  secure: process.env.NODE_ENV === 'production',
-}
-
-function parseCookieHeader(cookieHeader: string | null) {
-  const cookies = new Map<string, string>()
-
-  if (!cookieHeader) {
-    return cookies
-  }
-
-  for (const cookie of cookieHeader.split(';')) {
-    const [rawName, ...rawValue] = cookie.trim().split('=')
-    if (!rawName || rawValue.length === 0) {
-      continue
-    }
-
-    cookies.set(rawName, decodeURIComponent(rawValue.join('=')))
-  }
-
-  return cookies
-}
-
-function getAccessTokenFromRequest(request: Request) {
-  return parseCookieHeader(request.headers.get('cookie')).get(ADMIN_ACCESS_TOKEN_COOKIE) ?? ''
-}
-
-export function setAdminSessionCookie(response: NextResponse, session: Session) {
-  response.cookies.set(ADMIN_ACCESS_TOKEN_COOKIE, session.access_token, {
-    ...cookieOptions,
-    maxAge: session.expires_in,
-  })
-}
-
-export function clearAdminSessionCookie(response: NextResponse) {
-  response.cookies.set(ADMIN_ACCESS_TOKEN_COOKIE, '', {
-    ...cookieOptions,
-    maxAge: 0,
-  })
-}
-
-export function adminAuthErrorResponse(error: unknown) {
-  if (error instanceof AdminAuthError) {
-    return NextResponse.json(
-      {
-        error: {
-          code: error.code,
-          message: error.message,
-        },
-      },
-      { status: error.status }
-    )
-  }
-
-  console.error('Admin auth failed:', error)
-  return NextResponse.json(
-    {
-      error: {
-        code: 'ADMIN_AUTH_FAILED',
-        message: '관리자 인증 확인에 실패했습니다.',
-      },
-    },
-    { status: 500 }
-  )
-}
-
-export function serializeAdminSession(session: AdminSession) {
-  return {
-    role: session.role,
-    user: session.user,
-  }
-}
-
-export async function requireAdminSession(request: Request): Promise<AdminSession> {
-  if (!isSupabaseConfigured()) {
-    throw new AdminAuthError(
-      503,
-      'SUPABASE_NOT_CONFIGURED',
-      'Supabase 환경변수가 설정되지 않았습니다.'
-    )
-  }
-
-  const accessToken = getAccessTokenFromRequest(request)
-  if (!accessToken) {
-    throw new AdminAuthError(401, 'UNAUTHENTICATED', '로그인이 필요합니다.')
-  }
-
-  const authClient = createServerSupabaseClient()
-  const {
-    data: { user },
-    error: userError,
-  } = await authClient.auth.getUser(accessToken)
-
-  if (userError || !user) {
-    throw new AdminAuthError(401, 'INVALID_SESSION', '세션이 만료되었거나 올바르지 않습니다.')
-  }
-
-  const authedClient = createSupabaseClientWithAccessToken(accessToken)
-  const { data: adminUser, error: adminUserError } = await authedClient
-    .from('admin_users')
-    .select('login_id, role')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (adminUserError) {
-    throw adminUserError
-  }
-
-  if (!adminUser) {
-    throw new AdminAuthError(403, 'FORBIDDEN', '관리자 권한이 필요합니다.')
-  }
-
-  return {
-    role: adminUser.role,
-    supabase: authedClient,
-    user: {
-      id: user.id,
-      loginId: adminUser.login_id,
-    },
-  }
-}
-</file>
-
 <file path="lib/barcode-input.ts">
 const HANGUL_BASE_CODE = 0xac00
 const HANGUL_LAST_CODE = 0xd7a3
@@ -2964,6 +3416,211 @@ export function normalizeBarcodeInput(value: string) {
 
 export function normalizeIsbnInput(value: string) {
   return convertKoreanKeyboardToEnglish(value).replace(/[^0-9Xx]/g, '')
+}
+</file>
+
+<file path="lib/dashboard-data.ts">
+import type {
+  DashboardSummary,
+  OverdueLoan as OverdueLoanRow,
+  RecentBook as RecentBookRow,
+  RecentLoan,
+  StudentLoanStat as StudentLoanStatRow,
+} from '@/lib/library-queries'
+import type { LucideIcon } from 'lucide-react'
+import { BookOpen, ClipboardList, AlertCircle } from 'lucide-react'
+import {
+  formatKoreanDate,
+  getOverdueDays,
+  getTodayDateKey,
+} from '@/lib/loan-restrictions'
+
+export { formatKoreanDate } from '@/lib/loan-restrictions'
+
+export type RentalStatus = 'rented' | 'overdue' | 'returned'
+
+export type DashboardStat = {
+  icon: LucideIcon
+  label: string
+  value: string
+  color: string
+}
+
+export type RecentRental = {
+  id: string
+  studentName: string
+  bookTitle: string
+  rentalDate: string
+  returnDate: string
+  status: RentalStatus
+}
+
+export type RecentBook = {
+  id: string
+  title: string
+  author: string
+  category: string
+  createdAt: string
+  availableCopies: number
+  totalCopies: number
+}
+
+export type StudentLoanStatistic = {
+  id: string
+  studentName: string
+  totalLoans: number
+  totalLoansLabel: string
+}
+
+export type OverdueLoan = {
+  id: string
+  overdueDays: number
+  overdueDaysLabel: string
+  studentName: string
+}
+
+const numberFormatter = new Intl.NumberFormat('ko-KR')
+const dateFormatter = new Intl.DateTimeFormat('ko-KR', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+export function formatNumber(value: number | null | undefined) {
+  return numberFormatter.format(value ?? 0)
+}
+
+export function formatDate(value: string) {
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return '-'
+  }
+
+  return dateFormatter.format(date)
+}
+
+export function getReturnSuccessMessage(data: {
+  bookTitle: string
+  loanBannedUntil: string | null
+  overdueDays: number
+  studentName: string
+}) {
+  if (data.overdueDays > 0 && data.loanBannedUntil) {
+    return `"${data.bookTitle}" 반납 완료. ${data.studentName} 학생은 연체 ${data.overdueDays}일로 ${formatKoreanDate(
+      data.loanBannedUntil
+    )}까지 대출할 수 없습니다.`
+  }
+
+  return `"${data.bookTitle}" 반납 완료`
+}
+
+export const fallbackStats: DashboardStat[] = [
+  { icon: BookOpen, label: '전체 도서', value: '-', color: 'bg-blue-50 text-blue-600' },
+  { icon: ClipboardList, label: '대여 중', value: '-', color: 'bg-green-50 text-green-600' },
+  { icon: AlertCircle, label: '연체', value: '-', color: 'bg-red-50 text-red-600' },
+]
+
+export function buildStats(summary: DashboardSummary): DashboardStat[] {
+  return [
+    {
+      icon: BookOpen,
+      label: '전체 도서',
+      value: formatNumber(summary.total_books),
+      color: 'bg-blue-50 text-blue-600',
+    },
+    {
+      icon: ClipboardList,
+      label: '대여 중',
+      value: formatNumber(summary.active_loans),
+      color: 'bg-green-50 text-green-600',
+    },
+    {
+      icon: AlertCircle,
+      label: '연체',
+      value: formatNumber(summary.overdue_loans),
+      color: 'bg-red-50 text-red-600',
+    },
+  ]
+}
+
+function normalizeRentalStatus(status: RecentLoan['status']): RentalStatus {
+  if (status === 'overdue' || status === 'returned') {
+    return status
+  }
+
+  return 'rented'
+}
+
+export function mapRecentLoans(loans: RecentLoan[]): RecentRental[] {
+  return loans.map((loan, index) => ({
+    id: loan.id ?? `loan-${index}`,
+    studentName: loan.student_name ?? '-',
+    bookTitle: loan.book_title ?? '-',
+    rentalDate: loan.rental_date ?? '-',
+    returnDate: loan.return_date ?? '-',
+    status: normalizeRentalStatus(loan.status),
+  }))
+}
+
+export function mapRecentBooks(books: RecentBookRow[]): RecentBook[] {
+  return books.map((book) => ({
+    id: book.id,
+    title: book.title,
+    author: book.author,
+    category: book.category,
+    createdAt: formatDate(book.created_at),
+    availableCopies: book.available_copies,
+    totalCopies: book.total_copies,
+  }))
+}
+
+export function mapStudentLoanStats(studentStats: StudentLoanStatRow[]): StudentLoanStatistic[] {
+  return studentStats.map((studentStat) => ({
+    id: studentStat.student_id,
+    studentName: studentStat.student_name,
+    totalLoans: studentStat.total_loans,
+    totalLoansLabel: formatNumber(studentStat.total_loans),
+  }))
+}
+
+export function mapOverdueLoans(loans: OverdueLoanRow[]): OverdueLoan[] {
+  const today = getTodayDateKey()
+
+  return loans.map((loan) => {
+    const overdueDays = getOverdueDays(loan.due_on, today)
+
+    return {
+      id: loan.id,
+      overdueDays,
+      overdueDaysLabel: formatNumber(overdueDays),
+      studentName: loan.student_name,
+    }
+  })
+}
+
+export function getStatusLabel(status: RentalStatus) {
+  if (status === 'overdue') {
+    return '연체'
+  }
+
+  if (status === 'returned') {
+    return '반납'
+  }
+
+  return '대여 중'
+}
+
+export function getStatusColor(status: RentalStatus) {
+  if (status === 'overdue') {
+    return 'bg-red-50 text-red-700'
+  }
+
+  if (status === 'returned') {
+    return 'bg-gray-100 text-gray-600'
+  }
+
+  return 'bg-green-50 text-green-700'
 }
 </file>
 
@@ -4550,6 +5207,148 @@ export default function AdminAddBooksPage() {
 }
 </file>
 
+<file path="app/api/admin/overdue/route.ts">
+import { adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
+import { jsonDataWithMeta } from '@/lib/api-route'
+import type { OverdueLoanSelectRow } from '@/types/library'
+
+export const dynamic = 'force-dynamic'
+
+export async function GET(request: Request) {
+  try {
+    const session = await requireAdminSession(request)
+    const today = new Date().toISOString().slice(0, 10)
+    const { data, error } = await session.supabase
+      .from('loans')
+      .select('id, borrowed_on, due_on, books(title), students(name, student_number)')
+      .eq('status', 'rented')
+      .lt('due_on', today)
+      .order('due_on', { ascending: true })
+      .limit(100)
+
+    if (error) {
+      throw error
+    }
+
+    const overdueLoans = ((data ?? []) as unknown as OverdueLoanSelectRow[]).map((loan) => ({
+      bookTitle: loan.books?.title ?? null,
+      borrowedOn: loan.borrowed_on,
+      dueOn: loan.due_on,
+      id: loan.id,
+      studentName: loan.students?.name ?? null,
+      studentNumber: loan.students?.student_number ?? null,
+    }))
+
+    return jsonDataWithMeta(overdueLoans, {
+      today,
+    })
+  } catch (error) {
+    return adminAuthErrorResponse(error)
+  }
+}
+</file>
+
+<file path="app/api/auth/admin/login/route.ts">
+import { NextResponse } from 'next/server'
+import {
+  AdminAuthError,
+  adminAuthErrorResponse,
+  serializeAdminSession,
+  setAdminSessionCookie,
+} from '@/lib/admin-auth'
+import { createRouteSupabaseClient, readJsonBody } from '@/lib/api-route'
+import { createSupabaseClientWithAccessToken } from '@/lib/supabase'
+
+export const dynamic = 'force-dynamic'
+
+type LoginBody = {
+  loginId?: unknown
+  password?: unknown
+}
+
+const DEFAULT_ADMIN_LOGIN_ID = 'SanupLib'
+const DEFAULT_ADMIN_AUTH_EMAIL = 'sanuplib-admin@sanuplib.local'
+
+function getConfiguredAdminLoginId() {
+  return process.env.ADMIN_LOGIN_ID?.trim() || DEFAULT_ADMIN_LOGIN_ID
+}
+
+function getConfiguredAdminAuthEmail() {
+  return process.env.ADMIN_AUTH_EMAIL?.trim() || DEFAULT_ADMIN_AUTH_EMAIL
+}
+
+function getCredentials(body: LoginBody) {
+  const loginId = typeof body.loginId === 'string' ? body.loginId.trim() : ''
+  const password = typeof body.password === 'string' ? body.password : ''
+
+  return { loginId, password }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await readJsonBody<LoginBody>(request)
+    const { loginId, password } = getCredentials(body)
+
+    if (!loginId || !password) {
+      return adminAuthErrorResponse(
+        new AdminAuthError(400, 'MISSING_CREDENTIALS', '아이디와 비밀번호를 입력해주세요.')
+      )
+    }
+
+    if (loginId !== getConfiguredAdminLoginId()) {
+      return adminAuthErrorResponse(
+        new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
+      )
+    }
+
+    const authClient = createRouteSupabaseClient()
+    const { data, error } = await authClient.auth.signInWithPassword({
+      email: getConfiguredAdminAuthEmail(),
+      password,
+    })
+
+    if (error || !data.session || !data.user) {
+      return adminAuthErrorResponse(
+        new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
+      )
+    }
+
+    const authedClient = createSupabaseClientWithAccessToken(data.session.access_token)
+    const { data: adminUser, error: adminUserError } = await authedClient
+      .from('admin_users')
+      .select('login_id, role')
+      .eq('user_id', data.user.id)
+      .maybeSingle()
+
+    if (adminUserError) {
+      throw adminUserError
+    }
+
+    if (!adminUser || adminUser.login_id !== loginId) {
+      return adminAuthErrorResponse(
+        new AdminAuthError(403, 'FORBIDDEN', '관리자 권한이 필요합니다.')
+      )
+    }
+
+    const response = NextResponse.json({
+      data: serializeAdminSession({
+        role: adminUser.role,
+        supabase: authedClient,
+        user: {
+          id: data.user.id,
+          loginId: adminUser.login_id,
+        },
+      }),
+    })
+    setAdminSessionCookie(response, data.session)
+
+    return response
+  } catch (error) {
+    return adminAuthErrorResponse(error)
+  }
+}
+</file>
+
 <file path="app/api/auth/admin/session/route.ts">
 import { NextResponse } from 'next/server'
 import {
@@ -4589,86 +5388,6 @@ export async function GET(request: Request) {
     }
 
     return adminAuthErrorResponse(error)
-  }
-}
-</file>
-
-<file path="app/api/books/search/route.ts">
-import { NextResponse } from 'next/server'
-import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
-
-export const dynamic = 'force-dynamic'
-
-const DEFAULT_LIMIT = 20
-const MAX_LIMIT = 50
-
-function getSearchParams(request: Request) {
-  const url = new URL(request.url)
-  const query = (url.searchParams.get('q') ?? url.searchParams.get('query') ?? '').trim()
-  const requestedLimit = Number(url.searchParams.get('limit') ?? DEFAULT_LIMIT)
-  const limit = Number.isFinite(requestedLimit)
-    ? Math.min(Math.max(Math.trunc(requestedLimit), 1), MAX_LIMIT)
-    : DEFAULT_LIMIT
-
-  return { limit, query }
-}
-
-export async function GET(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'SUPABASE_NOT_CONFIGURED',
-          message: 'Supabase 환경변수가 설정되지 않았습니다.',
-        },
-      },
-      { status: 503 }
-    )
-  }
-
-  const { limit, query } = getSearchParams(request)
-
-  try {
-    const supabase = createServerSupabaseClient()
-    const { data, error } = await supabase
-      .rpc('search_books', { search_query: query })
-      .limit(limit)
-
-    if (error) {
-      throw error
-    }
-
-    const books = (data ?? []).map((book) => ({
-      id: book.id,
-      isbn: book.isbn,
-      title: book.title,
-      author: book.author,
-      publisher: book.publisher,
-      available_copies: book.available_copies,
-      total_copies: book.total_copies,
-      location: book.location,
-    }))
-
-    return NextResponse.json({
-      data: books,
-      meta: {
-        count: books.length,
-        limit,
-        query,
-      },
-    })
-  } catch (error) {
-    console.error('Book search failed:', error)
-
-    return NextResponse.json(
-      {
-        error: {
-          code: 'BOOK_SEARCH_FAILED',
-          message: '도서 검색에 실패했습니다.',
-        },
-      },
-      { status: 500 }
-    )
   }
 }
 </file>
@@ -4929,6 +5648,809 @@ export default function ReturnsPage() {
 }
 </file>
 
+<file path="components/admin/AdminLoginForm.tsx">
+'use client'
+
+import { FormEvent, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Loader2, LogIn } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+type LoginResponse = {
+  error?: {
+    code: string
+    message: string
+  }
+}
+
+type SessionResponse = {
+  data?: {
+    user: {
+      loginId: string
+    }
+  } | null
+}
+
+export default function AdminLoginForm() {
+  const router = useRouter()
+  const [loginId, setLoginId] = useState('')
+  const [password, setPassword] = useState('')
+  const [errorMessage, setErrorMessage] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    let didCancel = false
+
+    async function redirectIfLoggedIn() {
+      try {
+        const response = await fetch('/api/auth/admin/session?optional=1', {
+          cache: 'no-store',
+        })
+        const payload = (await response.json()) as SessionResponse
+
+        if (!didCancel && response.ok && payload.data?.user.loginId) {
+          router.replace('/admin')
+        }
+      } catch {
+        // 로그인 화면에서는 세션 확인 실패 시 입력 폼을 그대로 보여줍니다.
+      }
+    }
+
+    void redirectIfLoggedIn()
+
+    return () => {
+      didCancel = true
+    }
+  }, [router])
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErrorMessage('')
+    setIsLoading(true)
+
+    try {
+      const response = await fetch('/api/auth/admin/login', {
+        body: JSON.stringify({ loginId, password }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      })
+      const payload = (await response.json()) as LoginResponse
+
+      if (!response.ok) {
+        throw new Error(payload.error?.message ?? '로그인에 실패했습니다.')
+      }
+
+      window.dispatchEvent(new Event('admin-session-changed'))
+      router.push('/admin')
+      router.refresh()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '로그인에 실패했습니다.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="w-full max-w-md rounded-lg border border-gray-100 bg-white p-6 shadow-sm">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">로그인</h1>
+        <p className="mt-2 text-sm text-gray-600">등록된 계정으로 로그인하세요.</p>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <label htmlFor="admin-login-id" className="mb-2 block text-sm font-medium text-gray-700">
+            아이디
+          </label>
+          <input
+            id="admin-login-id"
+            value={loginId}
+            onChange={(event) => setLoginId(event.target.value)}
+            className="h-11 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+            autoComplete="username"
+            placeholder="SanupLib"
+            type="text"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="admin-password" className="mb-2 block text-sm font-medium text-gray-700">
+            비밀번호
+          </label>
+          <input
+            id="admin-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="h-11 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+            autoComplete="current-password"
+            placeholder="비밀번호"
+            type="password"
+          />
+        </div>
+      </div>
+
+      {errorMessage ? (
+        <div className="mt-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {errorMessage}
+        </div>
+      ) : null}
+
+      <button
+        type="submit"
+        className={cn(
+          'mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700',
+          isLoading && 'cursor-wait opacity-80'
+        )}
+        disabled={isLoading}
+      >
+        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+        로그인
+      </button>
+    </form>
+  )
+}
+</file>
+
+<file path="components/admin/AdminOverdueManager.tsx">
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { AlertTriangle, Loader2 } from 'lucide-react'
+import { displayValue } from '@/lib/display'
+import { getOverdueDays, getTodayDateKey } from '@/lib/loan-restrictions'
+import type { ApiResponse, OverdueLoanRow } from '@/types/library'
+
+type OverdueResponse = ApiResponse<OverdueLoanRow[]>
+
+export default function AdminOverdueManager() {
+  const router = useRouter()
+  const today = getTodayDateKey()
+  const [overdueLoans, setOverdueLoans] = useState<OverdueLoanRow[]>([])
+  const [errorMessage, setErrorMessage] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    let didCancel = false
+
+    async function loadOverdueLoans() {
+      try {
+        const response = await fetch('/api/admin/overdue', {
+          cache: 'no-store',
+        })
+        const payload = (await response.json()) as OverdueResponse
+
+        if (didCancel) {
+          return
+        }
+
+        if (response.status === 401 || response.status === 403) {
+          router.replace('/admin/login')
+          return
+        }
+
+        if (!response.ok) {
+          throw new Error(payload.error?.message ?? '연체 목록을 불러오지 못했습니다.')
+        }
+
+        setOverdueLoans(payload.data ?? [])
+      } catch (error) {
+        if (!didCancel) {
+          setErrorMessage(error instanceof Error ? error.message : '연체 목록을 불러오지 못했습니다.')
+        }
+      } finally {
+        if (!didCancel) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    void loadOverdueLoans()
+
+    return () => {
+      didCancel = true
+    }
+  }, [router])
+
+  return (
+    <section className="bg-gray-50 py-14 sm:py-16">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mb-8 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-600">
+            <AlertTriangle className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">연체관리</h1>
+            <p className="mt-1 text-sm text-gray-600">반납 예정일이 지난 대여 목록</p>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
+          {isLoading ? (
+            <div className="flex min-h-[280px] items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
+            </div>
+          ) : errorMessage ? (
+            <div className="px-4 py-3 text-sm text-red-700">{errorMessage}</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-100 text-sm">
+                <thead className="bg-gray-50 text-left text-xs font-semibold uppercase text-gray-500">
+                  <tr>
+                    <th className="px-4 py-3">학생</th>
+                    <th className="px-4 py-3">학번</th>
+                    <th className="px-4 py-3">도서명</th>
+                    <th className="px-4 py-3">대여일</th>
+                    <th className="px-4 py-3">반납 예정일</th>
+                    <th className="px-4 py-3">연체일</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-gray-700">
+                  {overdueLoans.length === 0 ? (
+                    <tr>
+                      <td className="px-4 py-8 text-center text-gray-500" colSpan={6}>
+                        -
+                      </td>
+                    </tr>
+                  ) : (
+                    overdueLoans.map((loan) => (
+                      <tr key={loan.id}>
+                        <td className="px-4 py-3 font-medium text-gray-900">
+                          {displayValue(loan.studentName)}
+                        </td>
+                        <td className="px-4 py-3">{displayValue(loan.studentNumber)}</td>
+                        <td className="max-w-[280px] px-4 py-3">{displayValue(loan.bookTitle)}</td>
+                        <td className="px-4 py-3">{displayValue(loan.borrowedOn)}</td>
+                        <td className="px-4 py-3">{displayValue(loan.dueOn)}</td>
+                        <td className="px-4 py-3 font-semibold text-red-600">
+                          {getOverdueDays(loan.dueOn, today)}일
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+</file>
+
+<file path="components/sections/Footer.tsx">
+'use client'
+
+import Link from 'next/link'
+
+export default function Footer() {
+  return (
+    <footer className="border-t border-gray-100 bg-white">
+      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center justify-between gap-6 sm:flex-row">
+          <div className="flex items-center">
+            <img src="/logo.png" alt="SanupHs Library" className="h-6 w-auto" />
+          </div>
+
+          <div className="flex flex-col items-center gap-3 text-sm text-gray-500 sm:flex-row">
+            <p>
+              © 2026 IT contents. All rights reserved.
+            </p>
+            <Link
+              href="/dev"
+              className="font-medium text-gray-600 transition-colors hover:text-primary-600"
+            >
+              개발진 소개
+            </Link>
+          </div>
+        </div>
+      </div>
+    </footer>
+  )
+}
+</file>
+
+<file path="components/sections/Hero.tsx">
+'use client'
+
+import { Search } from 'lucide-react'
+
+export default function Hero() {
+  return (
+    <section className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-white py-20 sm:py-28">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="max-w-2xl">
+          <h1 className="text-4xl font-bold leading-tight tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
+            학교 도서 대여를
+            <br />
+            <span className="text-primary-600">더 쉽고 빠르게</span>
+            <br />
+            관리하세요
+          </h1>
+
+          <p className="mt-6 text-lg leading-relaxed text-gray-600">
+            학생은 원하는 도서를 빠르게 검색하고,
+            <br className="hidden sm:block" />
+            관리자는 대여·반납·연체 현황을 한눈에 확인할 수 있습니다.
+          </p>
+
+          <div className="mt-10 flex flex-wrap gap-4">
+            <a
+              href="/books"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-primary-600/20 transition-all hover:bg-primary-700 hover:shadow-xl hover:shadow-primary-600/30"
+            >
+              <Search className="h-5 w-5" />
+              도서 검색하기
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div className="absolute right-0 top-1/2 hidden -translate-y-1/2 lg:block">
+        <div className="relative h-96 w-96">
+          <div className="absolute right-20 top-10 h-72 w-72 rounded-full bg-blue-100/50"></div>
+          <div className="absolute right-40 top-32 h-48 w-48 rounded-full bg-blue-50/80"></div>
+        </div>
+      </div>
+    </section>
+  )
+}
+</file>
+
+<file path="lib/admin-auth.ts">
+import { NextResponse } from 'next/server'
+import type { Session } from '@supabase/supabase-js'
+import {
+  createServerSupabaseClient,
+  createSupabaseClientWithAccessToken,
+  isSupabaseConfigured,
+  type TypedSupabaseClient,
+} from '@/lib/supabase'
+import { ApiRouteError, jsonError } from '@/lib/api-route'
+import type { Database } from '@/types/supabase'
+
+export const ADMIN_ACCESS_TOKEN_COOKIE = 'bb_admin_access_token'
+
+type AdminRole = Database['public']['Enums']['admin_role']
+
+export type AdminSession = {
+  role: AdminRole
+  supabase: TypedSupabaseClient
+  user: {
+    id: string
+    loginId: string
+  }
+}
+
+export class AdminAuthError extends Error {
+  code: string
+  status: number
+
+  constructor(status: number, code: string, message: string) {
+    super(message)
+    this.name = 'AdminAuthError'
+    this.status = status
+    this.code = code
+  }
+}
+
+const cookieOptions = {
+  httpOnly: true,
+  path: '/',
+  sameSite: 'lax' as const,
+  secure: process.env.NODE_ENV === 'production',
+}
+
+function parseCookieHeader(cookieHeader: string | null) {
+  const cookies = new Map<string, string>()
+
+  if (!cookieHeader) {
+    return cookies
+  }
+
+  for (const cookie of cookieHeader.split(';')) {
+    const [rawName, ...rawValue] = cookie.trim().split('=')
+    if (!rawName || rawValue.length === 0) {
+      continue
+    }
+
+    cookies.set(rawName, decodeURIComponent(rawValue.join('=')))
+  }
+
+  return cookies
+}
+
+function getAccessTokenFromRequest(request: Request) {
+  return parseCookieHeader(request.headers.get('cookie')).get(ADMIN_ACCESS_TOKEN_COOKIE) ?? ''
+}
+
+export function setAdminSessionCookie(response: NextResponse, session: Session) {
+  response.cookies.set(ADMIN_ACCESS_TOKEN_COOKIE, session.access_token, {
+    ...cookieOptions,
+    maxAge: session.expires_in,
+  })
+}
+
+export function clearAdminSessionCookie(response: NextResponse) {
+  response.cookies.set(ADMIN_ACCESS_TOKEN_COOKIE, '', {
+    ...cookieOptions,
+    maxAge: 0,
+  })
+}
+
+export function adminAuthErrorResponse(error: unknown) {
+  if (error instanceof AdminAuthError) {
+    return jsonError(error.code, error.message, error.status)
+  }
+
+  if (error instanceof ApiRouteError) {
+    return jsonError(error.code, error.message, error.status)
+  }
+
+  console.error('Admin auth failed:', error)
+  return jsonError('ADMIN_AUTH_FAILED', '관리자 인증 확인에 실패했습니다.', 500)
+}
+
+export function serializeAdminSession(session: AdminSession) {
+  return {
+    role: session.role,
+    user: session.user,
+  }
+}
+
+export async function requireAdminSession(request: Request): Promise<AdminSession> {
+  if (!isSupabaseConfigured()) {
+    throw new AdminAuthError(
+      503,
+      'SUPABASE_NOT_CONFIGURED',
+      'Supabase 환경변수가 설정되지 않았습니다.'
+    )
+  }
+
+  const accessToken = getAccessTokenFromRequest(request)
+  if (!accessToken) {
+    throw new AdminAuthError(401, 'UNAUTHENTICATED', '로그인이 필요합니다.')
+  }
+
+  const authClient = createServerSupabaseClient()
+  const {
+    data: { user },
+    error: userError,
+  } = await authClient.auth.getUser(accessToken)
+
+  if (userError || !user) {
+    throw new AdminAuthError(401, 'INVALID_SESSION', '세션이 만료되었거나 올바르지 않습니다.')
+  }
+
+  const authedClient = createSupabaseClientWithAccessToken(accessToken)
+  const { data: adminUser, error: adminUserError } = await authedClient
+    .from('admin_users')
+    .select('login_id, role')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (adminUserError) {
+    throw adminUserError
+  }
+
+  if (!adminUser) {
+    throw new AdminAuthError(403, 'FORBIDDEN', '관리자 권한이 필요합니다.')
+  }
+
+  return {
+    role: adminUser.role,
+    supabase: authedClient,
+    user: {
+      id: user.id,
+      loginId: adminUser.login_id,
+    },
+  }
+}
+</file>
+
+<file path="supabase/migrations/20260609001000_seed_301_students.sql">
+-- Intentionally left blank.
+-- Sample student data should not be created by migrations.
+</file>
+
+<file path="supabase/seed.sql">
+-- Intentionally left blank.
+-- Production and local reset flows should start without sample library data.
+</file>
+
+<file path=".gitignore">
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/.next-win/
+/.next-wsl/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env
+.env.*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+</file>
+
+<file path="package.json">
+{
+  "name": "bookbridge",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.108.0",
+    "lucide-react": "0.460.0",
+    "next": "14.2.18",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.4.20",
+    "playwright": "^1.60.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5"
+  }
+}
+</file>
+
+<file path="README.md">
+# Sanuphs-Library
+
+학교 도서 대여 관리용 Next.js 앱입니다.
+
+## Supabase Cloud
+
+Supabase 연결 환경변수는 `.env.example`을 기준으로 설정합니다. 자세한 클라우드 연결, 마이그레이션 push, 배포 환경변수 등록 절차는 [docs/supabase.md](docs/supabase.md)를 참고하세요.
+</file>
+
+<file path="tsconfig.json">
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".next-win/types/**/*.ts", ".next-wsl/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+</file>
+
+<file path=".omo/run-continuation/ses_146ccdba8ffeCpwyhICpXH0Y0n.json">
+{
+  "sessionID": "ses_146ccdba8ffeCpwyhICpXH0Y0n",
+<<<<<<< HEAD
+  "updatedAt": "2026-06-12T02:24:13.780Z",
+  "sources": {
+    "background-task": {
+      "state": "idle",
+      "updatedAt": "2026-06-12T02:24:13.780Z"
+=======
+  "updatedAt": "2026-06-12T00:49:19.568Z",
+  "sources": {
+    "background-task": {
+      "state": "idle",
+      "updatedAt": "2026-06-12T00:49:19.568Z"
+>>>>>>> origin/main
+    }
+  }
+}
+</file>
+
+<file path="app/api/books/search/route.ts">
+import {
+  createRouteSupabaseClient,
+  jsonDataWithMeta,
+  runApiRoute,
+} from '@/lib/api-route'
+
+export const dynamic = 'force-dynamic'
+
+const DEFAULT_LIMIT = 20
+const MAX_LIMIT = 50
+
+function getSearchParams(request: Request) {
+  const url = new URL(request.url)
+  const query = (url.searchParams.get('q') ?? url.searchParams.get('query') ?? '').trim()
+  const requestedLimit = Number(url.searchParams.get('limit') ?? DEFAULT_LIMIT)
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.min(Math.max(Math.trunc(requestedLimit), 1), MAX_LIMIT)
+    : DEFAULT_LIMIT
+
+  return { limit, query }
+}
+
+export async function GET(request: Request) {
+  const { limit, query } = getSearchParams(request)
+
+  return runApiRoute(
+    {
+      fallback: {
+        code: 'BOOK_SEARCH_FAILED',
+        message: '도서 검색에 실패했습니다.',
+      },
+      logLabel: 'Book search failed:',
+    },
+    async () => {
+      const supabase = createRouteSupabaseClient()
+      const { data, error } = await supabase
+        .rpc('search_books', { search_query: query })
+        .limit(limit)
+
+      if (error) {
+        throw error
+      }
+
+      const books = (data ?? []).map((book) => ({
+        id: book.id,
+        isbn: book.isbn,
+        title: book.title,
+        author: book.author,
+        publisher: book.publisher,
+        available_copies: book.available_copies,
+        total_copies: book.total_copies,
+        location: book.location,
+      }))
+
+      return jsonDataWithMeta(books, {
+        count: books.length,
+        limit,
+        query,
+      })
+    }
+  )
+}
+</file>
+
+<file path="app/dev/page.tsx">
+import type { Metadata } from 'next'
+import Footer from '@/components/sections/Footer'
+import Header from '@/components/sections/Header'
+import { Code2, LibraryBig } from 'lucide-react'
+
+export const metadata: Metadata = {
+  title: '개발진 소개 - SanupHs Library',
+  description: 'SanupHs Library 개발진 소개',
+}
+
+const developers = [
+  {
+    role: 'FullStack / Security',
+    name: '유재완',
+    icon: Code2,
+    history:
+      '개발 이력 :\n前 Team Abean Main Dev\n現 TeamNull Dev',
+    description:
+      '현재 Niiov라고 하는 회사 창업을 준비하며 SaaS, App, Game등을 \n 개발하고 있습니다. 또한 정보보안을 주로 다루며, 해당 사이트의 \n 모의해킹, 보안 검수를 진행했습니다. 이 프로젝트와 함께 \n "쿠키 동의 배너 디자인과 개인정보 보호 인식이 한국 웹 사용자의 의사결정에 미치는 영향"이라는 논문을 작성하고 있습니다.',
+  },
+  {
+    role: 'Backend',
+    name: '김건우',
+    icon: LibraryBig,
+    history:'개발 이력 :\n 無',
+    description:
+      '현재 부산산업학교 IT컨텐츠학과에 재학 중이며 프로그레밍을 \n 배워 가는 중입니다. 산업학교 도서 대여 서비스를 개발하며 \n 경험을 쌓아 나가고 있습니다.'
+  },
+]
+
+export default function DevPage() {
+  return (
+    <main className="min-h-screen bg-gray-50">
+      <Header />
+      <section className="bg-white py-16 sm:py-20">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-10 text-center">
+            <p className="text-sm font-semibold text-primary-600">
+              SanupHs Library
+            </p>
+            <h1 className="mt-3 text-3xl font-bold text-gray-900 sm:text-4xl">
+              개발진 소개
+            </h1>
+            <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-gray-600">
+              학교 도서관을 더 편리하게 사용할 수 있도록 서비스를 만들고 있는 개발진입니다.
+            </p>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            {developers.map((developer) => (
+              <article
+                key={developer.name}
+                className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm"
+              >
+                <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+                  <developer.icon className="h-6 w-6" strokeWidth={2} />
+                </div>
+                <p className="text-sm font-medium text-primary-600">
+                  {developer.role}
+                </p>
+                <h2 className="mt-2 text-2xl font-bold text-gray-900">
+                  {developer.name}
+                </h2>
+                {'history' in developer && developer.history ? (
+                  <p className="mt-4 whitespace-pre-line text-sm font-semibold leading-7 text-gray-900">
+                    {developer.history}
+                  </p>
+                ) : null}
+                {developer.description ? (
+                  <p className="mt-4 whitespace-pre-line text-sm leading-7 text-gray-600">
+                    {developer.description}
+                  </p>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+      <Footer />
+    </main>
+  )
+}
+</file>
+
 <file path="components/admin/AdminBooksManager.tsx">
 'use client'
 
@@ -4937,41 +6459,15 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { BookOpen, Loader2, Plus, Trash2 } from 'lucide-react'
 import AdminRemoveBookPanel from '@/components/admin/AdminRemoveBookPanel'
+import { displayValue } from '@/lib/display'
+import type { AdminBookRow, ApiResponse } from '@/types/library'
 
-type BookRow = {
-  author: string
-  available_copies: number
-  category: string
-  created_at: string
-  id: string
-  isbn: string | null
-  location: string | null
-  publisher: string | null
-  school_book_code: string | null
-  title: string
-  total_copies: number
-}
-
-type BooksResponse = {
-  data?: BookRow[]
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-function displayValue(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') {
-    return '-'
-  }
-
-  return String(value)
-}
+type BooksResponse = ApiResponse<AdminBookRow[]>
 
 export default function AdminBooksManager() {
   const router = useRouter()
   const removePanelRef = useRef<HTMLDivElement>(null)
-  const [books, setBooks] = useState<BookRow[]>([])
+  const [books, setBooks] = useState<AdminBookRow[]>([])
   const [errorMessage, setErrorMessage] = useState('')
   const [isLoading, setIsLoading] = useState(true)
 
@@ -5131,151 +6627,6 @@ export default function AdminBooksManager() {
 }
 </file>
 
-<file path="components/admin/AdminLoginForm.tsx">
-'use client'
-
-import { FormEvent, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Loader2, LogIn } from 'lucide-react'
-import { cn } from '@/lib/utils'
-
-type LoginResponse = {
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-type SessionResponse = {
-  data?: {
-    user: {
-      loginId: string
-    }
-  } | null
-}
-
-export default function AdminLoginForm() {
-  const router = useRouter()
-  const [loginId, setLoginId] = useState('')
-  const [password, setPassword] = useState('')
-  const [errorMessage, setErrorMessage] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-
-  useEffect(() => {
-    let didCancel = false
-
-    async function redirectIfLoggedIn() {
-      try {
-        const response = await fetch('/api/auth/admin/session?optional=1', {
-          cache: 'no-store',
-        })
-        const payload = (await response.json()) as SessionResponse
-
-        if (!didCancel && response.ok && payload.data?.user.loginId) {
-          router.replace('/admin')
-        }
-      } catch {
-        // 로그인 화면에서는 세션 확인 실패 시 입력 폼을 그대로 보여줍니다.
-      }
-    }
-
-    void redirectIfLoggedIn()
-
-    return () => {
-      didCancel = true
-    }
-  }, [router])
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setErrorMessage('')
-    setIsLoading(true)
-
-    try {
-      const response = await fetch('/api/auth/admin/login', {
-        body: JSON.stringify({ loginId, password }),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-      })
-      const payload = (await response.json()) as LoginResponse
-
-      if (!response.ok) {
-        throw new Error(payload.error?.message ?? '로그인에 실패했습니다.')
-      }
-
-      window.dispatchEvent(new Event('admin-session-changed'))
-      router.push('/admin')
-      router.refresh()
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '로그인에 실패했습니다.')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="w-full max-w-md rounded-lg border border-gray-100 bg-white p-6 shadow-sm">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">로그인</h1>
-        <p className="mt-2 text-sm text-gray-600">등록된 계정으로 로그인하세요.</p>
-      </div>
-
-      <div className="space-y-4">
-        <div>
-          <label htmlFor="admin-login-id" className="mb-2 block text-sm font-medium text-gray-700">
-            아이디
-          </label>
-          <input
-            id="admin-login-id"
-            value={loginId}
-            onChange={(event) => setLoginId(event.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-            autoComplete="username"
-            placeholder="SanupLib"
-            type="text"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="admin-password" className="mb-2 block text-sm font-medium text-gray-700">
-            비밀번호
-          </label>
-          <input
-            id="admin-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-            autoComplete="current-password"
-            placeholder="비밀번호"
-            type="password"
-          />
-        </div>
-      </div>
-
-      {errorMessage ? (
-        <div className="mt-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {errorMessage}
-        </div>
-      ) : null}
-
-      <button
-        type="submit"
-        className={cn(
-          'mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700',
-          isLoading && 'cursor-wait opacity-80'
-        )}
-        disabled={isLoading}
-      >
-        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-        로그인
-      </button>
-    </form>
-  )
-}
-</file>
-
 <file path="components/admin/AdminRemoveBookPanel.tsx">
 'use client'
 
@@ -5283,49 +6634,17 @@ import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, Loader2, Search, Trash2 } from 'lucide-react'
 import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
+import { readJsonResponse } from '@/lib/api-client'
+import { displayValue } from '@/lib/display'
+import type { ApiResponse, RemovableBook } from '@/types/library'
 
-export type RemovableBook = {
-  author: string
-  available_copies: number
-  id: string
-  isbn: string | null
-  publisher: string | null
-  school_book_code: string | null
-  title: string
-  total_copies: number
-}
-
-type BooksResponse = {
-  data?: RemovableBook[]
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-type DeleteBookResponse = {
-  data?: {
-    id: string
-    title: string
-  }
-  error?: {
-    code: string
-    message: string
-  }
-}
+type BooksResponse = ApiResponse<RemovableBook[]>
+type DeleteBookResponse = ApiResponse<Pick<RemovableBook, 'id' | 'title'>>
 
 type AdminRemoveBookPanelProps = {
   books?: RemovableBook[]
   isLoading?: boolean
   onBookDeleted?: (bookId: string) => void
-}
-
-function displayValue(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') {
-    return '-'
-  }
-
-  return String(value)
 }
 
 function normalize(value: string | null | undefined) {
@@ -5362,14 +6681,6 @@ function getAddBookUrl(scannedCode: string) {
   }
 
   return `/admin/add_books?${params.toString()}#add-book-form`
-}
-
-async function readJsonResponse<T>(response: Response): Promise<T> {
-  try {
-    return (await response.json()) as T
-  } catch {
-    return {} as T
-  }
 }
 
 export default function AdminRemoveBookPanel({
@@ -5614,164 +6925,20 @@ export default function AdminRemoveBookPanel({
 <file path="components/admin/LoanManager.tsx">
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { ClipboardList, Loader2, RotateCcw, AlertCircle, Search, Clock } from 'lucide-react'
-
-type Loan = {
-  borrowed_on: string
-  due_on: string
-  id: string
-  returned_on: string | null
-  status: 'rented' | 'returned'
-  books: { title: string; school_book_code: string | null } | null
-  students: { name: string; student_number: string } | null
-}
-
-function formatLocalDate(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-
-  return `${year}-${month}-${day}`
-}
+import { AlertCircle, ClipboardList, Clock, Loader2, RotateCcw, Search } from 'lucide-react'
+import { isLoanOverdue, useLoanManager } from '@/components/admin/useLoanManager'
 
 export default function LoanManager() {
-  const [loans, setLoans] = useState<Loan[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [errorMessage, setErrorMessage] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
-
-  async function loadLoans() {
-    setIsLoading(true)
-    setErrorMessage('')
-
-    try {
-      const response = await fetch('/api/loans', { cache: 'no-store' })
-      const payload = await response.json() as { data?: Loan[]; error?: { message: string } }
-
-      if (!response.ok) {
-        throw new Error(payload.error?.message ?? '대여 목록을 불러오지 못했습니다.')
-      }
-
-      setLoans(payload.data ?? [])
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '대여 목록을 불러오지 못했습니다.')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  async function updateLoanStatus(loanId: string, status: 'rented' | 'returned') {
-    try {
-      setErrorMessage('')
-      const response = await fetch(`/api/loans/${loanId}`, {
-        body: JSON.stringify({ status }),
-        headers: { 'Content-Type': 'application/json' },
-        method: 'PATCH',
-      })
-
-      if (!response.ok) {
-        const payload = await response.json() as { error?: { message: string } }
-        throw new Error(payload.error?.message ?? '상태 변경에 실패했습니다.')
-      }
-
-      await loadLoans()
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '상태 변경에 실패했습니다.')
-    }
-  }
-
-  async function extendDueDate(loanId: string) {
-    try {
-      setErrorMessage('')
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const newDueDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
-      const dueOnString = formatLocalDate(newDueDate)
-
-      const response = await fetch(`/api/loans/${loanId}`, {
-        body: JSON.stringify({ dueOn: dueOnString }),
-        headers: { 'Content-Type': 'application/json' },
-        method: 'PATCH',
-      })
-
-      if (!response.ok) {
-        const payload = await response.json() as { error?: { message: string } }
-        throw new Error(payload.error?.message ?? '기한 연장에 실패했습니다.')
-      }
-
-      await loadLoans()
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '기한 연장에 실패했습니다.')
-    }
-  }
-
-  async function forceOverdue(loan: Loan) {
-    try {
-      setErrorMessage('')
-      const yesterday = new Date()
-      yesterday.setHours(0, 0, 0, 0)
-      yesterday.setDate(yesterday.getDate() - 1)
-      const overdueDateString = formatLocalDate(yesterday)
-
-      const response = await fetch(`/api/loans/${loan.id}`, {
-        body: JSON.stringify({
-          borrowedOn: overdueDateString,
-          dueOn: overdueDateString,
-        }),
-        headers: { 'Content-Type': 'application/json' },
-        method: 'PATCH',
-      })
-
-      if (!response.ok) {
-        const payload = await response.json() as { error?: { message: string } }
-        throw new Error(payload.error?.message ?? '연체 처리에 실패했습니다.')
-      }
-
-      await loadLoans()
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '연체 처리에 실패했습니다.')
-    }
-  }
-
-  useEffect(() => {
-    void loadLoans()
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') {
-        void loadLoans()
-      }
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [])
-
-  const isOverdue = (dueOn: string) => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const due = new Date(`${dueOn}T00:00:00`)
-    return due < today
-  }
-
-  const filteredLoans = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase()
-    if (!query) return loans
-
-    return loans.filter((loan) => {
-      const bookTitle = loan.books?.title?.toLowerCase() ?? ''
-      const bookCode = loan.books?.school_book_code?.toLowerCase() ?? ''
-      const studentName = loan.students?.name?.toLowerCase() ?? ''
-      const studentNumber = loan.students?.student_number?.toLowerCase() ?? ''
-
-      return (
-        bookTitle.includes(query) ||
-        bookCode.includes(query) ||
-        studentName.includes(query) ||
-        studentNumber.includes(query)
-      )
-    })
-  }, [loans, searchQuery])
+  const {
+    errorMessage,
+    extendDueDate,
+    filteredLoans,
+    forceOverdue,
+    isLoading,
+    searchQuery,
+    setSearchQuery,
+    updateLoanStatus,
+  } = useLoanManager()
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
@@ -5790,7 +6957,7 @@ export default function LoanManager() {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(event) => setSearchQuery(event.target.value)}
             placeholder="도서명, 학교 도서 코드, 학생 이름, 학번으로 검색"
             className="h-11 w-full rounded-lg border border-gray-200 bg-white pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
             type="text"
@@ -5831,7 +6998,7 @@ export default function LoanManager() {
             </thead>
             <tbody className="divide-y divide-gray-100 text-gray-700">
               {filteredLoans.map((loan) => {
-                const overdue = isOverdue(loan.due_on)
+                const overdue = isLoanOverdue(loan.due_on)
 
                 return (
                   <tr key={loan.id}>
@@ -5928,38 +7095,17 @@ export default function LoanManager() {
 
 import { FormEvent, useEffect, useState } from 'react'
 import { BookOpen, Loader2, Search } from 'lucide-react'
+import { displayValue } from '@/lib/display'
+import type { ApiResponseWithMeta, BookSearchResult } from '@/types/library'
 
-type BookSearchResult = {
-  author: string
-  available_copies: number
-  id: string
-  isbn: string | null
-  location: string | null
-  publisher: string | null
-  title: string
-  total_copies: number
-}
-
-type BookSearchResponse = {
-  data?: BookSearchResult[]
-  error?: {
-    code: string
-    message: string
-  }
-  meta?: {
+type BookSearchResponse = ApiResponseWithMeta<
+  BookSearchResult[],
+  {
     count: number
     limit: number
     query: string
   }
-}
-
-function displayValue(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') {
-    return '-'
-  }
-
-  return String(value)
-}
+>
 
 export default function BookSearchSection() {
   const [books, setBooks] = useState<BookSearchResult[]>([])
@@ -6112,16 +7258,9 @@ import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, RotateCcw } from 'lucide-react'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import type { ApiResponse, ReturnableLoan } from '@/types/library'
 
-type ReturnableLoanResponse = {
-  data?: {
-    loan_id: string
-  } | null
-  error?: {
-    code: string
-    message: string
-  }
-}
+type ReturnableLoanResponse = ApiResponse<Pick<ReturnableLoan, 'loan_id'> | null>
 
 export default function MainReturnCodeForm() {
   const router = useRouter()
@@ -6198,50 +7337,16 @@ export default function MainReturnCodeForm() {
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { BookOpen, Loader2, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { displayValue } from '@/lib/display'
+import type {
+  ApiResponse,
+  ApiResponseWithMeta,
+  ReturnableLoan,
+  ReturnedLoan,
+} from '@/types/library'
 
-type ReturnableLoan = {
-  book_title: string
-  borrowed_on: string
-  due_on: string
-  loan_id: string
-  school_book_code: string | null
-  student_name: string
-}
-
-type ReturnedLoan = {
-  book_title: string
-  loan_id: string
-  returned_on: string
-  school_book_code: string | null
-  student_name: string
-}
-
-type LoanLookupResponse = {
-  data?: ReturnableLoan | null
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-type ReturnBooksResponse = {
-  data?: ReturnedLoan[]
-  error?: {
-    code: string
-    message: string
-  }
-  meta?: {
-    count: number
-  }
-}
-
-function displayValue(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') {
-    return '-'
-  }
-
-  return String(value)
-}
+type LoanLookupResponse = ApiResponse<ReturnableLoan | null>
+type ReturnBooksResponse = ApiResponseWithMeta<ReturnedLoan[], { count: number }>
 
 export default function ReturnBooksSection({ initialSchoolBookCode }: { initialSchoolBookCode: string }) {
   const initialLookupStartedRef = useRef(false)
@@ -6467,898 +7572,6 @@ export default function ReturnBooksSection({ initialSchoolBookCode }: { initialS
         </form>
       </div>
     </section>
-  )
-}
-</file>
-
-<file path="components/sections/Footer.tsx">
-'use client'
-
-import Link from 'next/link'
-
-export default function Footer() {
-  return (
-    <footer className="border-t border-gray-100 bg-white">
-      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-        <div className="flex flex-col items-center justify-between gap-6 sm:flex-row">
-          <div className="flex items-center">
-            <img src="/logo.png" alt="SanupHs Library" className="h-6 w-auto" />
-          </div>
-
-          <div className="flex flex-col items-center gap-3 text-sm text-gray-500 sm:flex-row">
-            <p>
-              © 2026 IT contents. All rights reserved.
-            </p>
-            <Link
-              href="/dev"
-              className="font-medium text-gray-600 transition-colors hover:text-primary-600"
-            >
-              개발진 소개
-            </Link>
-          </div>
-        </div>
-      </div>
-    </footer>
-  )
-}
-</file>
-
-<file path="components/sections/Hero.tsx">
-'use client'
-
-import { Search } from 'lucide-react'
-
-export default function Hero() {
-  return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-white py-20 sm:py-28">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="max-w-2xl">
-          <h1 className="text-4xl font-bold leading-tight tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
-            학교 도서 대여를
-            <br />
-            <span className="text-primary-600">더 쉽고 빠르게</span>
-            <br />
-            관리하세요
-          </h1>
-
-          <p className="mt-6 text-lg leading-relaxed text-gray-600">
-            학생은 원하는 도서를 빠르게 검색하고,
-            <br className="hidden sm:block" />
-            관리자는 대여·반납·연체 현황을 한눈에 확인할 수 있습니다.
-          </p>
-
-          <div className="mt-10 flex flex-wrap gap-4">
-            <a
-              href="/books"
-              className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-primary-600/20 transition-all hover:bg-primary-700 hover:shadow-xl hover:shadow-primary-600/30"
-            >
-              <Search className="h-5 w-5" />
-              도서 검색하기
-            </a>
-          </div>
-        </div>
-      </div>
-
-      <div className="absolute right-0 top-1/2 hidden -translate-y-1/2 lg:block">
-        <div className="relative h-96 w-96">
-          <div className="absolute right-20 top-10 h-72 w-72 rounded-full bg-blue-100/50"></div>
-          <div className="absolute right-40 top-32 h-48 w-48 rounded-full bg-blue-50/80"></div>
-        </div>
-      </div>
-    </section>
-  )
-}
-</file>
-
-<file path="supabase/migrations/20260609001000_seed_301_students.sql">
--- Intentionally left blank.
--- Sample student data should not be created by migrations.
-</file>
-
-<file path="supabase/seed.sql">
--- Intentionally left blank.
--- Production and local reset flows should start without sample library data.
-</file>
-
-<file path=".gitignore">
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
-
-# testing
-/coverage
-
-# next.js
-/.next/
-/.next-win/
-/.next-wsl/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files
-.env
-.env.*
-!.env.example
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
-</file>
-
-<file path="package.json">
-{
-  "name": "bookbridge",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "2.108.0",
-    "lucide-react": "0.460.0",
-    "next": "14.2.18",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
-  },
-  "devDependencies": {
-    "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
-    "autoprefixer": "^10.4.20",
-    "playwright": "^1.60.0",
-    "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.16",
-    "typescript": "^5"
-  }
-}
-</file>
-
-<file path="README.md">
-# Sanuphs-Library
-
-학교 도서 대여 관리용 Next.js 앱입니다.
-
-## Supabase Cloud
-
-Supabase 연결 환경변수는 `.env.example`을 기준으로 설정합니다. 자세한 클라우드 연결, 마이그레이션 push, 배포 환경변수 등록 절차는 [docs/supabase.md](docs/supabase.md)를 참고하세요.
-</file>
-
-<file path="tsconfig.json">
-{
-  "compilerOptions": {
-    "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
-    "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "preserve",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "paths": {
-      "@/*": ["./*"]
-    }
-  },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".next-win/types/**/*.ts", ".next-wsl/types/**/*.ts"],
-  "exclude": ["node_modules"]
-}
-</file>
-
-<file path=".omo/run-continuation/ses_146ccdba8ffeCpwyhICpXH0Y0n.json">
-{
-  "sessionID": "ses_146ccdba8ffeCpwyhICpXH0Y0n",
-<<<<<<< HEAD
-  "updatedAt": "2026-06-12T02:24:13.780Z",
-  "sources": {
-    "background-task": {
-      "state": "idle",
-      "updatedAt": "2026-06-12T02:24:13.780Z"
-=======
-  "updatedAt": "2026-06-12T00:49:19.568Z",
-  "sources": {
-    "background-task": {
-      "state": "idle",
-      "updatedAt": "2026-06-12T00:49:19.568Z"
->>>>>>> origin/main
-    }
-  }
-}
-</file>
-
-<file path="app/api/admin/books/isbn/route.ts">
-import { NextResponse } from 'next/server'
-import { normalizeIsbnInput } from '@/lib/barcode-input'
-import { adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
-
-export const dynamic = 'force-dynamic'
-
-const DEFAULT_ISBN_API_URL = 'https://www.nl.go.kr/seoji/SearchApi.do'
-const ISBN_API_TIMEOUT_MS = 15_000
-
-type NormalizedBookInfo = {
-  author: string
-  isbn: string
-  publisher: string
-  title: string
-}
-
-function cleanText(value: unknown) {
-  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
-}
-
-function jsonError(code: string, message: string, status: number) {
-  return NextResponse.json(
-    {
-      error: {
-        code,
-        message,
-      },
-    },
-    { status }
-  )
-}
-
-function getNationalLibraryApiKey() {
-  return process.env.NATIONAL_LIBRARY_ISBN_API_KEY?.trim() ?? ''
-}
-
-function getNationalLibraryApiUrl() {
-  return process.env.NATIONAL_LIBRARY_ISBN_API_URL?.trim() || DEFAULT_ISBN_API_URL
-}
-
-function getIsbnFromRequest(request: Request) {
-  const url = new URL(request.url)
-
-  return normalizeIsbnInput(cleanText(url.searchParams.get('isbn')))
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null
-  }
-
-  return value as Record<string, unknown>
-}
-
-function getFirstRecord(value: unknown): Record<string, unknown> | null {
-  if (Array.isArray(value)) {
-    return asRecord(value[0])
-  }
-
-  return asRecord(value)
-}
-
-function findFirstBookRecord(payload: unknown): Record<string, unknown> | null {
-  const root = asRecord(payload)
-  if (!root) {
-    return null
-  }
-
-  const candidateKeys = ['docs', 'doc', 'items', 'item', 'result', 'results', 'data']
-  for (const key of candidateKeys) {
-    const record = getFirstRecord(root[key])
-    if (record) {
-      return record
-    }
-  }
-
-  const response = asRecord(root.response)
-  if (response) {
-    for (const key of candidateKeys) {
-      const record = getFirstRecord(response[key])
-      if (record) {
-        return record
-      }
-    }
-  }
-
-  return root
-}
-
-function readField(record: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = cleanText(record[key])
-    if (value) {
-      return value
-    }
-  }
-
-  return ''
-}
-
-function parseNationalLibraryXml(text: string, fallbackIsbn: string): NormalizedBookInfo | null {
-  function readTag(tagName: string) {
-    const pattern = new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i')
-    const match = text.match(pattern)
-
-    return cleanText(match?.[1]?.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1'))
-  }
-
-  const title = readTag('TITLE') || readTag('title')
-  const author = readTag('AUTHOR') || readTag('author')
-  const publisher = readTag('PUBLISHER') || readTag('publisher')
-  const isbn = readTag('EA_ISBN') || readTag('ISBN') || readTag('isbn') || fallbackIsbn
-
-  if (!title && !author && !publisher) {
-    return null
-  }
-
-  return {
-    author,
-    isbn,
-    publisher,
-    title,
-  }
-}
-
-function normalizeBookInfo(payload: unknown, fallbackIsbn: string): NormalizedBookInfo | null {
-  const record = findFirstBookRecord(payload)
-  if (!record) {
-    return null
-  }
-
-  const title = readField(record, ['TITLE', 'title', 'book_title', 'bookTitle', 'BOOK_NM'])
-  const author = readField(record, ['AUTHOR', 'author', 'authors', 'AUTHOR_NM'])
-  const publisher = readField(record, ['PUBLISHER', 'publisher', 'PUBLISHER_NM'])
-  const isbn = readField(record, ['EA_ISBN', 'ISBN', 'isbn', 'isbn13', 'ISBN13']) || fallbackIsbn
-
-  if (!title && !author && !publisher) {
-    return null
-  }
-
-  return {
-    author,
-    isbn,
-    publisher,
-    title,
-  }
-}
-
-async function fetchWithTimeout(url: URL) {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), ISBN_API_TIMEOUT_MS)
-
-  try {
-    return await fetch(url, {
-      cache: 'no-store',
-      signal: controller.signal,
-    })
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-async function parseBookInfoResponse(response: Response, isbn: string) {
-  const contentType = response.headers.get('content-type') ?? ''
-  const responseText = await response.text()
-
-  if (!responseText.trim()) {
-    return null
-  }
-
-  if (contentType.includes('json') || responseText.trim().startsWith('{') || responseText.trim().startsWith('[')) {
-    try {
-      return normalizeBookInfo(JSON.parse(responseText), isbn)
-    } catch {
-      return null
-    }
-  }
-
-  return parseNationalLibraryXml(responseText, isbn)
-}
-
-export async function GET(request: Request) {
-  try {
-    await requireAdminSession(request)
-
-    const isbn = getIsbnFromRequest(request)
-    if (!isbn) {
-      return jsonError('MISSING_ISBN', 'ISBN 코드를 입력해주세요.', 400)
-    }
-
-    const apiKey = getNationalLibraryApiKey()
-    if (!apiKey) {
-      return jsonError(
-        'ISBN_API_NOT_CONFIGURED',
-        '국립중앙도서관 ISBN API 키가 설정되지 않았습니다.',
-        503
-      )
-    }
-
-    let apiUrl: URL
-    try {
-      apiUrl = new URL(getNationalLibraryApiUrl())
-    } catch {
-      return jsonError(
-        'INVALID_ISBN_API_URL',
-        '국립중앙도서관 ISBN API URL 설정이 올바르지 않습니다.',
-        500
-      )
-    }
-
-    apiUrl.searchParams.set('cert_key', apiKey)
-    apiUrl.searchParams.set('result_style', 'json')
-    apiUrl.searchParams.set('page_no', '1')
-    apiUrl.searchParams.set('page_size', '1')
-    apiUrl.searchParams.set('isbn', isbn)
-
-    let response: Response
-    try {
-      response = await fetchWithTimeout(apiUrl)
-    } catch (error) {
-      console.error('National Library ISBN API fetch failed:', error)
-
-      const isTimeout =
-        error instanceof DOMException && error.name === 'AbortError'
-
-      return jsonError(
-        isTimeout ? 'ISBN_API_TIMEOUT' : 'ISBN_API_FETCH_FAILED',
-        isTimeout
-          ? '국립중앙도서관 ISBN API 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
-          : '국립중앙도서관 ISBN API에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.',
-        502
-      )
-    }
-
-    if (!response.ok) {
-      return jsonError(
-        'ISBN_API_REQUEST_FAILED',
-        '국립중앙도서관 ISBN API 요청에 실패했습니다.',
-        502
-      )
-    }
-
-    const book = await parseBookInfoResponse(response, isbn)
-
-    if (!book) {
-      return jsonError('BOOK_NOT_FOUND', 'ISBN으로 책 정보를 찾지 못했습니다.', 404)
-    }
-
-    return NextResponse.json({
-      data: book,
-    })
-  } catch (error) {
-    return adminAuthErrorResponse(error)
-  }
-}
-</file>
-
-<file path="app/api/admin/books/route.ts">
-import { NextResponse } from 'next/server'
-import { adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
-import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
-
-export const dynamic = 'force-dynamic'
-
-type CreateBookBody = {
-  author?: unknown
-  isbn?: unknown
-  publisher?: unknown
-  schoolBookCode?: unknown
-  title?: unknown
-}
-
-type DeleteBookBody = {
-  id?: unknown
-}
-
-function getText(value: unknown) {
-  return typeof value === 'string' ? value.trim() : ''
-}
-
-function getCreateBookInput(body: CreateBookBody) {
-  return {
-    author: getText(body.author),
-    isbn: normalizeIsbnInput(getText(body.isbn)),
-    publisher: getText(body.publisher),
-    schoolBookCode: normalizeBarcodeInput(getText(body.schoolBookCode)),
-    title: getText(body.title),
-  }
-}
-
-export async function GET(request: Request) {
-  try {
-    const session = await requireAdminSession(request)
-    const { data, error } = await session.supabase
-      .from('books')
-      .select('id, isbn, school_book_code, title, author, publisher, category, total_copies, available_copies, location, created_at')
-      .order('created_at', { ascending: false })
-      .limit(100)
-
-    if (error) {
-      throw error
-    }
-
-    return NextResponse.json({
-      data: data ?? [],
-    })
-  } catch (error) {
-    return adminAuthErrorResponse(error)
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const session = await requireAdminSession(request)
-
-    let body: CreateBookBody
-    try {
-      body = (await request.json()) as CreateBookBody
-    } catch {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'INVALID_JSON',
-            message: '요청 본문이 올바른 JSON이어야 합니다.',
-          },
-        },
-        { status: 400 }
-      )
-    }
-
-    const input = getCreateBookInput(body)
-    const missingFields = [
-      !input.title && '책 이름',
-      !input.author && '저자',
-      !input.publisher && '출판사',
-      !input.isbn && 'ISBN 코드',
-      !input.schoolBookCode && '학교 내 도서 코드',
-    ].filter(Boolean)
-
-    if (missingFields.length > 0) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'MISSING_REQUIRED_FIELDS',
-            message: `${missingFields.join(', ')}을(를) 입력해주세요.`,
-          },
-        },
-        { status: 400 }
-      )
-    }
-
-    const { data, error } = await session.supabase
-      .from('books')
-      .insert({
-        author: input.author,
-        available_copies: 1,
-        category: '미분류',
-        isbn: input.isbn,
-        publisher: input.publisher,
-        school_book_code: input.schoolBookCode,
-        title: input.title,
-        total_copies: 1,
-      })
-      .select('id, isbn, school_book_code, title, author, publisher, category, total_copies, available_copies, location, created_at')
-      .single()
-
-    if (error) {
-      if (error.code === '23505') {
-        return NextResponse.json(
-          {
-            error: {
-              code: 'DUPLICATE_BOOK_CODE',
-              message: '이미 등록된 ISBN 또는 학교 내 도서 코드입니다.',
-            },
-          },
-          { status: 409 }
-        )
-      }
-
-      throw error
-    }
-
-    return NextResponse.json({ data }, { status: 201 })
-  } catch (error) {
-    return adminAuthErrorResponse(error)
-  }
-}
-
-export async function DELETE(request: Request) {
-  try {
-    const session = await requireAdminSession(request)
-    const url = new URL(request.url)
-    let bookId = getText(url.searchParams.get('id'))
-
-    if (!bookId) {
-      try {
-        const body = (await request.json()) as DeleteBookBody
-        bookId = getText(body.id)
-      } catch {
-        bookId = ''
-      }
-    }
-
-    if (!bookId) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'MISSING_BOOK_ID',
-            message: '제거할 도서를 선택해주세요.',
-          },
-        },
-        { status: 400 }
-      )
-    }
-
-    const { data, error } = await session.supabase
-      .from('books')
-      .delete()
-      .eq('id', bookId)
-      .select('id, title')
-      .maybeSingle()
-
-    if (error) {
-      if (error.code === '23503') {
-        return NextResponse.json(
-          {
-            error: {
-              code: 'BOOK_HAS_LOANS',
-              message: '대여 기록이 있는 도서는 바로 제거할 수 없습니다.',
-            },
-          },
-          { status: 409 }
-        )
-      }
-
-      throw error
-    }
-
-    if (!data) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'BOOK_NOT_FOUND',
-            message: '제거할 도서를 찾을 수 없습니다.',
-          },
-        },
-        { status: 404 }
-      )
-    }
-
-    return NextResponse.json({ data })
-  } catch (error) {
-    return adminAuthErrorResponse(error)
-  }
-}
-</file>
-
-<file path="app/api/returns/route.ts">
-import { NextResponse } from 'next/server'
-import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
-import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import type { Database } from '@/types/supabase'
-
-export const dynamic = 'force-dynamic'
-
-type ReturnedLoan = Database['public']['Functions']['return_loans_by_school_book_codes']['Returns'][number]
-
-type ReturnBooksBody = {
-  schoolBookCodes?: unknown
-}
-
-function getSchoolBookCodes(body: ReturnBooksBody) {
-  if (!Array.isArray(body.schoolBookCodes)) {
-    return []
-  }
-
-  return body.schoolBookCodes
-    .map((code) => (typeof code === 'string' ? normalizeBarcodeInput(code) : ''))
-    .filter(Boolean)
-}
-
-export async function POST(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'SUPABASE_NOT_CONFIGURED',
-          message: 'Supabase 환경변수가 설정되지 않았습니다.',
-        },
-      },
-      { status: 503 }
-    )
-  }
-
-  let body: ReturnBooksBody
-
-  try {
-    body = (await request.json()) as ReturnBooksBody
-  } catch {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'INVALID_JSON',
-          message: '요청 본문이 올바른 JSON이어야 합니다.',
-        },
-      },
-      { status: 400 }
-    )
-  }
-
-  const schoolBookCodes = getSchoolBookCodes(body)
-
-  if (schoolBookCodes.length === 0) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'MISSING_CODE',
-          message: '도서 코드를 입력해주세요.',
-        },
-      },
-      { status: 400 }
-    )
-  }
-
-  try {
-    const supabase = createServerSupabaseClient()
-    const { data, error } = await supabase.rpc('return_loans_by_school_book_codes', {
-      input_school_book_codes: schoolBookCodes,
-    })
-
-    if (error) {
-      throw error
-    }
-
-    const returnedLoans = (data ?? []) as ReturnedLoan[]
-
-    if (returnedLoans.length === 0) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'LOAN_NOT_FOUND',
-            message: '대여 중인 도서를 찾지 못해 반납 처리하지 못했습니다.',
-          },
-        },
-        { status: 404 }
-      )
-    }
-
-    return NextResponse.json(
-      {
-        data: returnedLoans,
-        meta: {
-          count: returnedLoans.length,
-        },
-      },
-      {
-        headers: {
-          'Cache-Control': 'no-store, max-age=0',
-        },
-      }
-    )
-  } catch (error) {
-    console.error('Book returns failed:', error)
-
-    return NextResponse.json(
-      {
-        error: {
-          code: 'BOOK_RETURN_FAILED',
-          message: error instanceof Error ? error.message : '도서 반납 처리에 실패했습니다.',
-        },
-      },
-      { status: 500 }
-    )
-  }
-}
-</file>
-
-<file path="app/dev/page.tsx">
-import type { Metadata } from 'next'
-import Footer from '@/components/sections/Footer'
-import Header from '@/components/sections/Header'
-import { Code2, LibraryBig } from 'lucide-react'
-
-export const metadata: Metadata = {
-  title: '개발진 소개 - SanupHs Library',
-  description: 'SanupHs Library 개발진 소개',
-}
-
-const developers = [
-  {
-    role: 'FullStack / Security',
-    name: '유재완',
-    icon: Code2,
-    history:
-      '개발 이력 :\n前 Team Abean Main Dev\n現 TeamNull Dev',
-    description:
-      '현재 Niiov라고 하는 회사 창업을 준비하며 SaaS, App, Game등을 \n 개발하고 있습니다. 또한 정보보안을 주로 다루며, 해당 사이트의 \n 모의해킹, 보안 검수를 진행했습니다. 이 프로젝트와 함께 \n "쿠키 동의 배너 디자인과 개인정보 보호 인식이 한국 웹 사용자의 의사결정에 미치는 영향"이라는 논문을 작성하고 있습니다.',
-  },
-  {
-    role: 'Backend',
-    name: '김건우',
-    icon: LibraryBig,
-    history:'개발 이력 :\n 無',
-    description:
-      '현재 부산산업학교 IT컨텐츠학과에 재학 중이며 프로그레밍을 \n 배워 가는 중입니다. 산업학교 도서 대여 서비스를 개발하며 \n 경험을 쌓아 나가고 있습니다.'
-  },
-]
-
-export default function DevPage() {
-  return (
-    <main className="min-h-screen bg-gray-50">
-      <Header />
-      <section className="bg-white py-16 sm:py-20">
-        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-          <div className="mb-10 text-center">
-            <p className="text-sm font-semibold text-primary-600">
-              SanupHs Library
-            </p>
-            <h1 className="mt-3 text-3xl font-bold text-gray-900 sm:text-4xl">
-              개발진 소개
-            </h1>
-            <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-gray-600">
-              학교 도서관을 더 편리하게 사용할 수 있도록 서비스를 만들고 있는 개발진입니다.
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2">
-            {developers.map((developer) => (
-              <article
-                key={developer.name}
-                className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm"
-              >
-                <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
-                  <developer.icon className="h-6 w-6" strokeWidth={2} />
-                </div>
-                <p className="text-sm font-medium text-primary-600">
-                  {developer.role}
-                </p>
-                <h2 className="mt-2 text-2xl font-bold text-gray-900">
-                  {developer.name}
-                </h2>
-                {'history' in developer && developer.history ? (
-                  <p className="mt-4 whitespace-pre-line text-sm font-semibold leading-7 text-gray-900">
-                    {developer.history}
-                  </p>
-                ) : null}
-                {developer.description ? (
-                  <p className="mt-4 whitespace-pre-line text-sm leading-7 text-gray-600">
-                    {developer.description}
-                  </p>
-                ) : null}
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-      <Footer />
-    </main>
   )
 }
 </file>
@@ -7761,6 +7974,462 @@ const nextConfig = {
 module.exports = nextConfig
 </file>
 
+<file path="app/api/admin/books/isbn/route.ts">
+import { normalizeIsbnInput } from '@/lib/barcode-input'
+import { adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
+import { jsonData, jsonError } from '@/lib/api-route'
+
+export const dynamic = 'force-dynamic'
+
+const DEFAULT_ISBN_API_URL = 'https://www.nl.go.kr/seoji/SearchApi.do'
+const ISBN_API_TIMEOUT_MS = 15_000
+
+type NormalizedBookInfo = {
+  author: string
+  isbn: string
+  publisher: string
+  title: string
+}
+
+function cleanText(value: unknown) {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
+}
+
+function getNationalLibraryApiKey() {
+  return process.env.NATIONAL_LIBRARY_ISBN_API_KEY?.trim() ?? ''
+}
+
+function getNationalLibraryApiUrl() {
+  return process.env.NATIONAL_LIBRARY_ISBN_API_URL?.trim() || DEFAULT_ISBN_API_URL
+}
+
+function getIsbnFromRequest(request: Request) {
+  const url = new URL(request.url)
+
+  return normalizeIsbnInput(cleanText(url.searchParams.get('isbn')))
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+
+  return value as Record<string, unknown>
+}
+
+function getFirstRecord(value: unknown): Record<string, unknown> | null {
+  if (Array.isArray(value)) {
+    return asRecord(value[0])
+  }
+
+  return asRecord(value)
+}
+
+function findFirstBookRecord(payload: unknown): Record<string, unknown> | null {
+  const root = asRecord(payload)
+  if (!root) {
+    return null
+  }
+
+  const candidateKeys = ['docs', 'doc', 'items', 'item', 'result', 'results', 'data']
+  for (const key of candidateKeys) {
+    const record = getFirstRecord(root[key])
+    if (record) {
+      return record
+    }
+  }
+
+  const response = asRecord(root.response)
+  if (response) {
+    for (const key of candidateKeys) {
+      const record = getFirstRecord(response[key])
+      if (record) {
+        return record
+      }
+    }
+  }
+
+  return root
+}
+
+function readField(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = cleanText(record[key])
+    if (value) {
+      return value
+    }
+  }
+
+  return ''
+}
+
+function parseNationalLibraryXml(text: string, fallbackIsbn: string): NormalizedBookInfo | null {
+  function readTag(tagName: string) {
+    const pattern = new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i')
+    const match = text.match(pattern)
+
+    return cleanText(match?.[1]?.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1'))
+  }
+
+  const title = readTag('TITLE') || readTag('title')
+  const author = readTag('AUTHOR') || readTag('author')
+  const publisher = readTag('PUBLISHER') || readTag('publisher')
+  const isbn = readTag('EA_ISBN') || readTag('ISBN') || readTag('isbn') || fallbackIsbn
+
+  if (!title && !author && !publisher) {
+    return null
+  }
+
+  return {
+    author,
+    isbn,
+    publisher,
+    title,
+  }
+}
+
+function normalizeBookInfo(payload: unknown, fallbackIsbn: string): NormalizedBookInfo | null {
+  const record = findFirstBookRecord(payload)
+  if (!record) {
+    return null
+  }
+
+  const title = readField(record, ['TITLE', 'title', 'book_title', 'bookTitle', 'BOOK_NM'])
+  const author = readField(record, ['AUTHOR', 'author', 'authors', 'AUTHOR_NM'])
+  const publisher = readField(record, ['PUBLISHER', 'publisher', 'PUBLISHER_NM'])
+  const isbn = readField(record, ['EA_ISBN', 'ISBN', 'isbn', 'isbn13', 'ISBN13']) || fallbackIsbn
+
+  if (!title && !author && !publisher) {
+    return null
+  }
+
+  return {
+    author,
+    isbn,
+    publisher,
+    title,
+  }
+}
+
+async function fetchWithTimeout(url: URL) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), ISBN_API_TIMEOUT_MS)
+
+  try {
+    return await fetch(url, {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function parseBookInfoResponse(response: Response, isbn: string) {
+  const contentType = response.headers.get('content-type') ?? ''
+  const responseText = await response.text()
+
+  if (!responseText.trim()) {
+    return null
+  }
+
+  if (contentType.includes('json') || responseText.trim().startsWith('{') || responseText.trim().startsWith('[')) {
+    try {
+      return normalizeBookInfo(JSON.parse(responseText), isbn)
+    } catch {
+      return null
+    }
+  }
+
+  return parseNationalLibraryXml(responseText, isbn)
+}
+
+export async function GET(request: Request) {
+  try {
+    await requireAdminSession(request)
+
+    const isbn = getIsbnFromRequest(request)
+    if (!isbn) {
+      return jsonError('MISSING_ISBN', 'ISBN 코드를 입력해주세요.', 400)
+    }
+
+    const apiKey = getNationalLibraryApiKey()
+    if (!apiKey) {
+      return jsonError(
+        'ISBN_API_NOT_CONFIGURED',
+        '국립중앙도서관 ISBN API 키가 설정되지 않았습니다.',
+        503
+      )
+    }
+
+    let apiUrl: URL
+    try {
+      apiUrl = new URL(getNationalLibraryApiUrl())
+    } catch {
+      return jsonError(
+        'INVALID_ISBN_API_URL',
+        '국립중앙도서관 ISBN API URL 설정이 올바르지 않습니다.',
+        500
+      )
+    }
+
+    apiUrl.searchParams.set('cert_key', apiKey)
+    apiUrl.searchParams.set('result_style', 'json')
+    apiUrl.searchParams.set('page_no', '1')
+    apiUrl.searchParams.set('page_size', '1')
+    apiUrl.searchParams.set('isbn', isbn)
+
+    let response: Response
+    try {
+      response = await fetchWithTimeout(apiUrl)
+    } catch (error) {
+      console.error('National Library ISBN API fetch failed:', error)
+
+      const isTimeout =
+        error instanceof DOMException && error.name === 'AbortError'
+
+      return jsonError(
+        isTimeout ? 'ISBN_API_TIMEOUT' : 'ISBN_API_FETCH_FAILED',
+        isTimeout
+          ? '국립중앙도서관 ISBN API 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
+          : '국립중앙도서관 ISBN API에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.',
+        502
+      )
+    }
+
+    if (!response.ok) {
+      return jsonError(
+        'ISBN_API_REQUEST_FAILED',
+        '국립중앙도서관 ISBN API 요청에 실패했습니다.',
+        502
+      )
+    }
+
+    const book = await parseBookInfoResponse(response, isbn)
+
+    if (!book) {
+      return jsonError('BOOK_NOT_FOUND', 'ISBN으로 책 정보를 찾지 못했습니다.', 404)
+    }
+
+    return jsonData(book)
+  } catch (error) {
+    return adminAuthErrorResponse(error)
+  }
+}
+</file>
+
+<file path="app/api/admin/books/route.ts">
+import { adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
+import { getText, jsonData, jsonError, readJsonBody } from '@/lib/api-route'
+import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
+
+export const dynamic = 'force-dynamic'
+
+type CreateBookBody = {
+  author?: unknown
+  isbn?: unknown
+  publisher?: unknown
+  schoolBookCode?: unknown
+  title?: unknown
+}
+
+type DeleteBookBody = {
+  id?: unknown
+}
+
+function getCreateBookInput(body: CreateBookBody) {
+  return {
+    author: getText(body.author),
+    isbn: normalizeIsbnInput(getText(body.isbn)),
+    publisher: getText(body.publisher),
+    schoolBookCode: normalizeBarcodeInput(getText(body.schoolBookCode)),
+    title: getText(body.title),
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    const session = await requireAdminSession(request)
+    const { data, error } = await session.supabase
+      .from('books')
+      .select('id, isbn, school_book_code, title, author, publisher, category, total_copies, available_copies, location, created_at')
+      .order('created_at', { ascending: false })
+      .limit(100)
+
+    if (error) {
+      throw error
+    }
+
+    return jsonData(data ?? [])
+  } catch (error) {
+    return adminAuthErrorResponse(error)
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const session = await requireAdminSession(request)
+    const body = await readJsonBody<CreateBookBody>(request)
+    const input = getCreateBookInput(body)
+    const missingFields = [
+      !input.title && '책 이름',
+      !input.author && '저자',
+      !input.publisher && '출판사',
+      !input.isbn && 'ISBN 코드',
+      !input.schoolBookCode && '학교 내 도서 코드',
+    ].filter(Boolean)
+
+    if (missingFields.length > 0) {
+      return jsonError('MISSING_REQUIRED_FIELDS', `${missingFields.join(', ')}을(를) 입력해주세요.`, 400)
+    }
+
+    const { data, error } = await session.supabase
+      .from('books')
+      .insert({
+        author: input.author,
+        available_copies: 1,
+        category: '미분류',
+        isbn: input.isbn,
+        publisher: input.publisher,
+        school_book_code: input.schoolBookCode,
+        title: input.title,
+        total_copies: 1,
+      })
+      .select('id, isbn, school_book_code, title, author, publisher, category, total_copies, available_copies, location, created_at')
+      .single()
+
+    if (error) {
+      if (error.code === '23505') {
+        return jsonError('DUPLICATE_BOOK_CODE', '이미 등록된 ISBN 또는 학교 내 도서 코드입니다.', 409)
+      }
+
+      throw error
+    }
+
+    return jsonData(data, { status: 201 })
+  } catch (error) {
+    return adminAuthErrorResponse(error)
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const session = await requireAdminSession(request)
+    const url = new URL(request.url)
+    let bookId = getText(url.searchParams.get('id'))
+
+    if (!bookId) {
+      try {
+        const body = await readJsonBody<DeleteBookBody>(request)
+        bookId = getText(body.id)
+      } catch {
+        bookId = ''
+      }
+    }
+
+    if (!bookId) {
+      return jsonError('MISSING_BOOK_ID', '제거할 도서를 선택해주세요.', 400)
+    }
+
+    const { data, error } = await session.supabase
+      .from('books')
+      .delete()
+      .eq('id', bookId)
+      .select('id, title')
+      .maybeSingle()
+
+    if (error) {
+      if (error.code === '23503') {
+        return jsonError('BOOK_HAS_LOANS', '대여 기록이 있는 도서는 바로 제거할 수 없습니다.', 409)
+      }
+
+      throw error
+    }
+
+    if (!data) {
+      return jsonError('BOOK_NOT_FOUND', '제거할 도서를 찾을 수 없습니다.', 404)
+    }
+
+    return jsonData(data)
+  } catch (error) {
+    return adminAuthErrorResponse(error)
+  }
+}
+</file>
+
+<file path="app/api/returns/route.ts">
+import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import {
+  createRouteSupabaseClient,
+  jsonDataWithMeta,
+  readJsonBody,
+  runApiRoute,
+  throwApiError,
+  withNoStore,
+} from '@/lib/api-route'
+import type { ReturnedLoan } from '@/types/library'
+
+export const dynamic = 'force-dynamic'
+
+type ReturnBooksBody = {
+  schoolBookCodes?: unknown
+}
+
+function getSchoolBookCodes(body: ReturnBooksBody) {
+  if (!Array.isArray(body.schoolBookCodes)) {
+    return []
+  }
+
+  return body.schoolBookCodes
+    .map((code) => (typeof code === 'string' ? normalizeBarcodeInput(code) : ''))
+    .filter(Boolean)
+}
+
+export async function POST(request: Request) {
+  return runApiRoute(
+    {
+      exposeErrorMessage: true,
+      fallback: {
+        code: 'BOOK_RETURN_FAILED',
+        message: '도서 반납 처리에 실패했습니다.',
+      },
+      logLabel: 'Book returns failed:',
+    },
+    async () => {
+      const body = await readJsonBody<ReturnBooksBody>(request)
+      const schoolBookCodes = getSchoolBookCodes(body)
+
+      if (schoolBookCodes.length === 0) {
+        throwApiError(400, 'MISSING_CODE', '도서 코드를 입력해주세요.')
+      }
+
+      const supabase = createRouteSupabaseClient()
+      const { data, error } = await supabase.rpc('return_loans_by_school_book_codes', {
+        input_school_book_codes: schoolBookCodes,
+      })
+
+      if (error) {
+        throw error
+      }
+
+      const returnedLoans = (data ?? []) as ReturnedLoan[]
+
+      if (returnedLoans.length === 0) {
+        throwApiError(404, 'LOAN_NOT_FOUND', '대여 중인 도서를 찾지 못해 반납 처리하지 못했습니다.')
+      }
+
+      return jsonDataWithMeta(
+        returnedLoans,
+        {
+          count: returnedLoans.length,
+        },
+        withNoStore()
+      )
+    }
+  )
+}
+</file>
+
 <file path="components/sections/Header.tsx">
 'use client'
 
@@ -8062,9 +8731,13 @@ export function getBrowserSupabaseClient(): TypedSupabaseClient {
 </file>
 
 <file path="app/api/books/lookup/route.ts">
-import { NextResponse } from 'next/server'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
+import {
+  createRouteSupabaseClient,
+  jsonData,
+  runApiRoute,
+  throwApiError,
+} from '@/lib/api-route'
 
 export const dynamic = 'force-dynamic'
 
@@ -8085,92 +8758,65 @@ function isLikelyIsbn(value: string) {
 }
 
 export async function GET(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'SUPABASE_NOT_CONFIGURED',
-          message: 'Supabase 환경변수가 설정되지 않았습니다.',
-        },
+  return runApiRoute(
+    {
+      fallback: {
+        code: 'FETCH_FAILED',
+        message: '도서 정보를 조회하는 중 오류가 발생했습니다.',
       },
-      { status: 503 }
-    )
-  }
+      logLabel: 'Book lookup error:',
+    },
+    async () => {
+      const code = getCode(request)
 
-  const code = getCode(request)
+      if (!code) {
+        throwApiError(400, 'MISSING_CODE', '도서 코드를 입력해주세요.')
+      }
 
-  if (!code) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'MISSING_CODE',
-          message: '도서 코드를 입력해주세요.',
-        },
-      },
-      { status: 400 }
-    )
-  }
+      const supabase = createRouteSupabaseClient()
+      const normalizedCode = normalizeCode(code)
+      const isIsbn = isLikelyIsbn(normalizedCode)
 
-  try {
-    const supabase = createServerSupabaseClient()
-    const normalizedCode = normalizeCode(code)
-    const isIsbn = isLikelyIsbn(normalizedCode)
+      let query = supabase
+        .from('books')
+        .select('id, isbn, school_book_code, title, author, publisher, available_copies, total_copies')
 
-    let query = supabase
-      .from('books')
-      .select('id, isbn, school_book_code, title, author, publisher, available_copies, total_copies')
+      if (isIsbn) {
+        query = query.eq('isbn', normalizedCode)
+      } else {
+        query = query.eq('school_book_code', normalizedCode)
+      }
 
-    if (isIsbn) {
-      query = query.eq('isbn', normalizedCode)
-    } else {
-      query = query.eq('school_book_code', normalizedCode)
+      const { data, error } = await query.maybeSingle()
+
+      if (error) {
+        throw error
+      }
+
+      if (!data) {
+        throwApiError(404, 'BOOK_NOT_FOUND', '해당 도서 코드의 책을 찾을 수 없습니다.')
+      }
+
+      return jsonData(data)
     }
-
-    const { data, error } = await query.maybeSingle()
-
-    if (error) {
-      throw error
-    }
-
-    if (!data) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'BOOK_NOT_FOUND',
-            message: '해당 도서 코드의 책을 찾을 수 없습니다.',
-          },
-        },
-        { status: 404 }
-      )
-    }
-
-    return NextResponse.json({ data })
-  } catch (error) {
-    console.error('Book lookup error:', error)
-
-    return NextResponse.json(
-      {
-        error: {
-          code: 'FETCH_FAILED',
-          message: '도서 정보를 조회하는 중 오류가 발생했습니다.',
-        },
-      },
-      { status: 500 }
-    )
-  }
+  )
 }
 </file>
 
 <file path="app/api/returns/loans/route.ts">
-import { NextResponse } from 'next/server'
-import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import type { Database } from '@/types/supabase'
+import {
+  createRouteSupabaseClient,
+  jsonData,
+  jsonDataWithMeta,
+  readJsonBody,
+  runApiRoute,
+  throwApiError,
+  withNoStore,
+} from '@/lib/api-route'
+import type { ReturnableLoan, ReturnedLoan } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
-
-type ReturnableLoan = Database['public']['Functions']['get_returnable_loan_by_school_book_code']['Returns'][number]
-type ReturnedLoan = Database['public']['Functions']['return_loans_by_school_book_codes']['Returns'][number]
 
 type ReturnLoansBody = {
   code?: unknown
@@ -8200,209 +8846,268 @@ function getSchoolBookCodesFromBody(body: ReturnLoansBody) {
 }
 
 export async function GET(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'SUPABASE_NOT_CONFIGURED',
-          message: 'Supabase 환경변수가 설정되지 않았습니다.',
-        },
+  return runApiRoute(
+    {
+      exposeErrorMessage: true,
+      fallback: {
+        code: 'BOOK_RETURN_LOOKUP_FAILED',
+        message: '반납할 대여 정보를 조회하는 중 오류가 발생했습니다.',
       },
-      { status: 503 }
-    )
-  }
+      logLabel: 'Book return lookup failed:',
+    },
+    async () => {
+      const code = getCode(request)
 
-  const code = getCode(request)
-
-  if (!code) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'MISSING_CODE',
-          message: '도서 코드를 입력해주세요.',
-        },
-      },
-      { status: 400 }
-    )
-  }
-
-  try {
-    const supabase = createServerSupabaseClient()
-
-    const { data: returnableLoans, error: returnableLoanError } = await supabase.rpc(
-      'get_returnable_loan_by_school_book_code',
-      {
-        input_school_book_code: code,
+      if (!code) {
+        throwApiError(400, 'MISSING_CODE', '도서 코드를 입력해주세요.')
       }
-    )
 
-    if (returnableLoanError) {
-      throw returnableLoanError
-    }
-
-    const loan = (returnableLoans ?? [])[0] as ReturnableLoan | undefined
-
-    if (!loan) {
-      return NextResponse.json(
+      const supabase = createRouteSupabaseClient()
+      const { data: returnableLoans, error: returnableLoanError } = await supabase.rpc(
+        'get_returnable_loan_by_school_book_code',
         {
-          error: {
-            code: 'LOAN_NOT_FOUND',
-            message: '해당 도서는 대여 중이 아닙니다.',
-          },
-        },
-        { status: 404 }
+          input_school_book_code: code,
+        }
       )
-    }
 
-    return NextResponse.json(
-      { data: loan },
-      {
-        headers: {
-          'Cache-Control': 'no-store, max-age=0',
-        },
+      if (returnableLoanError) {
+        throw returnableLoanError
       }
-    )
-  } catch (error) {
-    console.error('Book return lookup failed:', error)
 
-    return NextResponse.json(
-      {
-        error: {
-          code: 'BOOK_RETURN_LOOKUP_FAILED',
-          message: error instanceof Error ? error.message : '반납할 대여 정보를 조회하는 중 오류가 발생했습니다.',
-        },
-      },
-      { status: 500 }
-    )
-  }
+      const loan = (returnableLoans ?? [])[0] as ReturnableLoan | undefined
+
+      if (!loan) {
+        throwApiError(404, 'LOAN_NOT_FOUND', '해당 도서는 대여 중이 아닙니다.')
+      }
+
+      return jsonData(loan, withNoStore())
+    }
+  )
 }
 
 export async function POST(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'SUPABASE_NOT_CONFIGURED',
-          message: 'Supabase 환경변수가 설정되지 않았습니다.',
-        },
+  return runApiRoute(
+    {
+      exposeErrorMessage: true,
+      fallback: {
+        code: 'BOOK_RETURN_FAILED',
+        message: '도서 반납 처리에 실패했습니다.',
       },
-      { status: 503 }
-    )
-  }
+      logLabel: 'Book return failed:',
+    },
+    async () => {
+      const body = await readJsonBody<ReturnLoansBody>(request)
+      const schoolBookCodes = getSchoolBookCodesFromBody(body)
 
-  let body: ReturnLoansBody
+      if (schoolBookCodes.length === 0) {
+        throwApiError(400, 'MISSING_CODE', '도서 코드를 입력해주세요.')
+      }
 
-  try {
-    body = (await request.json()) as ReturnLoansBody
-  } catch {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'INVALID_JSON',
-          message: '요청 본문이 올바른 JSON이어야 합니다.',
-        },
-      },
-      { status: 400 }
-    )
-  }
-
-  const schoolBookCodes = getSchoolBookCodesFromBody(body)
-
-  if (schoolBookCodes.length === 0) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'MISSING_CODE',
-          message: '도서 코드를 입력해주세요.',
-        },
-      },
-      { status: 400 }
-    )
-  }
-
-  try {
-    const supabase = createServerSupabaseClient()
-
-    const { data: returnedLoans, error: returnLoanError } = await supabase.rpc('return_loans_by_school_book_codes', {
-      input_school_book_codes: schoolBookCodes,
-    })
-
-    if (returnLoanError) {
-      throw returnLoanError
-    }
-
-    const returnedLoanList = (returnedLoans ?? []) as ReturnedLoan[]
-
-    if (returnedLoanList.length === 0) {
-      return NextResponse.json(
+      const supabase = createRouteSupabaseClient()
+      const { data: returnedLoans, error: returnLoanError } = await supabase.rpc(
+        'return_loans_by_school_book_codes',
         {
-          error: {
-            code: 'LOAN_NOT_FOUND',
-            message: '대여 중인 도서를 찾지 못해 반납 처리하지 못했습니다.',
-          },
-        },
-        { status: 404 }
+          input_school_book_codes: schoolBookCodes,
+        }
       )
-    }
 
-    return NextResponse.json(
-      {
-        data: returnedLoanList,
-        meta: {
+      if (returnLoanError) {
+        throw returnLoanError
+      }
+
+      const returnedLoanList = (returnedLoans ?? []) as ReturnedLoan[]
+
+      if (returnedLoanList.length === 0) {
+        throwApiError(404, 'LOAN_NOT_FOUND', '대여 중인 도서를 찾지 못해 반납 처리하지 못했습니다.')
+      }
+
+      return jsonDataWithMeta(
+        returnedLoanList,
+        {
           count: returnedLoanList.length,
         },
-      },
-      {
-        headers: {
-          'Cache-Control': 'no-store, max-age=0',
-        },
-      }
-    )
-  } catch (error) {
-    console.error('Book return failed:', error)
-
-    return NextResponse.json(
-      {
-        error: {
-          code: 'BOOK_RETURN_FAILED',
-          message: error instanceof Error ? error.message : '도서 반납 처리에 실패했습니다.',
-        },
-      },
-      { status: 500 }
-    )
-  }
+        withNoStore()
+      )
+    }
+  )
 }
+</file>
+
+<file path="docs/supabase.md">
+# Supabase setup
+
+이 프로젝트는 Supabase CLI 마이그레이션으로 도서관 DB 스키마를 관리하고, Next.js 앱은 public anon key로 Supabase Cloud에 연결합니다.
+
+## Environment variables
+
+`.env.example`을 기준으로 로컬 또는 배포 환경에 값을 등록합니다.
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-public-key>
+ADMIN_LOGIN_ID=SanupLib
+ADMIN_AUTH_EMAIL=sanuplib-admin@sanuplib.local
+NATIONAL_LIBRARY_ISBN_API_KEY=<national-library-isbn-api-key>
+```
+
+- `NEXT_PUBLIC_SUPABASE_URL`: Supabase Dashboard > Project Settings > API > Project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase Dashboard > Project Settings > API > anon public key
+- `ADMIN_LOGIN_ID`: 로그인 화면에서 입력할 관리자 아이디입니다. 기본값은 `SanupLib`입니다.
+- `ADMIN_AUTH_EMAIL`: Supabase Auth에 실제로 생성할 관리자 사용자 이메일입니다. 앱은 관리자 아이디를 이 이메일 로그인으로 매핑합니다.
+- `NATIONAL_LIBRARY_ISBN_API_KEY`: 새 책 추가 화면에서 ISBN으로 책 정보를 조회할 때 사용하는 국립중앙도서관 ISBN API 키입니다. 서버 전용이므로 `NEXT_PUBLIC_`을 붙이지 않습니다.
+- `.env`, `.env.local`, `.env.production` 같은 실제 값 파일은 커밋하지 않습니다.
+- `service_role` key는 브라우저/Next public 환경변수에 넣지 않습니다.
+
+## Local app connection
+
+로컬에서 클라우드 Supabase를 바라보려면 `.env.example`을 참고해 `.env.local`을 만들고 public 값을 채운 뒤 개발 서버를 재시작합니다.
+
+```bash
+npm run dev
+```
+
+## Local Supabase stack
+
+로컬 Supabase 컨테이너를 직접 띄울 때만 Docker Desktop이 필요합니다.
+
+```bash
+npx supabase@2.105.0 start
+npx supabase@2.105.0 db reset
+```
+
+`db reset`은 `supabase/migrations/20260609000000_create_library_schema.sql`을 적용합니다. 현재 `supabase/seed.sql`은 샘플 데이터를 만들지 않는 no-op 파일입니다.
+
+## Cloud setup
+
+Supabase Cloud 프로젝트를 만든 뒤 CLI를 연결하고 마이그레이션을 push합니다.
+
+```bash
+npx supabase@2.105.0 login
+npx supabase@2.105.0 link --project-ref <project-ref>
+npx supabase@2.105.0 db push
+```
+
+초기 데이터는 Supabase SQL Editor, CSV import, 또는 운영용 import 스크립트로 별도 등록합니다. 마이그레이션과 seed 파일은 샘플 데이터를 생성하지 않습니다.
+
+## Annual loan reset
+
+`supabase/migrations/20260612100000_schedule_annual_loan_reset.sql`은 매년 1월 1일 00:00(KST)에 대여 기록을 초기화합니다.
+
+- Supabase의 `pg_cron`을 사용합니다.
+- Supabase cron은 UTC 기준으로 실행되므로 `0 15 31 12 *`에 예약합니다. 이는 한국시간 1월 1일 00:00입니다.
+- 실행 함수는 `public.reset_annual_loan_records()`입니다.
+- 초기화 시 `public.loans`의 모든 대여 기록을 삭제하고, 모든 도서의 `available_copies`를 `total_copies`로 맞춥니다.
+
+## Deployment
+
+Vercel, Netlify, GitHub Actions 같은 배포 환경에는 다음 값을 secret/environment variable로 등록합니다.
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `ADMIN_LOGIN_ID`
+- `ADMIN_AUTH_EMAIL`
+- `NATIONAL_LIBRARY_ISBN_API_KEY`
+
+도서 검색과 로그인 API는 Next.js API route를 사용하므로 정적 파일 호스팅만으로는 동작하지 않습니다. Vercel 또는 Next 서버를 지원하는 런타임에 배포해야 합니다.
+
+현재 DB 정책은 도서 검색은 anon 접근을 허용하고, 도서/학생/대여/희망도서 관리 데이터 변경은 `admin_users`에 등록된 관리자만 허용합니다. 공개 화면에서 관리 대시보드 데이터를 노출하려면 RLS 정책과 view 권한을 먼저 의도적으로 조정해야 합니다.
+
+## Book search API
+
+도서 검색 backend endpoint는 다음과 같습니다.
+
+```http
+GET /api/books/search?q=<검색어>&limit=20
+```
+
+- `q` 또는 `query`: 제목 또는 저자 검색어입니다. 빈 값이면 등록된 도서를 제한 개수만큼 조회합니다.
+- `limit`: 선택값이며 기본 20, 최대 50입니다.
+- Supabase의 `search_books` RPC를 호출합니다.
+
+## Admin book registration
+
+새 책 등록은 로그인된 관리자만 사용할 수 있습니다.
+
+```http
+POST /api/admin/books
+```
+
+요청 body:
+
+```json
+{
+  "title": "책 이름",
+  "author": "저자",
+  "publisher": "출판사",
+  "isbn": "ISBN 코드",
+  "schoolBookCode": "학교 내 도서 코드"
+}
+```
+
+- 화면 경로: `/admin/add_books`
+- `school_book_code`는 학교 내 도서 바코드 값이며 중복 등록을 막습니다.
+- ISBN 입력 후 Enter 또는 조회 버튼을 누르면 서버 API가 국립중앙도서관 ISBN API를 호출해 책 이름, 저자, 출판사를 자동 입력합니다.
+
+ISBN 조회 endpoint:
+
+```http
+GET /api/admin/books/isbn?isbn=<ISBN>
+```
+
+- 로그인된 관리자만 호출할 수 있습니다.
+- 내부적으로 `NATIONAL_LIBRARY_ISBN_API_KEY`를 사용합니다.
+- 기본 외부 API URL은 `https://www.nl.go.kr/seoji/SearchApi.do`이며, 필요 시 `NATIONAL_LIBRARY_ISBN_API_URL`로 override할 수 있습니다.
+
+## Admin auth
+
+관리 기능은 Supabase Auth 사용자 중 `public.admin_users`에 등록된 사용자만 접근할 수 있습니다. 화면에서는 이메일 대신 관리자 아이디로 로그인합니다.
+
+1. Supabase Dashboard > Authentication > Users에서 관리자 계정을 1개 생성합니다.
+   - Email: `sanuplib-admin@sanuplib.local` 또는 `ADMIN_AUTH_EMAIL` 값
+   - Password: `SanupLib2026!`
+   - App login ID: `SanupLib`
+2. 생성된 사용자의 `id`를 복사합니다.
+3. SQL Editor에서 다음 쿼리로 첫 관리자를 등록합니다.
+
+```sql
+insert into public.admin_users (user_id, login_id, role)
+values ('<auth-user-id>', 'SanupLib', 'admin');
+```
+
+관리자 로그인/세션 endpoint:
+
+```http
+POST /api/auth/admin/login
+POST /api/auth/admin/logout
+GET /api/auth/admin/session
+```
+
+- 로그인 성공 시 httpOnly 쿠키에 관리자 access token을 저장합니다.
+- 서버 보호 API에서는 `requireAdminSession(request)` helper로 세션과 관리자 권한을 확인합니다.
+- `아이디 또는 비밀번호가 올바르지 않습니다.`가 뜨면 Supabase Auth의 email/password/confirm 상태를 먼저 확인합니다.
 </file>
 
 <file path="lib/library-queries.ts">
 import type { TypedSupabaseClient } from '@/lib/supabase'
-import type { Database } from '@/types/supabase'
+import type {
+  ActiveLoanWithStudent,
+  DashboardOverdueLoan,
+  DashboardOverdueLoanWithStudent,
+  DashboardSummary,
+  RecentBook,
+  RecentLoan,
+  SearchBook,
+  StudentLoanStat,
+} from '@/types/library'
 
-export type DashboardSummary = Database['public']['Views']['dashboard_summary']['Row']
-export type RecentLoan = Database['public']['Views']['dashboard_recent_loans']['Row']
-export type SearchBook = Database['public']['Functions']['search_books']['Returns'][number]
-export type RecentBook = Pick<
-  Database['public']['Tables']['books']['Row'],
-  'id' | 'title' | 'author' | 'category' | 'available_copies' | 'total_copies' | 'created_at'
->
-export type StudentLoanStat = {
-  student_id: string
-  student_name: string
-  total_loans: number
-}
-export type OverdueLoan = {
-  due_on: string
-  id: string
-  student_name: string
-}
-
-type ActiveLoanWithStudent = Pick<Database['public']['Tables']['loans']['Row'], 'id' | 'student_id'> & {
-  students: Pick<Database['public']['Tables']['students']['Row'], 'name'> | null
-}
-
-type OverdueLoanWithStudent = Pick<Database['public']['Tables']['loans']['Row'], 'due_on' | 'id'> & {
-  students: Pick<Database['public']['Tables']['students']['Row'], 'name'> | null
-}
+export type {
+  DashboardOverdueLoan as OverdueLoan,
+  DashboardSummary,
+  RecentBook,
+  RecentLoan,
+  SearchBook,
+  StudentLoanStat,
+} from '@/types/library'
 
 export type DashboardData = {
   summary: DashboardSummary
@@ -8486,7 +9191,7 @@ export async function getStudentLoanStats(client: TypedSupabaseClient): Promise<
   })
 }
 
-export async function getOverdueLoans(client: TypedSupabaseClient, limit = 20): Promise<OverdueLoan[]> {
+export async function getOverdueLoans(client: TypedSupabaseClient, limit = 20): Promise<DashboardOverdueLoan[]> {
   const today = new Date().toISOString().slice(0, 10)
   const { data, error } = await client
     .from('loans')
@@ -8495,7 +9200,7 @@ export async function getOverdueLoans(client: TypedSupabaseClient, limit = 20): 
     .lt('due_on', today)
     .order('due_on', { ascending: true })
     .limit(limit)
-    .returns<OverdueLoanWithStudent[]>()
+    .returns<DashboardOverdueLoanWithStudent[]>()
 
   if (error) {
     throw error
@@ -8533,14 +9238,16 @@ export async function getDashboardData(client: TypedSupabaseClient): Promise<Das
 </file>
 
 <file path="app/api/students/route.ts">
-import { NextResponse } from 'next/server'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
-import type { Database } from '@/types/supabase'
+import {
+  createRouteSupabaseClient,
+  jsonData,
+  runApiRoute,
+  throwApiError,
+} from '@/lib/api-route'
+import type { LoanStudent } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
-
-type LoanStudent = Database['public']['Functions']['lookup_student_for_loan']['Returns'][number]
 
 function getStudentNumber(request: Request) {
   const url = new URL(request.url)
@@ -8549,387 +9256,72 @@ function getStudentNumber(request: Request) {
 }
 
 export async function GET(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'SUPABASE_NOT_CONFIGURED',
-          message: 'Supabase 환경변수가 설정되지 않았습니다.',
-        },
+  return runApiRoute(
+    {
+      fallback: {
+        code: 'FETCH_FAILED',
+        message: '학생 정보를 조회하는 중 오류가 발생했습니다.',
       },
-      { status: 503 }
-    )
-  }
+      logLabel: 'Student fetch error:',
+    },
+    async () => {
+      const studentNumber = getStudentNumber(request)
 
-  const studentNumber = getStudentNumber(request)
+      if (!studentNumber) {
+        throwApiError(400, 'MISSING_STUDENT_NUMBER', '학번을 입력해주세요.')
+      }
 
-  if (!studentNumber) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'MISSING_STUDENT_NUMBER',
-          message: '학번을 입력해주세요.',
-        },
-      },
-      { status: 400 }
-    )
-  }
+      const supabase = createRouteSupabaseClient()
+      const { data, error } = await supabase.rpc('lookup_student_for_loan', {
+        input_student_number: studentNumber,
+      })
 
-  try {
-    const supabase = createServerSupabaseClient()
-    const { data, error } = await supabase.rpc('lookup_student_for_loan', {
-      input_student_number: studentNumber,
-    })
+      if (error) {
+        throw error
+      }
 
-    if (error) {
-      throw error
+      const student = (data ?? [])[0] as LoanStudent | undefined
+
+      if (!student) {
+        throwApiError(404, 'STUDENT_NOT_FOUND', '해당 학번의 학생을 찾을 수 없습니다.')
+      }
+
+      return jsonData(student)
     }
-
-    const student = (data ?? [])[0] as LoanStudent | undefined
-
-    if (!student) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'STUDENT_NOT_FOUND',
-            message: '해당 학번의 학생을 찾을 수 없습니다.',
-          },
-        },
-        { status: 404 }
-      )
-    }
-
-    return NextResponse.json({ data: student })
-  } catch (error) {
-    console.error('Student fetch error:', error)
-
-    return NextResponse.json(
-      {
-        error: {
-          code: 'FETCH_FAILED',
-          message: '학생 정보를 조회하는 중 오류가 발생했습니다.',
-        },
-      },
-      { status: 500 }
-    )
-  }
+  )
 }
 </file>
 
 <file path="components/admin/AdminAddBookForm.tsx">
 'use client'
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
 import { BookPlus, Loader2, Save, Search } from 'lucide-react'
-import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
+import { useAdminAddBookForm } from '@/components/admin/useAdminAddBookForm'
 import { ScanInput } from '@/components/ui/ScanInput'
 import { StatusMessage } from '@/components/ui/StatusMessage'
 import { WorkflowStepCard } from '@/components/ui/WorkflowStepCard'
 
-type CreateBookResponse = {
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-type LookupBookResponse = {
-  data?: {
-    author: string
-    isbn: string
-    publisher: string
-    title: string
-  }
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-type BookFormState = {
-  author: string
-  isbn: string
-  publisher: string
-  schoolBookCode: string
-  title: string
-}
-
-type Step = 'isbn' | 'info' | 'code'
-
-const initialFormState: BookFormState = {
-  author: '',
-  isbn: '',
-  publisher: '',
-  schoolBookCode: '',
-  title: '',
-}
-
-function sanitizeIsbn(value: string) {
-  return normalizeIsbnInput(value)
-}
-
-function sanitizeSchoolBookCode(value: string) {
-  return normalizeBarcodeInput(value)
-}
-
-function trimFormState(form: BookFormState) {
-  return {
-    author: form.author.trim(),
-    isbn: form.isbn.trim(),
-    publisher: form.publisher.trim(),
-    schoolBookCode: form.schoolBookCode.trim(),
-    title: form.title.trim(),
-  }
-}
-
-async function readJsonResponse<T>(response: Response): Promise<T> {
-  try {
-    return (await response.json()) as T
-  } catch {
-    return {} as T
-  }
-}
-
 export default function AdminAddBookForm() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const [form, setForm] = useState<BookFormState>(initialFormState)
-  const [activeStep, setActiveStep] = useState<Step>('isbn')
-  const [errorMessage, setErrorMessage] = useState('')
-  const [infoMessage, setInfoMessage] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
-  const [isCheckingSession, setIsCheckingSession] = useState(true)
-  const [isLookingUpIsbn, setIsLookingUpIsbn] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const isbnInputRef = useRef<HTMLInputElement>(null)
-  const schoolBookCodeInputRef = useRef<HTMLInputElement>(null)
-
-  const isInfoComplete = useMemo(() => {
-    const trimmed = trimFormState(form)
-    return Boolean(trimmed.title && trimmed.author && trimmed.publisher)
-  }, [form])
-
-  useEffect(() => {
-    let didCancel = false
-
-    async function checkSession() {
-      try {
-        const response = await fetch('/api/auth/admin/session', {
-          cache: 'no-store',
-        })
-
-        if (!didCancel && (response.status === 401 || response.status === 403)) {
-          router.replace('/admin/login')
-          return
-        }
-
-        if (!didCancel) {
-          setIsCheckingSession(false)
-        }
-      } catch {
-        if (!didCancel) {
-          setErrorMessage('세션 확인에 실패했습니다.')
-          setIsCheckingSession(false)
-        }
-      }
-    }
-
-    void checkSession()
-
-    return () => {
-      didCancel = true
-    }
-  }, [router])
-
-  useEffect(() => {
-    if (isCheckingSession) return
-
-    const paramIsbn = searchParams.get('isbn') ?? ''
-    const paramSchoolBookCode = searchParams.get('schoolBookCode') ?? ''
-
-    if (paramIsbn || paramSchoolBookCode) {
-      setForm((current) => ({
-        ...current,
-        isbn: sanitizeIsbn(paramIsbn),
-        schoolBookCode: sanitizeSchoolBookCode(paramSchoolBookCode),
-      }))
-    }
-
-    if (paramIsbn) {
-      setActiveStep('isbn')
-      window.setTimeout(() => isbnInputRef.current?.focus(), 0)
-    } else if (paramSchoolBookCode) {
-      setActiveStep('code')
-      window.setTimeout(() => schoolBookCodeInputRef.current?.focus(), 0)
-    } else {
-      setActiveStep('isbn')
-      window.setTimeout(() => isbnInputRef.current?.focus(), 0)
-    }
-  }, [isCheckingSession, searchParams])
-
-  function clearMessages() {
-    setErrorMessage('')
-    setInfoMessage('')
-    setSuccessMessage('')
-  }
-
-  function updateField(field: keyof BookFormState, value: string) {
-    const nextValue =
-      field === 'isbn'
-        ? sanitizeIsbn(value)
-        : field === 'schoolBookCode'
-          ? sanitizeSchoolBookCode(value)
-          : value
-
-    setSuccessMessage('')
-    setForm((current) => ({
-      ...current,
-      [field]: nextValue,
-    }))
-  }
-
-  async function submitBook(nextForm = form) {
-    const input = trimFormState(nextForm)
-
-    if (!input.isbn || !input.schoolBookCode || !input.title || !input.author || !input.publisher) {
-      setErrorMessage('책 이름, 저자, 출판사, ISBN 코드, 학교 내 도서 코드를 모두 입력해주세요.')
-      return
-    }
-
-    setIsSubmitting(true)
-    clearMessages()
-
-    try {
-      const response = await fetch('/api/admin/books', {
-        body: JSON.stringify(input),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-      })
-      const payload = (await response.json()) as CreateBookResponse
-
-      if (response.status === 401 || response.status === 403) {
-        router.replace('/admin/login')
-        return
-      }
-
-      if (!response.ok) {
-        throw new Error(payload.error?.message ?? '책 등록에 실패했습니다.')
-      }
-
-      setForm(initialFormState)
-      setActiveStep('isbn')
-      setSuccessMessage('책이 등록되었습니다. 다음 ISBN 바코드를 스캔해주세요.')
-      if (searchParams.toString()) {
-        router.replace('/admin/add_books', { scroll: false })
-      }
-      router.refresh()
-      window.setTimeout(() => isbnInputRef.current?.focus(), 0)
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '책 등록에 실패했습니다.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  async function lookupIsbn(nextIsbn = form.isbn) {
-    const isbn = sanitizeIsbn(nextIsbn.trim())
-
-    if (!isbn) {
-      setErrorMessage('ISBN 코드를 입력해주세요.')
-      setInfoMessage('')
-      return
-    }
-
-    clearMessages()
-    setIsLookingUpIsbn(true)
-
-    try {
-      const params = new URLSearchParams({ isbn })
-      let response: Response
-
-      try {
-        response = await fetch(`/api/admin/books/isbn?${params.toString()}`, {
-          cache: 'no-store',
-        })
-      } catch {
-        throw new Error('ISBN 조회 API에 연결하지 못했습니다. 개발 서버가 실행 중인지 확인해주세요.')
-      }
-
-      const payload = await readJsonResponse<LookupBookResponse>(response)
-
-      if (response.status === 401 || response.status === 403) {
-        router.replace('/admin/login')
-        return
-      }
-
-      if (response.status === 404) {
-        setForm((current) => ({
-          ...current,
-          isbn,
-        }))
-        setInfoMessage(payload.error?.message ?? 'ISBN 정보를 찾지 못했습니다. 책 정보를 직접 입력해주세요.')
-        setActiveStep('info')
-        return
-      }
-
-      if (!response.ok || !payload.data) {
-        throw new Error(payload.error?.message ?? 'ISBN 정보 조회에 실패했습니다.')
-      }
-
-      const book = payload.data
-
-      setForm((current) => ({
-        ...current,
-        author: book.author || current.author,
-        isbn: book.isbn || isbn,
-        publisher: book.publisher || current.publisher,
-        title: book.title || current.title,
-      }))
-      setInfoMessage('ISBN 정보를 불러왔습니다. 내용을 확인하고 필요하면 수정해주세요.')
-      setActiveStep('info')
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'ISBN 정보 조회에 실패했습니다.')
-    } finally {
-      setIsLookingUpIsbn(false)
-    }
-  }
-
-  function handleIsbnEnter() {
-    void lookupIsbn()
-  }
-
-  function handleSchoolBookCodeEnter() {
-    const nextForm = trimFormState(form)
-
-    if (!isInfoComplete) {
-      setErrorMessage('책 이름, 저자, 출판사를 먼저 입력해주세요.')
-      setActiveStep('info')
-      return
-    }
-
-    void submitBook(nextForm)
-  }
-
-  function moveToCodeStep() {
-    if (!isInfoComplete) {
-      setErrorMessage('책 이름, 저자, 출판사를 모두 입력해주세요.')
-      return
-    }
-
-    clearMessages()
-    setActiveStep('code')
-    window.setTimeout(() => schoolBookCodeInputRef.current?.focus(), 0)
-  }
-
-  function handleReset() {
-    setForm(initialFormState)
-    setActiveStep('isbn')
-    clearMessages()
-    window.setTimeout(() => isbnInputRef.current?.focus(), 0)
-  }
+  const {
+    activeStep,
+    errorMessage,
+    form,
+    handleCancel,
+    handleIsbnEnter,
+    handleReset,
+    handleSchoolBookCodeEnter,
+    infoMessage,
+    isCheckingSession,
+    isInfoComplete,
+    isLookingUpIsbn,
+    isSubmitting,
+    isbnInputRef,
+    moveToCodeStep,
+    schoolBookCodeInputRef,
+    submitBook,
+    successMessage,
+    updateField,
+  } = useAdminAddBookForm()
 
   if (isCheckingSession) {
     return (
@@ -9095,7 +9487,7 @@ export default function AdminAddBookForm() {
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
           <button
             className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
-            onClick={() => router.push('/admin/books')}
+            onClick={handleCancel}
             type="button"
           >
             취소
@@ -9126,334 +9518,35 @@ export default function AdminAddBookForm() {
 <file path="components/rent/RentBookForm.tsx">
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { BookOpen, UserCheck } from 'lucide-react'
-import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import {
-  getBorrowerLookupCodeFromScannedValue,
-  normalizeBorrowerLookupCode,
-} from '@/lib/loan-limits'
-import { WorkflowStepCard } from '@/components/ui/WorkflowStepCard'
-import { ScanInput } from '@/components/ui/ScanInput'
-import { StatusMessage } from '@/components/ui/StatusMessage'
-import type { Database } from '@/types/supabase'
-
-type LoanStudent = Database['public']['Functions']['lookup_student_for_loan']['Returns'][number]
-
-type Book = {
-  author: string
-  available_copies: number
-  id: string
-  isbn: string | null
-  publisher: string | null
-  school_book_code: string | null
-  title: string
-  total_copies: number
-}
-
-type ApiResponse<T> = {
-  data?: T
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-type Status = {
-  message: string
-  variant: 'error' | 'success' | 'info' | 'warning'
-}
-
-async function readJsonResponse<T>(response: Response): Promise<T> {
-  try {
-    return (await response.json()) as T
-  } catch {
-    return {} as T
-  }
-}
-
-function normalizeRentCode(value: string) {
-  return normalizeBarcodeInput(value).toUpperCase()
-}
-
-function getBorrowerDisplay(targetStudent: LoanStudent) {
-  if (targetStudent.borrower_type === 'staff') {
-    return `${targetStudent.borrower_label} ${targetStudent.seat_number}번`
-  }
-
-  return `${targetStudent.grade}-${targetStudent.class_number}반 ${targetStudent.seat_number}번`
-}
-
-function getStudentRestrictionMessage(targetStudent: LoanStudent | null): string | null {
-  if (!targetStudent) {
-    return null
-  }
-
-  if (targetStudent.overdue_days > 0) {
-    return `반납 예정일이 지난 도서가 있습니다. 먼저 연체 도서를 반납해주세요.`
-  }
-
-  if (targetStudent.loan_ban_remaining_days > 0 && targetStudent.loan_banned_until) {
-    return `연체로 인한 대출 금지 기간입니다. ${formatKoreanDate(targetStudent.loan_banned_until)}까지 대여할 수 없습니다.`
-  }
-
-  return null
-}
-
-function formatKoreanDate(value: string) {
-  const [year, month, day] = value.split('-')
-
-  if (!year || !month || !day) {
-    return value
-  }
-
-  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
-}
+import { BookOpen, Loader2, ScanBarcode, UserCheck } from 'lucide-react'
+import { useRentBookForm } from '@/components/rent/useRentBookForm'
 
 export default function RentBookForm() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const studentInputRef = useRef<HTMLInputElement>(null)
-  const bookInputRef = useRef<HTMLInputElement>(null)
-  const isStudentInputComposingRef = useRef(false)
-  const isBookInputComposingRef = useRef(false)
-  const lastParamStudentNumberRef = useRef('')
-  const paramStudentNumber = normalizeBorrowerLookupCode(normalizeRentCode(searchParams.get('studentNumber') ?? ''))
-
-  const [studentNumber, setStudentNumber] = useState('')
-  const [student, setStudent] = useState<LoanStudent | null>(null)
-  const [bookCode, setBookCode] = useState('')
-  const [status, setStatus] = useState<Status | null>(null)
-  const [isLoadingStudent, setIsLoadingStudent] = useState(false)
-  const [isLoadingBook, setIsLoadingBook] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
-  const restrictionMessage = getStudentRestrictionMessage(student)
-  const isStudentEligible = student !== null && restrictionMessage === null
-
-  function focusStudentInput() {
-    window.setTimeout(() => {
-      const input = studentInputRef.current
-      input?.focus()
-      input?.select()
-    }, 0)
-  }
-
-  function focusBookInput() {
-    window.setTimeout(() => {
-      const input = bookInputRef.current
-      input?.focus()
-      input?.select()
-    }, 0)
-  }
-
-  function clearStudentSelection() {
-    setStudent(null)
-    setStudentNumber('')
-    setBookCode('')
-    setStatus(null)
-    focusStudentInput()
-  }
-
-  function setError(message: string) {
-    setStatus({ message, variant: 'error' })
-  }
-
-  function setSuccess(message: string) {
-    setStatus({ message, variant: 'success' })
-  }
-
-  function setInfo(message: string) {
-    setStatus({ message, variant: 'info' })
-  }
-
-  useEffect(() => {
-    if (paramStudentNumber && lastParamStudentNumberRef.current !== paramStudentNumber) {
-      lastParamStudentNumberRef.current = paramStudentNumber
-      setStudentNumber(paramStudentNumber)
-      void lookupStudent(paramStudentNumber)
-    }
-  }, [paramStudentNumber])
-
-  useEffect(() => {
-    if (isStudentEligible) {
-      focusBookInput()
-    }
-  }, [isStudentEligible])
-
-  async function lookupStudent(number = studentNumber) {
-    const trimmed = normalizeBorrowerLookupCode(normalizeRentCode(number))
-    if (!trimmed) {
-      setError('학번을 입력해주세요.')
-      return
-    }
-
-    setIsLoadingStudent(true)
-    setStatus(null)
-    setStudent(null)
-    setBookCode('')
-
-    try {
-      const response = await fetch(`/api/students?studentNumber=${encodeURIComponent(trimmed)}`)
-      const payload = await readJsonResponse<ApiResponse<LoanStudent>>(response)
-
-      if (!response.ok) {
-        throw new Error(payload.error?.message ?? '학생 정보 조회에 실패했습니다.')
-      }
-
-      if (payload.data) {
-        setStudentNumber(payload.data.student_number)
-        setStudent(payload.data)
-
-        const restriction = getStudentRestrictionMessage(payload.data)
-        if (restriction) {
-          setError(restriction)
-        } else {
-          setInfo(`${payload.data.name} ${getBorrowerDisplay(payload.data)} 확인되었습니다. 도서 바코드를 스캔하세요.`)
-        }
-      }
-    } catch (error) {
-      setError(error instanceof Error ? error.message : '학생 정보 조회에 실패했습니다.')
-    } finally {
-      setIsLoadingStudent(false)
-    }
-  }
-
-  async function lookupBook(code = bookCode) {
-    const trimmed = normalizeRentCode(code)
-    if (!trimmed) {
-      setError('도서 코드를 입력해주세요.')
-      return
-    }
-
-    const borrowerCode = getBorrowerLookupCodeFromScannedValue(trimmed)
-    if (borrowerCode) {
-      clearStudentSelection()
-      setStudentNumber(borrowerCode)
-      await lookupStudent(borrowerCode)
-      return
-    }
-
-    if (!isStudentEligible) {
-      setError('학생 확인 후 도서를 스캔하세요.')
-      return
-    }
-
-    setIsLoadingBook(true)
-    setStatus(null)
-
-    try {
-      const response = await fetch(`/api/books/lookup?code=${encodeURIComponent(trimmed)}`)
-      const payload = await readJsonResponse<ApiResponse<Book>>(response)
-
-      if (!response.ok) {
-        throw new Error(payload.error?.message ?? '도서 정보 조회에 실패했습니다.')
-      }
-
-      if (payload.data) {
-        if (payload.data.available_copies <= 0) {
-          setError('이미 대여 중인 도서입니다.')
-          return
-        }
-
-        await handleRent(payload.data)
-      }
-    } catch (error) {
-      setError(error instanceof Error ? error.message : '도서 정보 조회에 실패했습니다.')
-    } finally {
-      setIsLoadingBook(false)
-    }
-  }
-
-  async function handleRent(targetBook: Book) {
-    if (!student) {
-      setError('학생 정보를 먼저 확인해주세요.')
-      return
-    }
-
-    setIsSubmitting(true)
-    setStatus(null)
-
-    try {
-      const response = await fetch('/api/loans', {
-        body: JSON.stringify({
-          bookId: targetBook.id,
-          studentId: student.id,
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-      })
-      const payload = await readJsonResponse<
-        ApiResponse<{
-          activeLoanCount: number
-          bookTitle: string
-          borrowerLabel: string
-          borrowerType: 'staff' | 'student'
-          dueOn: string
-          loanId: string
-          loanLimit: number
-          remainingLoanCount: number
-          studentName: string
-        }>
-      >(response)
-
-      if (!response.ok) {
-        throw new Error(payload.error?.message ?? '대여 처리에 실패했습니다.')
-      }
-
-      if (payload.data) {
-        const loanResult = payload.data
-        setSuccess(
-          `${loanResult.studentName} ${loanResult.borrowerLabel}이 "${loanResult.bookTitle}" 도서를 대여했습니다. 반납 예정일: ${formatKoreanDate(
-            loanResult.dueOn
-          )}. 다음 도서를 스캔하세요.`
-        )
-        setStudent((current) =>
-          current
-            ? {
-                ...current,
-                active_loan_count: loanResult.activeLoanCount,
-                borrower_label: loanResult.borrowerLabel,
-                borrower_type: loanResult.borrowerType,
-                loan_limit: loanResult.loanLimit,
-                remaining_loan_count: loanResult.remainingLoanCount,
-              }
-            : current
-        )
-        setBookCode('')
-        focusBookInput()
-      }
-    } catch (error) {
-      setError(error instanceof Error ? error.message : '대여 처리에 실패했습니다.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  function handleStudentEnter() {
-    if (student) {
-      focusBookInput()
-      return
-    }
-    void lookupStudent()
-  }
-
-  function handleBookEnter() {
-    void lookupBook()
-  }
-
-  function handleStudentCompositionEnd(value: string) {
-    isStudentInputComposingRef.current = false
-    setStudentNumber(normalizeRentCode(value))
-  }
-
-  function handleBookCompositionEnd(value: string) {
-    isBookInputComposingRef.current = false
-    setBookCode(normalizeRentCode(value))
-  }
+  const {
+    book,
+    bookCode,
+    bookInputRef,
+    clearStudentSelection,
+    errorMessage,
+    getBorrowerDisplay,
+    handleBookCodeChange,
+    handleBookCompositionEnd,
+    handleBookKeyDown,
+    handleBookSubmit,
+    handleStudentCodeChange,
+    handleStudentCompositionEnd,
+    handleStudentKeyDown,
+    handleStudentSubmit,
+    isBookInputComposingRef,
+    isLoadingBook,
+    isLoadingStudent,
+    isSubmitting,
+    isStudentInputComposingRef,
+    student,
+    studentInputRef,
+    studentNumber,
+    successMessage,
+  } = useRentBookForm()
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -9467,94 +9560,128 @@ export default function RentBookForm() {
         </div>
       </div>
 
-      <div className="space-y-4">
-        <WorkflowStepCard
-          step={1}
-          state={student ? 'complete' : 'current'}
-          title="학생 확인"
-          description="학생 또는 교직원 바코드를 스캔하세요."
-          action={
-            student ? (
+      <form onSubmit={handleStudentSubmit} className="mb-4 rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+        <label htmlFor="student-number" className="mb-2 block text-sm font-medium text-gray-700">
+          학생 바코드 (학번)
+        </label>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <ScanBarcode className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              id="student-number"
+              ref={studentInputRef}
+              value={studentNumber}
+              onChange={(event) => handleStudentCodeChange(event.target.value)}
+              onCompositionEnd={handleStudentCompositionEnd}
+              onCompositionStart={() => {
+                isStudentInputComposingRef.current = true
+              }}
+              onFocus={() => {
+                if (student) {
+                  bookInputRef.current?.focus()
+                }
+              }}
+              onKeyDown={handleStudentKeyDown}
+              className="h-11 w-full rounded-lg border border-gray-200 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+              placeholder="학생/교직원 바코드 스캔"
+              readOnly={Boolean(student)}
+              type="text"
+            />
+          </div>
+          <button
+            className="inline-flex h-11 items-center justify-center rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
+            disabled={isLoadingStudent || Boolean(student)}
+            type="submit"
+          >
+            {isLoadingStudent ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
+            <span className="ml-2">확인</span>
+          </button>
+        </div>
+
+        {student ? (
+          <div className="mt-4 rounded-lg bg-green-50 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-green-800">
+                <UserCheck className="h-4 w-4" />
+                {student.name} ({getBorrowerDisplay(student)})
+              </div>
               <button
-                className="rounded-md px-2 py-1 text-xs font-semibold text-primary-700 transition-colors hover:bg-primary-50"
+                className="rounded-md px-2 py-1 text-xs font-semibold text-green-700 transition-colors hover:bg-green-100"
                 onClick={clearStudentSelection}
                 type="button"
               >
                 변경
               </button>
-            ) : null
-          }
-        >
-          <div className="space-y-3">
-            <ScanInput
-              ref={studentInputRef}
-              id="student-number"
-              label="학생/교직원 바코드"
-              placeholder="학생/교직원 바코드 스캔"
-              value={studentNumber}
-              onChangeValue={(value) =>
-                setStudentNumber(isStudentInputComposingRef.current ? value : normalizeRentCode(value))
-              }
-              onCompositionStart={() => {
-                isStudentInputComposingRef.current = true
-              }}
-              onCompositionEnd={handleStudentCompositionEnd}
-              onEnter={handleStudentEnter}
-              loading={isLoadingStudent}
-              helperText={student ? 'Enter를 눌러 도서 단계로 이동하세요.' : '스캔 후 Enter를 누륨녀 자동으로 확인됩니다.'}
-              disabled={Boolean(student)}
-            />
-
-            {student ? (
-              <div className="rounded-lg bg-green-50 p-3">
-                <div className="flex items-center gap-2 text-sm font-medium text-green-800">
-                  <UserCheck className="h-4 w-4" />
-                  {student.name} ({getBorrowerDisplay(student)})
-                </div>
-                <p className="mt-1 text-xs text-green-700">
-                  코드: {student.student_number} · 대여: {student.active_loan_count}/{student.loan_limit}권 · 남은 가능 권수:{student.remaining_loan_count}권
-                </p>
-              </div>
-            ) : null}
+            </div>
+            <p className="mt-1 text-xs text-green-600">
+              코드: {student.student_number} · 대여: {student.active_loan_count}/{student.loan_limit}권 · 남은 가능 권수:{' '}
+              {student.remaining_loan_count}권
+            </p>
           </div>
-        </WorkflowStepCard>
-
-        <WorkflowStepCard
-          step={2}
-          state={!student ? 'locked' : isStudentEligible ? 'current' : 'error'}
-          title="도서 스캔"
-          description={
-            !student
-              ? '학생 확인 후 도서 바코드를 스캔하세요.'
-              : isStudentEligible
-                ? '대여할 도서 바코드를 스캔하세요.'
-                : '현재 대여할 수 없는 상태입니다.'
-          }
-        >
-          <div className="space-y-3">
-            <ScanInput
-              ref={bookInputRef}
-              id="book-code"
-              label="도서 바코드 (ISBN 또는 학교 도서 코드)"
-              placeholder="도서 바코드 스캔"
-              value={bookCode}
-              onChangeValue={(value) => setBookCode(isBookInputComposingRef.current ? value : normalizeRentCode(value))}
-              onCompositionStart={() => {
-                isBookInputComposingRef.current = true
-              }}
-              onCompositionEnd={handleBookCompositionEnd}
-              onEnter={handleBookEnter}
-              loading={isLoadingBook || isSubmitting}
-              helperText={isStudentEligible ? '스캔하면 자동으로 대여됩니다.' : '학생 확인 단계를 먼저 완료하세요.'}
-              disabled={!isStudentEligible}
-            />
-          </div>
-        </WorkflowStepCard>
-
-        {status ? (
-          <StatusMessage variant={status.variant}>{status.message}</StatusMessage>
         ) : null}
-      </div>
+      </form>
+
+      {student ? (
+        <form onSubmit={handleBookSubmit} className="mb-4 rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+          <label htmlFor="book-code" className="mb-2 block text-sm font-medium text-gray-700">
+            도서 바코드 (ISBN 또는 학교 도서 코드)
+          </label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <ScanBarcode className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                id="book-code"
+                ref={bookInputRef}
+                value={bookCode}
+                onChange={(event) => handleBookCodeChange(event.target.value)}
+                onCompositionEnd={handleBookCompositionEnd}
+                onCompositionStart={() => {
+                  isBookInputComposingRef.current = true
+                }}
+                onKeyDown={handleBookKeyDown}
+                className="h-11 w-full rounded-lg border border-gray-200 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+                placeholder="도서 바코드 스캔"
+                type="text"
+              />
+            </div>
+            <button
+              className="inline-flex h-11 items-center justify-center rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
+              disabled={isLoadingBook}
+              type="submit"
+            >
+              {isLoadingBook ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
+              <span className="ml-2">조회</span>
+            </button>
+          </div>
+
+          {book ? (
+            <div className="mt-4 rounded-lg border border-gray-100 p-4">
+              <div className="mb-2 text-sm font-semibold text-gray-900">{book.title}</div>
+              <div className="text-xs text-gray-500">
+                저자: {book.author} | 출판사: {book.publisher ?? '-'} | 남은 권수: {book.available_copies}/{book.total_copies}
+              </div>
+              {isSubmitting ? (
+                <div className="mt-2 flex items-center gap-2 text-xs text-primary-600">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  대여 처리 중...
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </form>
+      ) : null}
+
+      {errorMessage ? (
+        <div className="mb-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {errorMessage}
+        </div>
+      ) : null}
+
+      {successMessage ? (
+        <div className="mb-4 rounded-lg border border-green-100 bg-green-50 px-3 py-2 text-sm text-green-700">
+          {successMessage}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -9566,40 +9693,16 @@ export default function RentBookForm() {
 import { useEffect, useRef, useState } from 'react'
 import { RotateCcw, ScanBarcode } from 'lucide-react'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { formatKoreanDate } from '@/lib/loan-restrictions'
 import { ScanInput } from '@/components/ui/ScanInput'
 import { StatusMessage } from '@/components/ui/StatusMessage'
+import type { ApiResponse, ReturnedLoan } from '@/types/library'
 
-type ReturnedLoan = {
-  book_title: string
-  loan_banned_until: string | null
-  loan_id: string
-  overdue_days: number
-  returned_on: string
-  school_book_code: string | null
-  student_name: string
-}
-
-type ReturnResponse = {
-  data?: ReturnedLoan[]
-  error?: {
-    code: string
-    message: string
-  }
-}
+type ReturnResponse = ApiResponse<ReturnedLoan[]>
 
 type ReturnStatus = {
   loan: ReturnedLoan
   variant: 'success' | 'error'
-}
-
-function formatKoreanDate(value: string) {
-  const [year, month, day] = value.split('-')
-
-  if (!year || !month || !day) {
-    return value
-  }
-
-  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
 }
 
 function getReturnMessage(loan: ReturnedLoan) {
@@ -9731,160 +9834,6 @@ export default function AutoReturnForm() {
     </div>
   )
 }
-</file>
-
-<file path="docs/supabase.md">
-# Supabase setup
-
-이 프로젝트는 Supabase CLI 마이그레이션으로 도서관 DB 스키마를 관리하고, Next.js 앱은 public anon key로 Supabase Cloud에 연결합니다.
-
-## Environment variables
-
-`.env.example`을 기준으로 로컬 또는 배포 환경에 값을 등록합니다.
-
-```bash
-NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-public-key>
-ADMIN_LOGIN_ID=SanupLib
-ADMIN_AUTH_EMAIL=sanuplib-admin@sanuplib.local
-NATIONAL_LIBRARY_ISBN_API_KEY=<national-library-isbn-api-key>
-```
-
-- `NEXT_PUBLIC_SUPABASE_URL`: Supabase Dashboard > Project Settings > API > Project URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase Dashboard > Project Settings > API > anon public key
-- `ADMIN_LOGIN_ID`: 로그인 화면에서 입력할 관리자 아이디입니다. 기본값은 `SanupLib`입니다.
-- `ADMIN_AUTH_EMAIL`: Supabase Auth에 실제로 생성할 관리자 사용자 이메일입니다. 앱은 관리자 아이디를 이 이메일 로그인으로 매핑합니다.
-- `NATIONAL_LIBRARY_ISBN_API_KEY`: 새 책 추가 화면에서 ISBN으로 책 정보를 조회할 때 사용하는 국립중앙도서관 ISBN API 키입니다. 서버 전용이므로 `NEXT_PUBLIC_`을 붙이지 않습니다.
-- `.env`, `.env.local`, `.env.production` 같은 실제 값 파일은 커밋하지 않습니다.
-- `service_role` key는 브라우저/Next public 환경변수에 넣지 않습니다.
-
-## Local app connection
-
-로컬에서 클라우드 Supabase를 바라보려면 `.env.example`을 참고해 `.env.local`을 만들고 public 값을 채운 뒤 개발 서버를 재시작합니다.
-
-```bash
-npm run dev
-```
-
-## Local Supabase stack
-
-로컬 Supabase 컨테이너를 직접 띄울 때만 Docker Desktop이 필요합니다.
-
-```bash
-npx supabase@2.105.0 start
-npx supabase@2.105.0 db reset
-```
-
-`db reset`은 `supabase/migrations/20260609000000_create_library_schema.sql`을 적용합니다. 현재 `supabase/seed.sql`은 샘플 데이터를 만들지 않는 no-op 파일입니다.
-
-## Cloud setup
-
-Supabase Cloud 프로젝트를 만든 뒤 CLI를 연결하고 마이그레이션을 push합니다.
-
-```bash
-npx supabase@2.105.0 login
-npx supabase@2.105.0 link --project-ref <project-ref>
-npx supabase@2.105.0 db push
-```
-
-초기 데이터는 Supabase SQL Editor, CSV import, 또는 운영용 import 스크립트로 별도 등록합니다. 마이그레이션과 seed 파일은 샘플 데이터를 생성하지 않습니다.
-
-## Annual loan reset
-
-`supabase/migrations/20260612100000_schedule_annual_loan_reset.sql`은 매년 1월 1일 00:00(KST)에 대여 기록을 초기화합니다.
-
-- Supabase의 `pg_cron`을 사용합니다.
-- Supabase cron은 UTC 기준으로 실행되므로 `0 15 31 12 *`에 예약합니다. 이는 한국시간 1월 1일 00:00입니다.
-- 실행 함수는 `public.reset_annual_loan_records()`입니다.
-- 초기화 시 `public.loans`의 모든 대여 기록을 삭제하고, 모든 도서의 `available_copies`를 `total_copies`로 맞춥니다.
-
-## Deployment
-
-Vercel, Netlify, GitHub Actions 같은 배포 환경에는 다음 값을 secret/environment variable로 등록합니다.
-
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `ADMIN_LOGIN_ID`
-- `ADMIN_AUTH_EMAIL`
-- `NATIONAL_LIBRARY_ISBN_API_KEY`
-
-도서 검색과 로그인 API는 Next.js API route를 사용하므로 정적 파일 호스팅만으로는 동작하지 않습니다. Vercel 또는 Next 서버를 지원하는 런타임에 배포해야 합니다.
-
-현재 DB 정책은 도서 검색은 anon 접근을 허용하고, 도서/학생/대여/희망도서 관리 데이터 변경은 `admin_users`에 등록된 관리자만 허용합니다. 공개 화면에서 관리 대시보드 데이터를 노출하려면 RLS 정책과 view 권한을 먼저 의도적으로 조정해야 합니다.
-
-## Book search API
-
-도서 검색 backend endpoint는 다음과 같습니다.
-
-```http
-GET /api/books/search?q=<검색어>&limit=20
-```
-
-- `q` 또는 `query`: 제목 또는 저자 검색어입니다. 빈 값이면 등록된 도서를 제한 개수만큼 조회합니다.
-- `limit`: 선택값이며 기본 20, 최대 50입니다.
-- Supabase의 `search_books` RPC를 호출합니다.
-
-## Admin book registration
-
-새 책 등록은 로그인된 관리자만 사용할 수 있습니다.
-
-```http
-POST /api/admin/books
-```
-
-요청 body:
-
-```json
-{
-  "title": "책 이름",
-  "author": "저자",
-  "publisher": "출판사",
-  "isbn": "ISBN 코드",
-  "schoolBookCode": "학교 내 도서 코드"
-}
-```
-
-- 화면 경로: `/admin/add_books`
-- `school_book_code`는 학교 내 도서 바코드 값이며 중복 등록을 막습니다.
-- ISBN 입력 후 Enter 또는 조회 버튼을 누르면 서버 API가 국립중앙도서관 ISBN API를 호출해 책 이름, 저자, 출판사를 자동 입력합니다.
-
-ISBN 조회 endpoint:
-
-```http
-GET /api/admin/books/isbn?isbn=<ISBN>
-```
-
-- 로그인된 관리자만 호출할 수 있습니다.
-- 내부적으로 `NATIONAL_LIBRARY_ISBN_API_KEY`를 사용합니다.
-- 기본 외부 API URL은 `https://www.nl.go.kr/seoji/SearchApi.do`이며, 필요 시 `NATIONAL_LIBRARY_ISBN_API_URL`로 override할 수 있습니다.
-
-## Admin auth
-
-관리 기능은 Supabase Auth 사용자 중 `public.admin_users`에 등록된 사용자만 접근할 수 있습니다. 화면에서는 이메일 대신 관리자 아이디로 로그인합니다.
-
-1. Supabase Dashboard > Authentication > Users에서 관리자 계정을 1개 생성합니다.
-   - Email: `sanuplib-admin@sanuplib.local` 또는 `ADMIN_AUTH_EMAIL` 값
-   - Password: `SanupLib2026!`
-   - App login ID: `SanupLib`
-2. 생성된 사용자의 `id`를 복사합니다.
-3. SQL Editor에서 다음 쿼리로 첫 관리자를 등록합니다.
-
-```sql
-insert into public.admin_users (user_id, login_id, role)
-values ('<auth-user-id>', 'SanupLib', 'admin');
-```
-
-관리자 로그인/세션 endpoint:
-
-```http
-POST /api/auth/admin/login
-POST /api/auth/admin/logout
-GET /api/auth/admin/session
-```
-
-- 로그인 성공 시 httpOnly 쿠키에 관리자 access token을 저장합니다.
-- 서버 보호 API에서는 `requireAdminSession(request)` helper로 세션과 관리자 권한을 확인합니다.
-- `아이디 또는 비밀번호가 올바르지 않습니다.`가 뜨면 Supabase Auth의 email/password/confirm 상태를 먼저 확인합니다.
 </file>
 
 <file path="types/supabase.ts">
@@ -10219,12 +10168,11 @@ export type Database = {
 <file path="app/api/loans/route.ts">
 import { NextResponse } from 'next/server'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { formatKoreanDate } from '@/lib/loan-restrictions'
 import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
-import type { Database } from '@/types/supabase'
+import type { CreatedPublicLoan } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
-
-type CreatedPublicLoan = Database['public']['Functions']['create_public_loan']['Returns'][number]
 
 type CreateLoanBody = {
   bookId?: unknown
@@ -10246,16 +10194,6 @@ function isLoanLimitError(error: unknown) {
     typeof error.message === 'string' &&
     error.message.includes('최대')
   )
-}
-
-function formatKoreanDate(value: string) {
-  const [year, month, day] = value.split('-')
-
-  if (!year || !month || !day) {
-    return value
-  }
-
-  return `${Number(year)}년 ${Number(month)}월 ${Number(day)}일`
 }
 
 function getLoanCreationErrorResponse(error: unknown) {

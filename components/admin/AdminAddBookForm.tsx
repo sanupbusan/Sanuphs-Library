@@ -16,7 +16,6 @@ export default function AdminAddBookForm() {
     handleReset,
     handleSchoolBookCodeEnter,
     infoMessage,
-    isCheckingSession,
     isInfoComplete,
     isLookingUpIsbn,
     isSubmitting,
@@ -27,14 +26,6 @@ export default function AdminAddBookForm() {
     successMessage,
     updateField,
   } = useAdminAddBookForm()
-
-  if (isCheckingSession) {
-    return (
-      <div className="flex min-h-[360px] items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
-      </div>
-    )
-  }
 
   return (
     <section className="bg-gray-50 py-14 sm:py-16">

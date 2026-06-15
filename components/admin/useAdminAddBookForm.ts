@@ -53,7 +53,6 @@ export function useAdminAddBookForm() {
   const [errorMessage, setErrorMessage] = useState('')
   const [infoMessage, setInfoMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
-  const [isCheckingSession, setIsCheckingSession] = useState(true)
   const [isLookingUpIsbn, setIsLookingUpIsbn] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const isbnInputRef = useRef<HTMLInputElement>(null)
@@ -243,42 +242,6 @@ export function useAdminAddBookForm() {
   }
 
   useEffect(() => {
-    let didCancel = false
-
-    async function checkSession() {
-      try {
-        const response = await fetch('/api/auth/admin/session', {
-          cache: 'no-store',
-        })
-
-        if (!didCancel && (response.status === 401 || response.status === 403)) {
-          router.replace('/admin/login')
-          return
-        }
-
-        if (!didCancel) {
-          setIsCheckingSession(false)
-        }
-      } catch {
-        if (!didCancel) {
-          setErrorMessage('세션 확인에 실패했습니다.')
-          setIsCheckingSession(false)
-        }
-      }
-    }
-
-    void checkSession()
-
-    return () => {
-      didCancel = true
-    }
-  }, [router])
-
-  useEffect(() => {
-    if (isCheckingSession) {
-      return
-    }
-
     const paramIsbn = searchParams.get('isbn') ?? ''
     const paramSchoolBookCode = searchParams.get('schoolBookCode') ?? ''
 
@@ -300,7 +263,7 @@ export function useAdminAddBookForm() {
       setActiveStep('isbn')
       focusIsbnInput()
     }
-  }, [isCheckingSession, searchParams])
+  }, [searchParams])
 
   return {
     activeStep,
@@ -311,7 +274,6 @@ export function useAdminAddBookForm() {
     handleReset,
     handleSchoolBookCodeEnter,
     infoMessage,
-    isCheckingSession,
     isInfoComplete,
     isLookingUpIsbn,
     isSubmitting,
