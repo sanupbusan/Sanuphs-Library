@@ -15,6 +15,10 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
 function isLoanLimitError(error: unknown) {
   return (
     typeof error === 'object' &&
@@ -88,6 +92,18 @@ export async function POST(request: Request) {
       `반납 예정일(${formatKoreanDate(
         dueOn
       )})이 지난 도서가 있어 대여할 수 없습니다. 먼저 연체 도서를 반납해주세요.`
+    )
+  }
+
+  if (!isUuid(bookId) || !isUuid(studentId)) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'INVALID_ID',
+          message: '도서 ID와 학생 ID 형식이 올바르지 않습니다.',
+        },
+      },
+      { status: 400 }
     )
   }
 
