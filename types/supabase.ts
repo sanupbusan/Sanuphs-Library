@@ -83,6 +83,7 @@ export type Database = {
           published_year: number | null
           publisher: string | null
           school_book_code: string | null
+          school_book_codes: string[]
           title: string
           total_copies: number
           updated_at: string
@@ -98,6 +99,7 @@ export type Database = {
           published_year?: number | null
           publisher?: string | null
           school_book_code?: string | null
+          school_book_codes?: string[]
           title: string
           total_copies?: number
           updated_at?: string
@@ -113,6 +115,7 @@ export type Database = {
           published_year?: number | null
           publisher?: string | null
           school_book_code?: string | null
+          school_book_codes?: string[]
           title?: string
           total_copies?: number
           updated_at?: string

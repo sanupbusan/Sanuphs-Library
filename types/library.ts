@@ -35,6 +35,7 @@ type BookIdentityFields =
   | 'isbn'
   | 'publisher'
   | 'school_book_code'
+  | 'school_book_codes'
   | 'title'
   | 'total_copies'
 

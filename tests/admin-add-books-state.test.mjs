@@ -26,6 +26,10 @@ async function loadInputHelpers() {
   return loadTsModule('lib/admin-book-input.ts')
 }
 
+async function loadSchoolBookCodeHelpers() {
+  return loadTsModule('lib/school-book-codes.ts')
+}
+
 function book(id) {
   return { id }
 }
@@ -138,6 +142,23 @@ test('13-digit ISBN barcode input is considered ready for automatic lookup', asy
 
   assert.equal(isAdminBookIsbnScanComplete('9781234567890'), true)
   assert.equal(isAdminBookIsbnScanComplete('978123456789'), false)
+})
+
+test('same ISBN copies keep each school book code once', async () => {
+  const { addSchoolBookCode, displaySchoolBookCodes, hasSchoolBookCode } = await loadSchoolBookCodeHelpers()
+  const existingBook = {
+    school_book_code: 'LIB-001',
+    school_book_codes: ['LIB-001'],
+  }
+  const withSecondCopy = {
+    ...existingBook,
+    school_book_codes: addSchoolBookCode(existingBook, 'LIB-002'),
+  }
+
+  assert.deepEqual(withSecondCopy.school_book_codes, ['LIB-001', 'LIB-002'])
+  assert.equal(hasSchoolBookCode(withSecondCopy, 'LIB-002'), true)
+  assert.deepEqual(addSchoolBookCode(withSecondCopy, 'LIB-002'), ['LIB-001', 'LIB-002'])
+  assert.equal(displaySchoolBookCodes(withSecondCopy), 'LIB-001, LIB-002')
 })
 
 test('filled 13-digit ISBN field starts automatic lookup without Enter', async () => {
