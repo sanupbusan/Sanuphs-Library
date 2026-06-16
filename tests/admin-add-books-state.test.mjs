@@ -121,3 +121,33 @@ test('incomplete ISBN lookup stays on the book-info step', async () => {
     'info'
   )
 })
+
+test('13-digit ISBN barcode input is considered ready for automatic lookup', async () => {
+  const { isAdminBookIsbnScanComplete } = await loadInputHelpers()
+
+  assert.equal(isAdminBookIsbnScanComplete('9781234567890'), true)
+  assert.equal(isAdminBookIsbnScanComplete('978123456789'), false)
+})
+
+test('filled 13-digit ISBN field starts automatic lookup without Enter', async () => {
+  const { shouldAutoLookupAdminBookIsbn } = await loadInputHelpers()
+
+  assert.equal(
+    shouldAutoLookupAdminBookIsbn({
+      activeStep: 'isbn',
+      isbn: '9781234567890',
+      isLookingUpIsbn: false,
+      lastAutoLookupIsbn: '',
+    }),
+    true
+  )
+  assert.equal(
+    shouldAutoLookupAdminBookIsbn({
+      activeStep: 'isbn',
+      isbn: '9781234567890',
+      isLookingUpIsbn: false,
+      lastAutoLookupIsbn: '9781234567890',
+    }),
+    false
+  )
+})
