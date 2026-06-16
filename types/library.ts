@@ -28,50 +28,37 @@ export type BookSearchResult = Omit<
 >
 export type SearchBook = Database['public']['Functions']['search_books']['Returns'][number]
 
-export type AdminBookRow = Pick<
-  BookRow,
+type BookIdentityFields =
   | 'author'
   | 'available_copies'
+  | 'id'
+  | 'isbn'
+  | 'publisher'
+  | 'school_book_code'
+  | 'title'
+  | 'total_copies'
+
+type AdminBookFields =
+  | BookIdentityFields
+  | 'category'
+  | 'created_at'
+  | 'location'
+
+type IsbnLookupFields = 'author' | 'isbn' | 'publisher' | 'title'
+type RecentBookFields =
+  | 'available_copies'
+  | 'author'
   | 'category'
   | 'created_at'
   | 'id'
-  | 'isbn'
-  | 'location'
-  | 'publisher'
-  | 'school_book_code'
   | 'title'
   | 'total_copies'
->
 
-export type RemovableBook = Pick<
-  BookRow,
-  | 'author'
-  | 'available_copies'
-  | 'id'
-  | 'isbn'
-  | 'publisher'
-  | 'school_book_code'
-  | 'title'
-  | 'total_copies'
->
-
-export type BookLookupResult = Pick<
-  BookRow,
-  | 'author'
-  | 'available_copies'
-  | 'id'
-  | 'isbn'
-  | 'publisher'
-  | 'school_book_code'
-  | 'title'
-  | 'total_copies'
->
-
-export type IsbnLookupResult = Pick<BookRow, 'author' | 'isbn' | 'publisher' | 'title'>
-export type RecentBook = Pick<
-  BookRow,
-  'available_copies' | 'author' | 'category' | 'created_at' | 'id' | 'title' | 'total_copies'
->
+export type AdminBookRow = Pick<BookRow, AdminBookFields>
+export type RemovableBook = Pick<BookRow, BookIdentityFields>
+export type BookLookupResult = RemovableBook
+export type IsbnLookupResult = Pick<BookRow, IsbnLookupFields>
+export type RecentBook = Pick<BookRow, RecentBookFields>
 
 export type BorrowerType = 'staff' | 'student'
 
