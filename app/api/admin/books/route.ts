@@ -9,6 +9,7 @@ import {
   throwApiError,
 } from '@/lib/api-route'
 import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
+import { getMissingAdminBookRequiredFieldsMessage, getNullableAdminBookIsbn } from '@/lib/admin-book-input'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,16 +44,10 @@ export async function POST(request: Request) {
       const session = await requireAdminSession(request)
       const body = await readJsonBody<CreateBookBody>(request)
       const input = getCreateBookInput(body)
-      const missingFields = [
-        !input.title && '책 이름',
-        !input.author && '저자',
-        !input.publisher && '출판사',
-        !input.isbn && 'ISBN 코드',
-        !input.schoolBookCode && '학교 내 도서 코드',
-      ].filter(Boolean)
+      const missingFieldsMessage = getMissingAdminBookRequiredFieldsMessage(input)
 
-      if (missingFields.length > 0) {
-        throwApiError(400, 'MISSING_REQUIRED_FIELDS', `${missingFields.join(', ')}을(를) 입력해주세요.`)
+      if (missingFieldsMessage) {
+        throwApiError(400, 'MISSING_REQUIRED_FIELDS', missingFieldsMessage)
       }
 
       const { data, error } = await session.supabase
@@ -61,7 +56,7 @@ export async function POST(request: Request) {
           author: input.author,
           available_copies: 1,
           category: '미분류',
-          isbn: input.isbn,
+          isbn: getNullableAdminBookIsbn(input),
           publisher: input.publisher,
           school_book_code: input.schoolBookCode,
           title: input.title,
