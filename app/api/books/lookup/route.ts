@@ -1,10 +1,10 @@
-import { normalizeBarcodeInput } from '@/lib/barcode-input'
 import {
   createRouteSupabaseClient,
   jsonData,
   runApiRoute,
   throwApiError,
 } from '@/lib/api-route'
+import { isLikelyIsbn, normalizeBookLookupCode } from '@/lib/validators'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,16 +12,6 @@ function getCode(request: Request) {
   const url = new URL(request.url)
 
   return url.searchParams.get('code')?.trim() ?? ''
-}
-
-function normalizeCode(value: string) {
-  return normalizeBarcodeInput(value).toUpperCase()
-}
-
-function isLikelyIsbn(value: string) {
-  const digits = value.replace(/[^0-9Xx]/g, '')
-
-  return digits.length === 10 || digits.length === 13
 }
 
 export async function GET(request: Request) {
@@ -41,7 +31,7 @@ export async function GET(request: Request) {
       }
 
       const supabase = createRouteSupabaseClient()
-      const normalizedCode = normalizeCode(code)
+      const normalizedCode = normalizeBookLookupCode(code)
       const isIsbn = isLikelyIsbn(normalizedCode)
 
       let query = supabase

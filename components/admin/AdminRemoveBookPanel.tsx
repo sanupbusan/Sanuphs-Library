@@ -4,8 +4,13 @@ import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Loader2, Search, Trash2 } from 'lucide-react'
 import { deleteBookAction } from '@/app/admin/books/actions'
 import { useToast } from '@/components/ui/ToastProvider'
-import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
 import { displayValue } from '@/lib/display'
+import {
+  isLikelyBarcode,
+  isLikelyIsbn,
+  normalizeBookBarcode,
+  normalizeBookIsbn,
+} from '@/lib/validators'
 import { useStatusMessages } from '@/hooks/useStatusMessages'
 import type { RemovableBook } from '@/types/library'
 
@@ -19,33 +24,13 @@ function normalize(value: string | null | undefined) {
   return (value ?? '').toLowerCase()
 }
 
-function getBarcodeCandidate(value: string) {
-  return normalizeBarcodeInput(value)
-}
-
-function getIsbnCandidate(value: string) {
-  return normalizeIsbnInput(value)
-}
-
-function isLikelyBarcode(value: string) {
-  const barcode = getBarcodeCandidate(value)
-
-  return barcode.length >= 4 && /^[0-9A-Za-z-]+$/.test(barcode)
-}
-
-function isLikelyIsbnBarcode(value: string) {
-  const isbn = getIsbnCandidate(value)
-
-  return isbn.length === 10 || isbn.length === 13
-}
-
 function getAddBookUrl(scannedCode: string) {
   const params = new URLSearchParams()
 
-  if (isLikelyIsbnBarcode(scannedCode)) {
-    params.set('isbn', getIsbnCandidate(scannedCode))
+  if (isLikelyIsbn(scannedCode)) {
+    params.set('isbn', normalizeBookIsbn(scannedCode))
   } else {
-    params.set('schoolBookCode', getBarcodeCandidate(scannedCode))
+    params.set('schoolBookCode', normalizeBookBarcode(scannedCode))
   }
 
   return `/admin/add_books?${params.toString()}#add-book-form`
@@ -75,7 +60,7 @@ export default function AdminRemoveBookPanel({
   const isPanelLoading = isLoading
   const filteredBooks = useMemo(() => {
     const keyword = query.trim().toLowerCase()
-    const barcodeKeyword = normalizeBarcodeInput(query).toLowerCase()
+    const barcodeKeyword = normalizeBookBarcode(query).toLowerCase()
 
     if (!keyword) {
       return localBooks
