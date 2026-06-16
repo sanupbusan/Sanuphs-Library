@@ -54,12 +54,12 @@ export async function GET(request: Request) {
 
     let query = supabase
       .from('books')
-      .select('id, isbn, school_book_code, title, author, publisher, available_copies, total_copies')
+      .select('id, isbn, school_book_code, school_book_codes, title, author, publisher, available_copies, total_copies')
 
     if (isIsbn) {
       query = query.eq('isbn', normalizedCode)
     } else {
-      query = query.eq('school_book_code', normalizedCode)
+      query = query.contains('school_book_codes', [normalizedCode])
     }
 
     const { data, error } = await query.maybeSingle()

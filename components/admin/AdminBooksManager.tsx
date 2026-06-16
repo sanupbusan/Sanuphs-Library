@@ -8,6 +8,7 @@ import AdminRemoveBookPanel from '@/components/admin/AdminRemoveBookPanel'
 import { replaceUpdatedAdminBook } from '@/components/admin/adminBookListState'
 import { useToast } from '@/components/ui/ToastProvider'
 import { displayValue } from '@/lib/display'
+import { displaySchoolBookCodes } from '@/lib/school-book-codes'
 import type { AdminBookUpdateInput } from '@/lib/admin-book-input'
 import type { AdminBookRow } from '@/types/library'
 
@@ -227,7 +228,7 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
                         <td className="px-4 py-3">
                           {isEditing
                             ? renderEditInput(book, 'schoolBookCode', '학교 도서 코드')
-                            : displayValue(book.school_book_code)}
+                            : displayValue(displaySchoolBookCodes(book))}
                         </td>
                         <td className="px-4 py-3">
                           {book.available_copies} / {book.total_copies}

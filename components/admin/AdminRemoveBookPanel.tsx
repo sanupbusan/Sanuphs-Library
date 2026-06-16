@@ -5,6 +5,7 @@ import { AlertTriangle, Loader2, Search, Trash2 } from 'lucide-react'
 import { deleteBookAction } from '@/app/admin/books/actions'
 import { useToast } from '@/components/ui/ToastProvider'
 import { displayValue } from '@/lib/display'
+import { displaySchoolBookCodes } from '@/lib/school-book-codes'
 import {
   isLikelyBarcode,
   isLikelyIsbn,
@@ -73,6 +74,7 @@ export default function AdminRemoveBookPanel({
         book.publisher,
         book.isbn,
         book.school_book_code,
+        displaySchoolBookCodes(book),
       ].some((value) => normalize(value).includes(keyword) || (!!barcodeKeyword && normalize(value).includes(barcodeKeyword)))
     )
   }, [query, localBooks])
@@ -193,7 +195,7 @@ export default function AdminRemoveBookPanel({
                       {displayValue(book.title)}
                     </td>
                     <td className="px-4 py-3">{displayValue(book.author)}</td>
-                    <td className="px-4 py-3">{displayValue(book.school_book_code)}</td>
+                    <td className="px-4 py-3">{displayValue(displaySchoolBookCodes(book))}</td>
                     <td className="px-4 py-3">{displayValue(book.isbn)}</td>
                     <td className="px-4 py-3">
                       {book.available_copies} / {book.total_copies}
