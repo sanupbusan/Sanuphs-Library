@@ -1,19 +1,22 @@
-import { NextResponse } from 'next/server'
-import { normalizeBarcodeInput } from '@/lib/barcode-input'
 import { formatKoreanDate } from '@/lib/loan-restrictions'
-import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
+import {
+  ApiRouteError,
+  createRouteSupabaseClient,
+  getText,
+  jsonData,
+  readJsonBody,
+  runApiRoute,
+  throwApiError,
+  withNoStore,
+} from '@/lib/api-route'
 import type { CreatedPublicLoan } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
 
 type CreateLoanBody = {
   bookId?: unknown
-  studentId?: unknown
   notes?: unknown
-}
-
-function getText(value: unknown) {
-  return typeof value === 'string' ? value.trim() : ''
+  studentId?: unknown
 }
 
 function isLoanLimitError(error: unknown) {
@@ -28,7 +31,7 @@ function isLoanLimitError(error: unknown) {
   )
 }
 
-function getLoanCreationErrorResponse(error: unknown) {
+function throwKnownLoanCreationError(error: unknown) {
   const message =
     typeof error === 'object' &&
     error !== null &&
@@ -38,254 +41,124 @@ function getLoanCreationErrorResponse(error: unknown) {
       : ''
 
   if (message.includes('BOOK_NOT_FOUND')) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'BOOK_NOT_FOUND',
-          message: '해당 도서를 찾을 수 없습니다.',
-        },
-      },
-      { status: 404 }
-    )
+    throw new ApiRouteError(404, 'BOOK_NOT_FOUND', '해당 도서를 찾을 수 없습니다.')
   }
 
   if (message.includes('STUDENT_NOT_FOUND')) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'STUDENT_NOT_FOUND',
-          message: '해당 학생을 찾을 수 없습니다.',
-        },
-      },
-      { status: 404 }
-    )
+    throw new ApiRouteError(404, 'STUDENT_NOT_FOUND', '해당 학생을 찾을 수 없습니다.')
   }
 
-  if (message.includes('NO_AVAILABLE_COPIES')) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'NO_AVAILABLE_COPIES',
-          message: '이미 대여 중인 도서입니다.',
-        },
-      },
-      { status: 409 }
-    )
-  }
-
-  if (message.includes('ALREADY_RENTED')) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'ALREADY_RENTED',
-          message: '이미 대여 중인 도서입니다.',
-        },
-      },
-      { status: 409 }
-    )
+  if (message.includes('NO_AVAILABLE_COPIES') || message.includes('ALREADY_RENTED')) {
+    throw new ApiRouteError(409, 'NO_AVAILABLE_COPIES', '이미 대여 중인 도서입니다.')
   }
 
   if (message.startsWith('STUDENT_LOAN_BANNED|')) {
     const bannedUntil = message.split('|')[1] ?? ''
 
-    return NextResponse.json(
-      {
-        error: {
-          code: 'STUDENT_LOAN_BANNED',
-          message: `연체로 인한 대출 금지 기간입니다. ${formatKoreanDate(bannedUntil)}까지 대여할 수 없습니다.`,
-        },
-      },
-      { status: 409 }
+    throw new ApiRouteError(
+      409,
+      'STUDENT_LOAN_BANNED',
+      `연체로 인한 대출 금지 기간입니다. ${formatKoreanDate(bannedUntil)}까지 대여할 수 없습니다.`
     )
   }
 
   if (message.startsWith('STUDENT_HAS_OVERDUE_LOAN|')) {
     const dueOn = message.split('|')[1] ?? ''
 
-    return NextResponse.json(
-      {
-        error: {
-          code: 'STUDENT_HAS_OVERDUE_LOAN',
-          message: `반납 예정일(${formatKoreanDate(
-            dueOn
-          )})이 지난 도서가 있어 대여할 수 없습니다. 먼저 연체 도서를 반납해주세요.`,
-        },
-      },
-      { status: 409 }
+    throw new ApiRouteError(
+      409,
+      'STUDENT_HAS_OVERDUE_LOAN',
+      `반납 예정일(${formatKoreanDate(
+        dueOn
+      )})이 지난 도서가 있어 대여할 수 없습니다. 먼저 연체 도서를 반납해주세요.`
     )
   }
 
   if (isLoanLimitError(error)) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'LOAN_LIMIT_EXCEEDED',
-          message: error instanceof Error ? error.message : '대여 가능 권수를 초과했습니다.',
-        },
-      },
-      { status: 409 }
+    throw new ApiRouteError(
+      409,
+      'LOAN_LIMIT_EXCEEDED',
+      error instanceof Error ? error.message : '대여 가능 권수를 초과했습니다.'
     )
   }
-
-  return null
 }
 
-export async function GET(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'SUPABASE_NOT_CONFIGURED',
-          message: 'Supabase 환경변수가 설정되지 않았습니다.',
-        },
+export async function GET() {
+  return runApiRoute(
+    {
+      fallback: {
+        code: 'FETCH_FAILED',
+        message: '대여 목록을 불러오는 중 오류가 발생했습니다.',
       },
-      { status: 503 }
-    )
-  }
+      logLabel: 'Loan fetch error:',
+    },
+    async () => {
+      const supabase = createRouteSupabaseClient()
+      const { data, error } = await supabase
+        .from('loans')
+        .select('id, book_id, student_id, borrowed_on, due_on, returned_on, status, books(title, school_book_code), students(name, student_number)')
+        .eq('status', 'rented')
+        .order('borrowed_on', { ascending: false })
 
-  try {
-    const supabase = createServerSupabaseClient()
-    const { data, error } = await supabase
-      .from('loans')
-      .select('id, book_id, student_id, borrowed_on, due_on, returned_on, status, books(title, school_book_code), students(name, student_number)')
-      .eq('status', 'rented')
-      .order('borrowed_on', { ascending: false })
-
-    if (error) {
-      throw error
-    }
-
-    return NextResponse.json(
-      { data: data ?? [] },
-      {
-        headers: {
-          'Cache-Control': 'no-store, max-age=0',
-        },
+      if (error) {
+        throw error
       }
-    )
-  } catch (error) {
-    console.error('Loan fetch error:', error)
 
-    return NextResponse.json(
-      {
-        error: {
-          code: 'FETCH_FAILED',
-          message: '대여 목록을 불러오는 중 오류가 발생했습니다.',
-        },
-      },
-      { status: 500 }
-    )
-  }
+      return jsonData(data ?? [], withNoStore())
+    }
+  )
 }
 
 export async function POST(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'SUPABASE_NOT_CONFIGURED',
-          message: 'Supabase 환경변수가 설정되지 않았습니다.',
-        },
+  return runApiRoute(
+    {
+      fallback: {
+        code: 'CREATE_LOAN_FAILED',
+        message: '대여 처리 중 오류가 발생했습니다.',
       },
-      { status: 503 }
-    )
-  }
+      logLabel: 'Loan creation error:',
+    },
+    async () => {
+      const body = await readJsonBody<CreateLoanBody>(request)
+      const bookId = getText(body.bookId)
+      const studentId = getText(body.studentId)
 
-  let body: CreateLoanBody
-
-  try {
-    body = (await request.json()) as CreateLoanBody
-  } catch {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'INVALID_JSON',
-          message: '요청 본문이 올바른 JSON이어야 합니다.',
-        },
-      },
-      { status: 400 }
-    )
-  }
-
-  const bookId = getText(body.bookId)
-  const studentId = getText(body.studentId)
-
-  if (!bookId || !studentId) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'MISSING_FIELDS',
-          message: '학생 ID와 도서 ID를 모두 입력해주세요.',
-        },
-      },
-      { status: 400 }
-    )
-  }
-
-  try {
-    const supabase = createServerSupabaseClient()
-    const { data, error } = await supabase.rpc('create_public_loan', {
-      input_book_id: bookId,
-      input_notes: getText(body.notes) || null,
-      input_student_id: studentId,
-    })
-
-    if (error) {
-      const errorResponse = getLoanCreationErrorResponse(error)
-
-      if (errorResponse) {
-        return errorResponse
+      if (!bookId || !studentId) {
+        throwApiError(400, 'MISSING_FIELDS', '학생 ID와 도서 ID를 모두 입력해주세요.')
       }
 
-      throw error
-    }
+      const supabase = createRouteSupabaseClient()
+      const { data, error } = await supabase.rpc('create_public_loan', {
+        input_book_id: bookId,
+        input_notes: getText(body.notes) || null,
+        input_student_id: studentId,
+      })
 
-    const loan = (data ?? [])[0] as CreatedPublicLoan | undefined
+      if (error) {
+        throwKnownLoanCreationError(error)
+        throw error
+      }
 
-    if (!loan) {
-      return NextResponse.json(
+      const loan = (data ?? [])[0] as CreatedPublicLoan | undefined
+
+      if (!loan) {
+        throwApiError(409, 'CREATE_LOAN_FAILED', '대여 처리 결과를 확인하지 못했습니다. 다시 시도해주세요.')
+      }
+
+      return jsonData(
         {
-          error: {
-            code: 'CREATE_LOAN_FAILED',
-            message: '대여 처리 결과를 확인하지 못했습니다. 다시 시도해주세요.',
-          },
-        },
-        { status: 409 }
-      )
-    }
-
-    return NextResponse.json(
-      {
-        data: {
-          bookTitle: loan.book_title,
           activeLoanCount: loan.active_loan_count,
+          bookTitle: loan.book_title,
           borrowerLabel: loan.borrower_label,
           borrowerType: loan.borrower_type,
           dueOn: loan.due_on,
-          loanLimit: loan.loan_limit,
           loanId: loan.loan_id,
+          loanLimit: loan.loan_limit,
           remainingLoanCount: loan.remaining_loan_count,
           studentName: loan.student_name,
         },
-      },
-      { status: 201 }
-    )
-  } catch (error) {
-    const errorResponse = getLoanCreationErrorResponse(error)
-
-    if (errorResponse) {
-      return errorResponse
+        { status: 201 }
+      )
     }
-
-    console.error('Loan creation error:', error)
-    return NextResponse.json(
-      {
-        error: {
-          code: 'CREATE_LOAN_FAILED',
-          message: error instanceof Error ? error.message : '대여 처리 중 오류가 발생했습니다.',
-        },
-      },
-      { status: 500 }
-    )
-  }
+  )
 }
