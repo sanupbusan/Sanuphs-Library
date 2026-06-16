@@ -5,8 +5,13 @@ import { useAdminAddBookForm } from '@/components/admin/useAdminAddBookForm'
 import { ScanInput } from '@/components/ui/ScanInput'
 import { StatusMessage } from '@/components/ui/StatusMessage'
 import { WorkflowStepCard } from '@/components/ui/WorkflowStepCard'
+import type { AdminBookRow } from '@/types/library'
 
-export default function AdminAddBookForm() {
+type AdminAddBookFormProps = {
+  onBookCreated?: (book: AdminBookRow) => void
+}
+
+export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProps) {
   const {
     activeStep,
     errorMessage,
@@ -25,7 +30,7 @@ export default function AdminAddBookForm() {
     submitBook,
     successMessage,
     updateField,
-  } = useAdminAddBookForm()
+  } = useAdminAddBookForm({ onBookCreated })
 
   return (
     <section className="bg-gray-50 py-14 sm:py-16">

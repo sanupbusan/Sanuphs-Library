@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
-import AdminAddBookForm from '@/components/admin/AdminAddBookForm'
-import AdminRemoveBookPanel from '@/components/admin/AdminRemoveBookPanel'
+import AdminAddBooksManager from '@/components/admin/AdminAddBooksManager'
 import Footer from '@/components/sections/Footer'
 import Header from '@/components/sections/Header'
 import { listAdminBooks } from '@/lib/admin-books'
@@ -20,12 +19,7 @@ export default async function AdminAddBooksPage() {
   return (
     <main className="min-h-screen bg-gray-50">
       <Header />
-      <AdminAddBookForm />
-      <section id="remove-books" className="bg-gray-50 pb-14 sm:pb-16">
-        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-          <AdminRemoveBookPanel books={books} />
-        </div>
-      </section>
+      <AdminAddBooksManager initialBooks={books} />
       <Footer />
     </main>
   )
