@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createAdminBook, lookupAdminBookByIsbn } from '@/components/admin/adminAddBookApi'
 import {
@@ -12,6 +12,7 @@ import { ApiClientError } from '@/lib/api-client'
 import {
   getAdminBookLookupSuccessStep,
   getMissingAdminBookRequiredFieldsMessage,
+  shouldAutoLookupAdminBookIsbn,
 } from '@/lib/admin-book-input'
 import { useInputFocus } from '@/hooks/useInputFocus'
 import { useStatusMessages } from '@/hooks/useStatusMessages'
@@ -20,6 +21,8 @@ import type { AdminBookRow } from '@/types/library'
 type UseAdminAddBookFormOptions = {
   onBookCreated?: (book: AdminBookRow) => void
 }
+
+const ISBN_SCAN_LOOKUP_DELAY_MS = 80
 
 function shouldRedirectToLogin(error: unknown) {
   return error instanceof ApiClientError && (error.status === 401 || error.status === 403)
@@ -56,6 +59,8 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
   const [isLookingUpIsbn, setIsLookingUpIsbn] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [shouldFocusNextIsbn, setShouldFocusNextIsbn] = useState(false)
+  const activeLookupIsbnRef = useRef('')
+  const lastAutoLookupIsbnRef = useRef('')
 
   function updateFormField(field: keyof AdminBookFormState, value: string) {
     setSuccessMessage('')
@@ -111,6 +116,11 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
       return
     }
 
+    if (activeLookupIsbnRef.current === isbn) {
+      return
+    }
+
+    activeLookupIsbnRef.current = isbn
     clearMessages()
     setIsLookingUpIsbn(true)
 
@@ -132,10 +142,6 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
           : 'ISBN 정보를 불러왔습니다. 부족한 정보를 입력해주세요.'
       )
       setActiveStep(nextStep)
-
-      if (nextStep === 'code') {
-        focusSchoolBookCodeInput({ select: true })
-      }
     } catch (error) {
       if (shouldRedirectToLogin(error)) {
         router.replace('/admin/login')
@@ -151,6 +157,10 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
 
       setErrorMessage(error instanceof Error ? error.message : 'ISBN 정보 조회에 실패했습니다.')
     } finally {
+      if (activeLookupIsbnRef.current === isbn) {
+        activeLookupIsbnRef.current = ''
+      }
+
       setIsLookingUpIsbn(false)
     }
   }
@@ -179,6 +189,28 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
   }
 
   useEffect(() => {
+    const isbn = sanitizeAdminBookIsbn(form.isbn)
+
+    if (!shouldAutoLookupAdminBookIsbn({
+      activeStep,
+      isbn,
+      isLookingUpIsbn,
+      lastAutoLookupIsbn: lastAutoLookupIsbnRef.current,
+    })) {
+      return
+    }
+
+    const lookupTimer = window.setTimeout(() => {
+      lastAutoLookupIsbnRef.current = isbn
+      void lookupIsbn(isbn)
+    }, ISBN_SCAN_LOOKUP_DELAY_MS)
+
+    return () => {
+      window.clearTimeout(lookupTimer)
+    }
+  }, [activeStep, form.isbn, isLookingUpIsbn])
+
+  useEffect(() => {
     const paramIsbn = searchParams.get('isbn') ?? ''
     const paramSchoolBookCode = searchParams.get('schoolBookCode') ?? ''
 
@@ -203,8 +235,15 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
 
     clearMessages()
     setActiveStep('code')
+  }, [activeStep, clearMessages, isInfoComplete, isSubmitting, setActiveStep])
+
+  useEffect(() => {
+    if (activeStep !== 'code' || isSubmitting) {
+      return
+    }
+
     focusSchoolBookCodeInput({ select: true })
-  }, [activeStep, clearMessages, focusSchoolBookCodeInput, isInfoComplete, isSubmitting, setActiveStep])
+  }, [activeStep, focusSchoolBookCodeInput, isSubmitting])
 
   useEffect(() => {
     if (!shouldFocusNextIsbn || isSubmitting || activeStep !== 'isbn') {

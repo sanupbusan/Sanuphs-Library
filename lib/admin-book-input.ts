@@ -11,6 +11,13 @@ type AdminBookInfoInput = Pick<AdminBookCreateInput, 'author' | 'publisher' | 't
 
 export type AdminBookLookupSuccessStep = 'code' | 'info'
 
+type AdminBookIsbnAutoLookupState = {
+  activeStep: AdminBookLookupSuccessStep | 'isbn'
+  isbn: string
+  isLookingUpIsbn: boolean
+  lastAutoLookupIsbn: string
+}
+
 const requiredAdminBookFields: { field: RequiredAdminBookField; label: string }[] = [
   { field: 'title', label: '책 이름' },
   { field: 'author', label: '저자' },
@@ -32,6 +39,26 @@ export function getMissingAdminBookRequiredFieldsMessage(input: AdminBookCreateI
 
 export function isAdminBookInfoComplete(input: AdminBookInfoInput) {
   return Boolean(input.title.trim() && input.author.trim() && input.publisher.trim())
+}
+
+export function isAdminBookIsbnScanComplete(isbn: string) {
+  return isbn.trim().length === 13
+}
+
+export function shouldAutoLookupAdminBookIsbn({
+  activeStep,
+  isbn,
+  isLookingUpIsbn,
+  lastAutoLookupIsbn,
+}: AdminBookIsbnAutoLookupState) {
+  const normalizedIsbn = isbn.trim()
+
+  return (
+    activeStep === 'isbn' &&
+    !isLookingUpIsbn &&
+    isAdminBookIsbnScanComplete(normalizedIsbn) &&
+    lastAutoLookupIsbn !== normalizedIsbn
+  )
 }
 
 export function getAdminBookLookupSuccessStep(input: AdminBookInfoInput): AdminBookLookupSuccessStep {
