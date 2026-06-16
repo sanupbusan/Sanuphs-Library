@@ -9,6 +9,14 @@ async function readProjectFile(relativePath) {
   return readFile(path.join(projectRoot, relativePath), 'utf8')
 }
 
+function routeHandlerSource(source, handlerName) {
+  const start = source.indexOf(`export async function ${handlerName}`)
+  assert.notEqual(start, -1, `Expected ${handlerName} route handler to exist`)
+
+  const nextHandler = source.indexOf('\nexport async function ', start + 1)
+  return nextHandler === -1 ? source.slice(start) : source.slice(start, nextHandler)
+}
+
 test('loan and return routes do not manually update books.available_copies', async () => {
   const routePaths = ['app/api/loans/route.ts', 'app/api/returns/loans/route.ts']
 
@@ -48,50 +56,38 @@ test('public return function migration leaves availability updates to the trigge
   assert.doesNotMatch(source, /update public\.books/i)
 })
 
-test('overdue return migration stores student loan ban through overdue days', async () => {
-  const source = await readProjectFile('supabase/migrations/20260612010000_add_student_loan_bans.sql')
+test('loan due date repair migration removes stale loan triggers and qualifies due_on references', async () => {
+  const source = await readProjectFile('supabase/migrations/20260612120000_repair_loan_due_on_ambiguity.sql')
 
-  assert.match(source, /add column if not exists loan_banned_until date/i)
-  assert.match(source, /drop function if exists public\.return_loans_by_school_book_codes\(text\[\]\)/i)
-  assert.match(source, /update public\.students/i)
-  assert.match(source, /updated_loans\.returned_on - updated_loans\.due_on/i)
-  assert.match(source, /new_loan_banned_until/i)
-  assert.match(source, /loan_banned_until/i)
+  assert.match(source, /pg_trigger/i)
+  assert.ok(source.includes("pg_get_functiondef(trigger_function.oid) ~* '\\mdue_on\\M'"))
+  assert.match(source, /drop trigger if exists %I on public\.loans/i)
+  assert.match(source, /public\.loans\.due_on < current_date/i)
+  assert.doesNotMatch(source, /[^.]due_on < current_date/i)
 })
 
-test('public loan RPC blocks overdue and currently banned students before inserting', async () => {
-  const migrationSource = await readProjectFile('supabase/migrations/20260612130000_enrich_public_loan_functions.sql')
-  const routeSource = await readProjectFile('app/api/loans/route.ts')
-  const insertIndex = migrationSource.toLowerCase().indexOf('insert into public.loans')
+test('public book lookup, borrower lookup, and loan creation do not require admin login', async () => {
+  const loanRoute = await readProjectFile('app/api/loans/route.ts')
+  const loanGet = routeHandlerSource(loanRoute, 'GET')
+  const loanPost = routeHandlerSource(loanRoute, 'POST')
+  const studentRoute = await readProjectFile('app/api/students/route.ts')
+  const bookLookupRoute = await readProjectFile('app/api/books/lookup/route.ts')
 
-  assert.notEqual(insertIndex, -1, 'loan insert should exist')
-  assert.match(migrationSource, /loan_banned_until/)
-  assert.match(migrationSource, /STUDENT_LOAN_BANNED/)
-  assert.match(migrationSource, /STUDENT_HAS_OVERDUE_LOAN/)
-  assert.match(migrationSource, /loans\.due_on < v_today/)
-  assert.ok(
-    migrationSource.indexOf('STUDENT_LOAN_BANNED') < insertIndex,
-    'ban check must happen before loan insert'
-  )
-  assert.ok(
-    migrationSource.indexOf('STUDENT_HAS_OVERDUE_LOAN') < insertIndex,
-    'overdue check must happen before loan insert'
-  )
-  assert.match(routeSource, /message\.startsWith\('STUDENT_LOAN_BANNED\|'\)/)
-  assert.match(routeSource, /message\.startsWith\('STUDENT_HAS_OVERDUE_LOAN\|'\)/)
-  assert.match(routeSource, /'STUDENT_LOAN_BANNED'/)
-  assert.match(routeSource, /'STUDENT_HAS_OVERDUE_LOAN'/)
+  assert.match(loanGet, /requireAdminSession/)
+  assert.doesNotMatch(loanPost, /requireAdminSession|adminAuthErrorResponse/)
+  assert.match(loanPost, /createServiceRoleSupabaseClient/)
+  assert.doesNotMatch(studentRoute, /requireAdminSession|adminAuthErrorResponse/)
+  assert.match(studentRoute, /createServiceRoleSupabaseClient/)
+  assert.doesNotMatch(bookLookupRoute, /requireAdminSession|adminAuthErrorResponse/)
+  assert.match(bookLookupRoute, /createServerSupabaseClient/)
 })
 
-test('student barcode lookup exposes active overdue metadata to the rent flow', async () => {
-  const studentRouteSource = await readProjectFile('app/api/students/route.ts')
-  const migrationSource = await readProjectFile('supabase/migrations/20260612130000_enrich_public_loan_functions.sql')
-  const typeSource = await readProjectFile('types/supabase.ts')
+test('service role key is documented as server-only', async () => {
+  const envExample = await readProjectFile('.env.example')
+  const serviceClient = await readProjectFile('lib/supabase-service.ts')
 
-  assert.match(studentRouteSource, /\.rpc\('lookup_student_for_loan'/)
-  assert.match(migrationSource, /returns table \([\s\S]*overdue_days integer/i)
-  assert.match(migrationSource, /loan_ban_remaining_days integer/i)
-  assert.match(migrationSource, /loans\.due_on < current_date/i)
-  assert.match(typeSource, /loan_ban_remaining_days: number/)
-  assert.match(typeSource, /overdue_days: number/)
+  assert.match(envExample, /^SUPABASE_SERVICE_ROLE_KEY=/m)
+  assert.doesNotMatch(envExample, /NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY/)
+  assert.match(serviceClient, /import 'server-only'/)
+  assert.doesNotMatch(serviceClient, /NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY/)
 })

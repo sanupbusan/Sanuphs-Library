@@ -1,15 +1,7 @@
-import { formatKoreanDate } from '@/lib/loan-restrictions'
-import {
-  ApiRouteError,
-  createRouteSupabaseClient,
-  getText,
-  jsonData,
-  readJsonBody,
-  runApiRoute,
-  throwApiError,
-  withNoStore,
-} from '@/lib/api-route'
-import type { CreatedPublicLoan } from '@/types/library'
+import { NextResponse } from 'next/server'
+import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
+import { getBorrowerLoanLimit } from '@/lib/loan-limits'
+import { createServiceRoleSupabaseClient, isSupabaseServiceRoleConfigured } from '@/lib/supabase-service'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,6 +9,10 @@ type CreateLoanBody = {
   bookId?: unknown
   notes?: unknown
   studentId?: unknown
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
 function isLoanLimitError(error: unknown) {
@@ -31,14 +27,31 @@ function isLoanLimitError(error: unknown) {
   )
 }
 
-function throwKnownLoanCreationError(error: unknown) {
-  const message =
-    typeof error === 'object' &&
-    error !== null &&
-    'message' in error &&
-    typeof error.message === 'string'
-      ? error.message
-      : ''
+function supabaseServiceRoleNotConfiguredResponse() {
+  return NextResponse.json(
+    {
+      error: {
+        code: 'SUPABASE_SERVICE_ROLE_NOT_CONFIGURED',
+        message: 'Supabase service role 키가 설정되지 않았습니다.',
+      },
+    },
+    { status: 503 }
+  )
+}
+
+export async function GET(request: Request) {
+  try {
+    const session = await requireAdminSession(request)
+    const supabase = session.supabase
+    const { data, error } = await supabase
+      .from('loans')
+      .select('id, book_id, student_id, borrowed_on, due_on, returned_on, status, books(title, school_book_code), students(name, student_number)')
+      .eq('status', 'rented')
+      .order('borrowed_on', { ascending: false })
+
+    if (error) {
+      throw error
+    }
 
   if (message.includes('BOOK_NOT_FOUND')) {
     throw new ApiRouteError(404, 'BOOK_NOT_FOUND', '해당 도서를 찾을 수 없습니다.')
@@ -52,8 +65,12 @@ function throwKnownLoanCreationError(error: unknown) {
     throw new ApiRouteError(409, 'NO_AVAILABLE_COPIES', '이미 대여 중인 도서입니다.')
   }
 
-  if (message.startsWith('STUDENT_LOAN_BANNED|')) {
-    const bannedUntil = message.split('|')[1] ?? ''
+export async function POST(request: Request) {
+  if (!isSupabaseServiceRoleConfigured()) {
+    return supabaseServiceRoleNotConfiguredResponse()
+  }
+
+  let body: CreateLoanBody
 
     throw new ApiRouteError(
       409,
@@ -74,14 +91,50 @@ function throwKnownLoanCreationError(error: unknown) {
     )
   }
 
-  if (isLoanLimitError(error)) {
-    throw new ApiRouteError(
-      409,
-      'LOAN_LIMIT_EXCEEDED',
-      error instanceof Error ? error.message : '대여 가능 권수를 초과했습니다.'
+  if (!isUuid(bookId) || !isUuid(studentId)) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'INVALID_ID',
+          message: '도서 ID와 학생 ID 형식이 올바르지 않습니다.',
+        },
+      },
+      { status: 400 }
     )
   }
-}
+
+  try {
+    const supabase = createServiceRoleSupabaseClient()
+
+    const { data: book, error: bookError } = await supabase
+      .from('books')
+      .select('id, title, available_copies')
+      .eq('id', bookId)
+      .single()
+
+    if (bookError || !book) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'BOOK_NOT_FOUND',
+            message: '해당 도서를 찾을 수 없습니다.',
+          },
+        },
+        { status: 404 }
+      )
+    }
+
+    if (book.available_copies <= 0) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'NO_AVAILABLE_COPIES',
+            message: '대여 가능한 도서가 없습니다.',
+          },
+        },
+        { status: 409 }
+      )
+    }
 
 export async function GET() {
   return runApiRoute(
@@ -157,7 +210,19 @@ export async function POST(request: Request) {
           remainingLoanCount: loan.remaining_loan_count,
           studentName: loan.student_name,
         },
-        { status: 201 }
+      },
+      { status: 201 }
+    )
+  } catch (error) {
+    if (isLoanLimitError(error)) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'LOAN_LIMIT_EXCEEDED',
+            message: error instanceof Error ? error.message : '대여 가능 권수를 초과했습니다.',
+          },
+        },
+        { status: 409 }
       )
     }
   )
