@@ -1,5 +1,5 @@
 import { readApiData } from '@/lib/api-client'
-import type { IsbnLookupResult } from '@/types/library'
+import type { AdminBookRow, IsbnLookupResult } from '@/types/library'
 import type { AdminBookFormInput } from '@/components/admin/useAdminAddBookDraft'
 
 export async function createAdminBook(input: AdminBookFormInput) {
@@ -11,7 +11,7 @@ export async function createAdminBook(input: AdminBookFormInput) {
     method: 'POST',
   })
 
-  return readApiData<unknown>(response, '책 등록에 실패했습니다.')
+  return readApiData<AdminBookRow>(response, '책 등록에 실패했습니다.')
 }
 
 export async function lookupAdminBookByIsbn(isbn: string) {

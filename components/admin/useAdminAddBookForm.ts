@@ -12,12 +12,17 @@ import {
 import { ApiClientError } from '@/lib/api-client'
 import { useInputFocus } from '@/hooks/useInputFocus'
 import { useStatusMessages } from '@/hooks/useStatusMessages'
+import type { AdminBookRow } from '@/types/library'
+
+type UseAdminAddBookFormOptions = {
+  onBookCreated?: (book: AdminBookRow) => void
+}
 
 function shouldRedirectToLogin(error: unknown) {
   return error instanceof ApiClientError && (error.status === 401 || error.status === 403)
 }
 
-export function useAdminAddBookForm() {
+export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOptions = {}) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const {
@@ -71,15 +76,15 @@ export function useAdminAddBookForm() {
     clearMessages()
 
     try {
-      await createAdminBook(input)
+      const createdBook = await createAdminBook(input)
       resetDraft()
+      onBookCreated?.(createdBook)
       setSuccessMessage('책이 등록되었습니다. 다음 ISBN 바코드를 스캔해주세요.')
 
       if (searchParams.toString()) {
         router.replace('/admin/add_books', { scroll: false })
       }
 
-      router.refresh()
       focusIsbnInput()
     } catch (error) {
       if (shouldRedirectToLogin(error)) {
