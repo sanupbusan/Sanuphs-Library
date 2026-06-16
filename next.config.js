@@ -1,5 +1,11 @@
+const isVercelBuild = process.env.VERCEL === '1'
+
 const nextConfig = {
-  distDir: process.platform === 'win32' ? '.next-win' : '.next-wsl',
+  ...(isVercelBuild
+    ? {}
+    : {
+        distDir: process.platform === 'win32' ? '.next-win' : '.next-wsl',
+      }),
 }
 
 module.exports = nextConfig
