@@ -3,8 +3,10 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Loader2, Search, Trash2 } from 'lucide-react'
 import { deleteBookAction } from '@/app/admin/books/actions'
+import { useToast } from '@/components/ui/ToastProvider'
 import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
 import { displayValue } from '@/lib/display'
+import { useStatusMessages } from '@/hooks/useStatusMessages'
 import type { RemovableBook } from '@/types/library'
 
 type AdminRemoveBookPanelProps = {
@@ -54,10 +56,16 @@ export default function AdminRemoveBookPanel({
   isLoading = false,
   onBookDeleted,
 }: AdminRemoveBookPanelProps) {
+  const { addToast } = useToast()
   const [localBooks, setLocalBooks] = useState<RemovableBook[]>(books)
   const [query, setQuery] = useState('')
-  const [errorMessage, setErrorMessage] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
+  const {
+    clearMessages,
+    errorMessage,
+    setErrorMessage,
+    setSuccessMessage,
+    successMessage,
+  } = useStatusMessages()
   const [deletingBookId, setDeletingBookId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -92,8 +100,7 @@ export default function AdminRemoveBookPanel({
     }
 
     setDeletingBookId(book.id)
-    setErrorMessage('')
-    setSuccessMessage('')
+    clearMessages()
 
     try {
       const result = await deleteBookAction(book.id)
@@ -104,9 +111,13 @@ export default function AdminRemoveBookPanel({
 
       setLocalBooks((current) => current.filter((item) => item.id !== book.id))
       onBookDeleted?.(book.id)
-      setSuccessMessage(`"${result.data?.title ?? book.title}" 도서를 제거했습니다.`)
+      const message = `"${result.data?.title ?? book.title}" 도서를 제거했습니다.`
+      setSuccessMessage(message)
+      addToast(message, 'success')
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '도서 제거에 실패했습니다.')
+      const message = error instanceof Error ? error.message : '도서 제거에 실패했습니다.'
+      setErrorMessage(message)
+      addToast(message, 'error')
     } finally {
       setDeletingBookId(null)
     }

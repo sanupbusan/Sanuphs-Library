@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { BookOpen, Search } from 'lucide-react'
+import { useToast } from '@/components/ui/ToastProvider'
 import {
   getDashboardData,
   getOverdueLoans,
@@ -28,30 +29,15 @@ import {
 } from '@/lib/dashboard-data'
 import type { DashboardSummary } from '@/lib/library-queries'
 
-type Toast = {
-  id: number
-  message: string
-  type: 'success' | 'error'
-}
-
 export default function HeroWithDashboard() {
   const router = useRouter()
+  const { addToast } = useToast()
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [overdueLoans, setOverdueLoans] = useState<OverdueLoan[]>([])
   const [recentRentals, setRecentRentals] = useState<RecentRental[]>([])
   const [recentBooks, setRecentBooks] = useState<RecentBook[]>([])
   const [studentLoanStats, setStudentLoanStats] = useState<StudentLoanStatistic[]>([])
   const [isDashboardRefreshing, setIsDashboardRefreshing] = useState(false)
-  const [toasts, setToasts] = useState<Toast[]>([])
-  const toastIdRef = useRef(0)
-
-  function addToast(message: string, type: 'success' | 'error') {
-    const id = ++toastIdRef.current
-    setToasts((current) => [...current, { id, message, type }])
-    setTimeout(() => {
-      setToasts((current) => current.filter((t) => t.id !== id))
-    }, 1000)
-  }
 
   async function loadDashboardData() {
     if (!isSupabaseConfigured()) {
@@ -217,21 +203,6 @@ export default function HeroWithDashboard() {
             />
           </div>
         </div>
-      </div>
-
-      <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`rounded-lg px-4 py-2 text-sm font-medium shadow-lg ${
-              toast.type === 'success'
-                ? 'bg-green-600 text-white'
-                : 'bg-red-600 text-white'
-            }`}
-          >
-            {toast.message}
-          </div>
-        ))}
       </div>
     </section>
   )

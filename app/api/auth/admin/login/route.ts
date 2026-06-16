@@ -1,11 +1,9 @@
-import { NextResponse } from 'next/server'
 import {
   AdminAuthError,
-  adminAuthErrorResponse,
   serializeAdminSession,
   setAdminSessionCookie,
 } from '@/lib/admin-auth'
-import { createRouteSupabaseClient, readJsonBody } from '@/lib/api-route'
+import { createRouteSupabaseClient, jsonData, readJsonBody, runApiRoute } from '@/lib/api-route'
 import { createSupabaseClientWithAccessToken } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
@@ -34,65 +32,64 @@ function getCredentials(body: LoginBody) {
 }
 
 export async function POST(request: Request) {
-  try {
-    const body = await readJsonBody<LoginBody>(request)
-    const { loginId, password } = getCredentials(body)
+  return runApiRoute(
+    {
+      fallback: {
+        code: 'ADMIN_LOGIN_FAILED',
+        message: '로그인에 실패했습니다.',
+      },
+      logLabel: 'Admin login error:',
+    },
+    async () => {
+      const body = await readJsonBody<LoginBody>(request)
+      const { loginId, password } = getCredentials(body)
 
-    if (!loginId || !password) {
-      return adminAuthErrorResponse(
-        new AdminAuthError(400, 'MISSING_CREDENTIALS', '아이디와 비밀번호를 입력해주세요.')
+      if (!loginId || !password) {
+        throw new AdminAuthError(400, 'MISSING_CREDENTIALS', '아이디와 비밀번호를 입력해주세요.')
+      }
+
+      if (loginId !== getConfiguredAdminLoginId()) {
+        throw new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
+      }
+
+      const authClient = createRouteSupabaseClient()
+      const { data, error } = await authClient.auth.signInWithPassword({
+        email: getConfiguredAdminAuthEmail(),
+        password,
+      })
+
+      if (error || !data.session || !data.user) {
+        throw new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
+      }
+
+      const authedClient = createSupabaseClientWithAccessToken(data.session.access_token)
+      const { data: adminUser, error: adminUserError } = await authedClient
+        .from('admin_users')
+        .select('login_id, role')
+        .eq('user_id', data.user.id)
+        .maybeSingle()
+
+      if (adminUserError) {
+        throw adminUserError
+      }
+
+      if (!adminUser || adminUser.login_id !== loginId) {
+        throw new AdminAuthError(403, 'FORBIDDEN', '관리자 권한이 필요합니다.')
+      }
+
+      const response = jsonData(
+        serializeAdminSession({
+          role: adminUser.role,
+          supabase: authedClient,
+          user: {
+            id: data.user.id,
+            loginId: adminUser.login_id,
+          },
+        })
       )
+      setAdminSessionCookie(response, data.session)
+
+      return response
     }
-
-    if (loginId !== getConfiguredAdminLoginId()) {
-      return adminAuthErrorResponse(
-        new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
-      )
-    }
-
-    const authClient = createRouteSupabaseClient()
-    const { data, error } = await authClient.auth.signInWithPassword({
-      email: getConfiguredAdminAuthEmail(),
-      password,
-    })
-
-    if (error || !data.session || !data.user) {
-      return adminAuthErrorResponse(
-        new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
-      )
-    }
-
-    const authedClient = createSupabaseClientWithAccessToken(data.session.access_token)
-    const { data: adminUser, error: adminUserError } = await authedClient
-      .from('admin_users')
-      .select('login_id, role')
-      .eq('user_id', data.user.id)
-      .maybeSingle()
-
-    if (adminUserError) {
-      throw adminUserError
-    }
-
-    if (!adminUser || adminUser.login_id !== loginId) {
-      return adminAuthErrorResponse(
-        new AdminAuthError(403, 'FORBIDDEN', '관리자 권한이 필요합니다.')
-      )
-    }
-
-    const response = NextResponse.json({
-      data: serializeAdminSession({
-        role: adminUser.role,
-        supabase: authedClient,
-        user: {
-          id: data.user.id,
-          loginId: adminUser.login_id,
-        },
-      }),
-    })
-    setAdminSessionCookie(response, data.session)
-
-    return response
-  } catch (error) {
-    return adminAuthErrorResponse(error)
-  }
+  )
 }

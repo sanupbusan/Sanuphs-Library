@@ -27,7 +27,7 @@ test('public return route uses RPCs instead of direct loan table access', async 
   const source = await readProjectFile('app/api/returns/loans/route.ts')
 
   assert.match(source, /\.rpc\([\s\S]*'get_returnable_loan_by_school_book_code'/)
-  assert.match(source, /\.rpc\('return_loans_by_school_book_codes'/)
+  assert.match(source, /\.rpc\([\s\S]*'return_loans_by_school_book_codes'/)
   assert.doesNotMatch(source, /\.from\('loans'\)/)
 })
 
@@ -47,7 +47,6 @@ test('public return function migration leaves availability updates to the trigge
   assert.match(source, /update public\.loans/i)
   assert.doesNotMatch(source, /update public\.books/i)
 })
-<<<<<<< HEAD
 
 test('overdue return migration stores student loan ban through overdue days', async () => {
   const source = await readProjectFile('supabase/migrations/20260612010000_add_student_loan_bans.sql')
@@ -60,32 +59,39 @@ test('overdue return migration stores student loan ban through overdue days', as
   assert.match(source, /loan_banned_until/i)
 })
 
-test('loan creation blocks overdue and currently banned students before inserting', async () => {
-  const source = await readProjectFile('app/api/loans/route.ts')
-  const insertIndex = source.indexOf('.insert({')
+test('public loan RPC blocks overdue and currently banned students before inserting', async () => {
+  const migrationSource = await readProjectFile('supabase/migrations/20260612130000_enrich_public_loan_functions.sql')
+  const routeSource = await readProjectFile('app/api/loans/route.ts')
+  const insertIndex = migrationSource.toLowerCase().indexOf('insert into public.loans')
 
   assert.notEqual(insertIndex, -1, 'loan insert should exist')
-  assert.match(source, /loan_banned_until/)
-  assert.match(source, /STUDENT_LOAN_BANNED/)
-  assert.match(source, /STUDENT_HAS_OVERDUE_LOAN/)
-  assert.match(source, /\.lt\('due_on', today\)/)
-  assert.ok(source.indexOf('STUDENT_LOAN_BANNED') < insertIndex, 'ban check must happen before loan insert')
-  assert.ok(source.indexOf('STUDENT_HAS_OVERDUE_LOAN') < insertIndex, 'overdue check must happen before loan insert')
+  assert.match(migrationSource, /loan_banned_until/)
+  assert.match(migrationSource, /STUDENT_LOAN_BANNED/)
+  assert.match(migrationSource, /STUDENT_HAS_OVERDUE_LOAN/)
+  assert.match(migrationSource, /loans\.due_on < v_today/)
+  assert.ok(
+    migrationSource.indexOf('STUDENT_LOAN_BANNED') < insertIndex,
+    'ban check must happen before loan insert'
+  )
+  assert.ok(
+    migrationSource.indexOf('STUDENT_HAS_OVERDUE_LOAN') < insertIndex,
+    'overdue check must happen before loan insert'
+  )
+  assert.match(routeSource, /message\.startsWith\('STUDENT_LOAN_BANNED\|'\)/)
+  assert.match(routeSource, /message\.startsWith\('STUDENT_HAS_OVERDUE_LOAN\|'\)/)
+  assert.match(routeSource, /'STUDENT_LOAN_BANNED'/)
+  assert.match(routeSource, /'STUDENT_HAS_OVERDUE_LOAN'/)
 })
 
-test('student barcode lookup exposes active overdue days in the rent form', async () => {
+test('student barcode lookup exposes active overdue metadata to the rent flow', async () => {
   const studentRouteSource = await readProjectFile('app/api/students/route.ts')
-  const rentFormSource = await readProjectFile('components/rent/RentBookForm.tsx')
+  const migrationSource = await readProjectFile('supabase/migrations/20260612130000_enrich_public_loan_functions.sql')
+  const typeSource = await readProjectFile('types/supabase.ts')
 
-  assert.match(studentRouteSource, /\.eq\('status', 'rented'\)/)
-  assert.match(studentRouteSource, /\.lt\('due_on', today\)/)
-  assert.match(studentRouteSource, /loan_ban_remaining_days: loanBanRemainingDays/)
-  assert.match(studentRouteSource, /overdue_days: overdueDays/)
-  assert.match(rentFormSource, /loan_ban_remaining_days: number/)
-  assert.match(rentFormSource, /overdue_days: number/)
-  assert.match(rentFormSource, /연체된 학생입니다\.\s*\$\{targetStudent\.overdue_days\}일/)
-  assert.match(rentFormSource, /대출 금지 기간입니다\.\s*\$\{targetStudent\.loan_ban_remaining_days\}일/)
-  assert.match(rentFormSource, /student && !studentRestrictionMessage/)
+  assert.match(studentRouteSource, /\.rpc\('lookup_student_for_loan'/)
+  assert.match(migrationSource, /returns table \([\s\S]*overdue_days integer/i)
+  assert.match(migrationSource, /loan_ban_remaining_days integer/i)
+  assert.match(migrationSource, /loans\.due_on < current_date/i)
+  assert.match(typeSource, /loan_ban_remaining_days: number/)
+  assert.match(typeSource, /overdue_days: number/)
 })
-=======
->>>>>>> origin/main
