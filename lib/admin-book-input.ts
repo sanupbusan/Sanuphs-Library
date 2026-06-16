@@ -6,6 +6,10 @@ export type AdminBookCreateInput = {
   title: string
 }
 
+export type AdminBookUpdateInput = AdminBookCreateInput & {
+  location: string
+}
+
 type RequiredAdminBookField = Exclude<keyof AdminBookCreateInput, 'isbn'>
 type AdminBookInfoInput = Pick<AdminBookCreateInput, 'author' | 'publisher' | 'title'>
 
@@ -67,4 +71,8 @@ export function getAdminBookLookupSuccessStep(input: AdminBookInfoInput): AdminB
 
 export function getNullableAdminBookIsbn(input: AdminBookCreateInput) {
   return input.isbn || null
+}
+
+export function getNullableAdminBookLocation(input: AdminBookUpdateInput) {
+  return input.location || null
 }

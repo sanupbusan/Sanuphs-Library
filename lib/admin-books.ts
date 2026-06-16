@@ -1,4 +1,10 @@
 import { ApiRouteError } from '@/lib/api-route'
+import {
+  getMissingAdminBookRequiredFieldsMessage,
+  getNullableAdminBookIsbn,
+  getNullableAdminBookLocation,
+  type AdminBookUpdateInput,
+} from '@/lib/admin-book-input'
 import type { TypedSupabaseClient } from '@/lib/supabase'
 import type { AdminBookRow } from '@/types/library'
 
@@ -44,4 +50,48 @@ export async function deleteAdminBook(supabase: TypedSupabaseClient, bookId: str
   }
 
   return data
+}
+
+export async function updateAdminBook(
+  supabase: TypedSupabaseClient,
+  bookId: string,
+  input: AdminBookUpdateInput
+): Promise<AdminBookRow> {
+  if (!bookId) {
+    throw new ApiRouteError(400, 'MISSING_BOOK_ID', '수정할 도서를 선택해주세요.')
+  }
+
+  const missingFieldsMessage = getMissingAdminBookRequiredFieldsMessage(input)
+
+  if (missingFieldsMessage) {
+    throw new ApiRouteError(400, 'MISSING_REQUIRED_FIELDS', missingFieldsMessage)
+  }
+
+  const { data, error } = await supabase
+    .from('books')
+    .update({
+      author: input.author,
+      isbn: getNullableAdminBookIsbn(input),
+      location: getNullableAdminBookLocation(input),
+      publisher: input.publisher,
+      school_book_code: input.schoolBookCode,
+      title: input.title,
+    })
+    .eq('id', bookId)
+    .select(ADMIN_BOOK_COLUMNS)
+    .maybeSingle()
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new ApiRouteError(409, 'DUPLICATE_BOOK_CODE', '이미 등록된 ISBN 또는 학교 내 도서 코드입니다.')
+    }
+
+    throw error
+  }
+
+  if (!data) {
+    throw new ApiRouteError(404, 'BOOK_NOT_FOUND', '수정할 도서를 찾을 수 없습니다.')
+  }
+
+  return data as AdminBookRow
 }

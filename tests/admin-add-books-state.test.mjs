@@ -57,9 +57,19 @@ test('deleted admin book is removed from local add-book page state', async () =>
   assert.deepEqual(nextBooks.map((item) => item.id), ['keep'])
 })
 
+test('updated admin book replaces the matching local row', async () => {
+  const { replaceUpdatedAdminBook } = await loadStateHelpers()
+  const updatedBook = { id: 'edit', title: '수정된 도서' }
+  const nextBooks = replaceUpdatedAdminBook([book('keep'), book('edit')], updatedBook)
+
+  assert.equal(nextBooks[1], updatedBook)
+  assert.deepEqual(nextBooks.map((item) => item.id), ['keep', 'edit'])
+})
+
 test('admin book registration accepts complete book info without ISBN', async () => {
   const {
     getMissingAdminBookRequiredFieldsMessage,
+    getNullableAdminBookLocation,
     getNullableAdminBookIsbn,
   } = await loadInputHelpers()
   const { prependCreatedAdminBook } = await loadStateHelpers()
@@ -80,6 +90,7 @@ test('admin book registration accepts complete book info without ISBN', async ()
 
   assert.equal(getMissingAdminBookRequiredFieldsMessage(input), '')
   assert.equal(createdBook.isbn, null)
+  assert.equal(getNullableAdminBookLocation({ ...input, location: '' }), null)
   assert.equal(nextBooks[0], createdBook)
 })
 
