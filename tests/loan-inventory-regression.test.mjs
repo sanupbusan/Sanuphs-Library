@@ -9,6 +9,14 @@ async function readProjectFile(relativePath) {
   return readFile(path.join(projectRoot, relativePath), 'utf8')
 }
 
+function routeHandlerSource(source, handlerName) {
+  const start = source.indexOf(`export async function ${handlerName}`)
+  assert.notEqual(start, -1, `Expected ${handlerName} route handler to exist`)
+
+  const nextHandler = source.indexOf('\nexport async function ', start + 1)
+  return nextHandler === -1 ? source.slice(start) : source.slice(start, nextHandler)
+}
+
 test('loan and return routes do not manually update books.available_copies', async () => {
   const routePaths = ['app/api/loans/route.ts', 'app/api/returns/loans/route.ts']
 
@@ -46,4 +54,40 @@ test('public return function migration leaves availability updates to the trigge
   assert.match(source, /create or replace function public\.return_loans_by_school_book_codes/i)
   assert.match(source, /update public\.loans/i)
   assert.doesNotMatch(source, /update public\.books/i)
+})
+
+test('loan due date repair migration removes stale loan triggers and qualifies due_on references', async () => {
+  const source = await readProjectFile('supabase/migrations/20260612120000_repair_loan_due_on_ambiguity.sql')
+
+  assert.match(source, /pg_trigger/i)
+  assert.ok(source.includes("pg_get_functiondef(trigger_function.oid) ~* '\\mdue_on\\M'"))
+  assert.match(source, /drop trigger if exists %I on public\.loans/i)
+  assert.match(source, /public\.loans\.due_on < current_date/i)
+  assert.doesNotMatch(source, /[^.]due_on < current_date/i)
+})
+
+test('public book lookup, borrower lookup, and loan creation do not require admin login', async () => {
+  const loanRoute = await readProjectFile('app/api/loans/route.ts')
+  const loanGet = routeHandlerSource(loanRoute, 'GET')
+  const loanPost = routeHandlerSource(loanRoute, 'POST')
+  const studentRoute = await readProjectFile('app/api/students/route.ts')
+  const bookLookupRoute = await readProjectFile('app/api/books/lookup/route.ts')
+
+  assert.match(loanGet, /requireAdminSession/)
+  assert.doesNotMatch(loanPost, /requireAdminSession|adminAuthErrorResponse/)
+  assert.match(loanPost, /createServiceRoleSupabaseClient/)
+  assert.doesNotMatch(studentRoute, /requireAdminSession|adminAuthErrorResponse/)
+  assert.match(studentRoute, /createServiceRoleSupabaseClient/)
+  assert.doesNotMatch(bookLookupRoute, /requireAdminSession|adminAuthErrorResponse/)
+  assert.match(bookLookupRoute, /createServerSupabaseClient/)
+})
+
+test('service role key is documented as server-only', async () => {
+  const envExample = await readProjectFile('.env.example')
+  const serviceClient = await readProjectFile('lib/supabase-service.ts')
+
+  assert.match(envExample, /^SUPABASE_SERVICE_ROLE_KEY=/m)
+  assert.doesNotMatch(envExample, /NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY/)
+  assert.match(serviceClient, /import 'server-only'/)
+  assert.doesNotMatch(serviceClient, /NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY/)
 })
