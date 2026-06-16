@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 function getStudentNumber(request: Request) {
   const url = new URL(request.url)
 
-  return normalizeBarcodeInput(url.searchParams.get('studentNumber') ?? '')
+  return normalizeBorrowerLookupCode(normalizeBarcodeInput(url.searchParams.get('studentNumber') ?? ''))
 }
 
 export async function GET(request: Request) {
@@ -34,10 +34,9 @@ export async function GET(request: Request) {
           message: '학번을 입력해주세요.',
         },
       },
-      logLabel: 'Student fetch error:',
-    },
-    async () => {
-      const studentNumber = getStudentNumber(request)
+      { status: 400 }
+    )
+  }
 
   try {
     const supabase = createServiceRoleSupabaseClient()
@@ -47,20 +46,34 @@ export async function GET(request: Request) {
       .eq('student_number', studentNumber)
       .maybeSingle()
 
-      const supabase = createRouteSupabaseClient()
-      const { data, error } = await supabase.rpc('lookup_student_for_loan', {
-        input_student_number: studentNumber,
-      })
+    if (error) {
+      throw error
+    }
 
-      if (error) {
-        throw error
-      }
+    if (!data) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'STUDENT_NOT_FOUND',
+            message: '해당 학번의 학생을 찾을 수 없습니다.',
+          },
+        },
+        { status: 404 }
+      )
+    }
 
-      const student = (data ?? [])[0] as LoanStudent | undefined
+    const { count, error: countError } = await supabase
+      .from('loans')
+      .select('id', { count: 'exact', head: true })
+      .eq('student_id', data.id)
+      .eq('status', 'rented')
 
-      if (!student) {
-        throwApiError(404, 'STUDENT_NOT_FOUND', '해당 학번의 학생을 찾을 수 없습니다.')
-      }
+    if (countError) {
+      throw countError
+    }
+
+    const activeLoanCount = count ?? 0
+    const { borrowerLabel, borrowerType, loanLimit } = getBorrowerLoanLimit(data)
 
     return NextResponse.json({
       data: {
