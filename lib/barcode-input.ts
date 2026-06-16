@@ -167,8 +167,9 @@ export function normalizeBarcodeInput(value: string) {
   return convertKoreanKeyboardToEnglish(value)
     .replace(/\s+/g, '')
     .replace(/[^0-9A-Za-z-]/g, '')
+    .toUpperCase()
 }
 
 export function normalizeIsbnInput(value: string) {
-  return convertKoreanKeyboardToEnglish(value).replace(/[^0-9Xx]/g, '')
+  return convertKoreanKeyboardToEnglish(value).replace(/[^0-9Xx]/g, '').toUpperCase()
 }

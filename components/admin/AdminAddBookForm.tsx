@@ -17,6 +17,8 @@ export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProp
     errorMessage,
     form,
     handleIsbnEnter,
+    handleScanCompositionEnd,
+    handleScanCompositionStart,
     handleSchoolBookCodeEnter,
     infoMessage,
     isLookingUpIsbn,
@@ -53,6 +55,8 @@ export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProp
               label="ISBN 코드"
               value={form.isbn}
               onChangeValue={(value) => updateField('isbn', value)}
+              onCompositionStart={() => handleScanCompositionStart('isbn')}
+              onCompositionEnd={(value) => handleScanCompositionEnd('isbn', value)}
               onEnter={handleIsbnEnter}
               loading={isLookingUpIsbn}
               disabled={isSubmitting}
@@ -130,6 +134,8 @@ export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProp
               label="학교 내 도서 코드"
               value={form.schoolBookCode}
               onChangeValue={(value) => updateField('schoolBookCode', value)}
+              onCompositionStart={() => handleScanCompositionStart('schoolBookCode')}
+              onCompositionEnd={(value) => handleScanCompositionEnd('schoolBookCode', value)}
               onEnter={handleSchoolBookCodeEnter}
               disabled={activeStep !== 'code' || isSubmitting}
               loading={isSubmitting}

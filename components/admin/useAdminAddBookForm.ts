@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createAdminBook, lookupAdminBookByIsbn } from '@/components/admin/adminAddBookApi'
 import {
@@ -21,6 +21,10 @@ function shouldRedirectToLogin(error: unknown) {
   return error instanceof ApiClientError && (error.status === 401 || error.status === 403)
 }
 
+function isLookupInfoComplete(book: Pick<AdminBookRow, 'title' | 'author' | 'publisher'>) {
+  return Boolean(book.title?.trim() && book.author?.trim() && book.publisher?.trim())
+}
+
 export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOptions = {}) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -33,6 +37,7 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
     isInfoComplete,
     resetDraft,
     setActiveStep,
+    setForm,
     updateField,
   } = useAdminAddBookDraft()
   const {
@@ -51,9 +56,33 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
   } = useInputFocus<HTMLInputElement>()
   const [isLookingUpIsbn, setIsLookingUpIsbn] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [shouldFocusSchoolBookCode, setShouldFocusSchoolBookCode] = useState(false)
   const [shouldFocusNextIsbn, setShouldFocusNextIsbn] = useState(false)
+  const composingFieldRef = useRef<keyof AdminBookFormState | null>(null)
 
   function updateFormField(field: keyof AdminBookFormState, value: string) {
+    setSuccessMessage('')
+
+    if (composingFieldRef.current === field) {
+      setForm((current) => ({
+        ...current,
+        [field]: value,
+      }))
+      return
+    }
+
+    updateField(field, value)
+  }
+
+  function handleScanCompositionStart(field: keyof AdminBookFormState) {
+    composingFieldRef.current = field
+  }
+
+  function handleScanCompositionEnd(field: keyof AdminBookFormState, value: string) {
+    if (composingFieldRef.current === field) {
+      composingFieldRef.current = null
+    }
+
     setSuccessMessage('')
     updateField(field, value)
   }
@@ -112,6 +141,13 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
       const book = await lookupAdminBookByIsbn(isbn)
 
       applyLookupResult(book, isbn)
+      if (isLookupInfoComplete(book)) {
+        clearMessages()
+        setActiveStep('code')
+        setShouldFocusSchoolBookCode(true)
+        return
+      }
+
       setInfoMessage('ISBN 정보를 불러왔습니다. 내용을 확인하고 필요하면 수정해주세요.')
       setActiveStep('info')
     } catch (error) {
@@ -174,8 +210,17 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
 
     clearMessages()
     setActiveStep('code')
+    setShouldFocusSchoolBookCode(true)
+  }, [activeStep, clearMessages, isInfoComplete, isSubmitting, setActiveStep])
+
+  useEffect(() => {
+    if (!shouldFocusSchoolBookCode || activeStep !== 'code' || isSubmitting) {
+      return
+    }
+
     focusSchoolBookCodeInput({ select: true })
-  }, [activeStep, clearMessages, focusSchoolBookCodeInput, isInfoComplete, isSubmitting, setActiveStep])
+    setShouldFocusSchoolBookCode(false)
+  }, [activeStep, focusSchoolBookCodeInput, isSubmitting, shouldFocusSchoolBookCode])
 
   useEffect(() => {
     if (!shouldFocusNextIsbn || isSubmitting || activeStep !== 'isbn') {
@@ -199,6 +244,8 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
     isbnInputRef,
     schoolBookCodeInputRef,
     successMessage,
+    handleScanCompositionEnd,
+    handleScanCompositionStart,
     updateField: updateFormField,
   }
 }
