@@ -9,6 +9,10 @@ import {
   type AdminBookFormState,
 } from '@/components/admin/useAdminAddBookDraft'
 import { ApiClientError } from '@/lib/api-client'
+import {
+  getAdminBookLookupSuccessStep,
+  getMissingAdminBookRequiredFieldsMessage,
+} from '@/lib/admin-book-input'
 import { useInputFocus } from '@/hooks/useInputFocus'
 import { useStatusMessages } from '@/hooks/useStatusMessages'
 import type { AdminBookRow } from '@/types/library'
@@ -67,8 +71,10 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
       title: nextForm.title.trim(),
     }
 
-    if (!input.isbn || !input.schoolBookCode || !input.title || !input.author || !input.publisher) {
-      setErrorMessage('책 이름, 저자, 출판사, ISBN 코드, 학교 내 도서 코드를 모두 입력해주세요.')
+    const missingFieldsMessage = getMissingAdminBookRequiredFieldsMessage(input)
+
+    if (missingFieldsMessage) {
+      setErrorMessage(missingFieldsMessage)
       return
     }
 
@@ -79,7 +85,7 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
       const createdBook = await createAdminBook(input)
       resetDraft()
       onBookCreated?.(createdBook)
-      setSuccessMessage('책이 등록되었습니다. 다음 ISBN 바코드를 스캔해주세요.')
+      setSuccessMessage('책이 등록되었습니다. 다음 책을 등록해주세요.')
       setShouldFocusNextIsbn(true)
 
       if (searchParams.toString()) {
@@ -101,7 +107,7 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
     const isbn = sanitizeAdminBookIsbn(nextIsbn.trim())
 
     if (!isbn) {
-      setErrorMessage('ISBN 코드를 입력해주세요.')
+      startManualEntry()
       return
     }
 
@@ -110,10 +116,26 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
 
     try {
       const book = await lookupAdminBookByIsbn(isbn)
+      const nextForm = {
+        author: book.author || form.author,
+        isbn: book.isbn || isbn,
+        publisher: book.publisher || form.publisher,
+        schoolBookCode: form.schoolBookCode,
+        title: book.title || form.title,
+      }
+      const nextStep = getAdminBookLookupSuccessStep(nextForm)
 
       applyLookupResult(book, isbn)
-      setInfoMessage('ISBN 정보를 불러왔습니다. 내용을 확인하고 필요하면 수정해주세요.')
-      setActiveStep('info')
+      setInfoMessage(
+        nextStep === 'code'
+          ? 'ISBN 정보를 불러왔습니다. 학교 내 도서 코드를 스캔해주세요.'
+          : 'ISBN 정보를 불러왔습니다. 부족한 정보를 입력해주세요.'
+      )
+      setActiveStep(nextStep)
+
+      if (nextStep === 'code') {
+        focusSchoolBookCodeInput({ select: true })
+      }
     } catch (error) {
       if (shouldRedirectToLogin(error)) {
         router.replace('/admin/login')
@@ -135,6 +157,13 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
 
   function handleIsbnEnter() {
     void lookupIsbn()
+  }
+
+  function startManualEntry() {
+    clearMessages()
+    updateField('isbn', '')
+    setInfoMessage('ISBN 없이 책 정보를 직접 입력해주세요.')
+    setActiveStep('info')
   }
 
   function handleSchoolBookCodeEnter() {
@@ -191,6 +220,7 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
     errorMessage,
     form,
     handleIsbnEnter,
+    handleManualEntry: startManualEntry,
     handleSchoolBookCodeEnter,
     infoMessage,
     isInfoComplete,
