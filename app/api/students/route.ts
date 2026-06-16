@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
 import { getBorrowerLoanLimit, normalizeBorrowerLookupCode } from '@/lib/loan-limits'
+import { createServiceRoleSupabaseClient, isSupabaseServiceRoleConfigured } from '@/lib/supabase-service'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +12,18 @@ function getStudentNumber(request: Request) {
 }
 
 export async function GET(request: Request) {
+  if (!isSupabaseServiceRoleConfigured()) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'SUPABASE_SERVICE_ROLE_NOT_CONFIGURED',
+          message: 'Supabase service role 키가 설정되지 않았습니다.',
+        },
+      },
+      { status: 503 }
+    )
+  }
+
   const studentNumber = getStudentNumber(request)
 
   if (!studentNumber) {
@@ -27,8 +39,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const session = await requireAdminSession(request)
-    const supabase = session.supabase
+    const supabase = createServiceRoleSupabaseClient()
     const { data, error } = await supabase
       .from('students')
       .select('id, student_number, name, grade, class_number, seat_number')
@@ -75,10 +86,6 @@ export async function GET(request: Request) {
       },
     })
   } catch (error) {
-    if (error instanceof AdminAuthError) {
-      return adminAuthErrorResponse(error)
-    }
-
     console.error('Student fetch error:', error)
 
     return NextResponse.json(

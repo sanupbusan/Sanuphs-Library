@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
 import { getBorrowerLoanLimit } from '@/lib/loan-limits'
+import { createServiceRoleSupabaseClient, isSupabaseServiceRoleConfigured } from '@/lib/supabase-service'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +15,10 @@ function getText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
 function isLoanLimitError(error: unknown) {
   return (
     typeof error === 'object' &&
@@ -23,6 +28,18 @@ function isLoanLimitError(error: unknown) {
     'message' in error &&
     typeof error.message === 'string' &&
     error.message.includes('최대')
+  )
+}
+
+function supabaseServiceRoleNotConfiguredResponse() {
+  return NextResponse.json(
+    {
+      error: {
+        code: 'SUPABASE_SERVICE_ROLE_NOT_CONFIGURED',
+        message: 'Supabase service role 키가 설정되지 않았습니다.',
+      },
+    },
+    { status: 503 }
   )
 }
 
@@ -68,6 +85,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (!isSupabaseServiceRoleConfigured()) {
+    return supabaseServiceRoleNotConfiguredResponse()
+  }
+
   let body: CreateLoanBody
 
   try {
@@ -99,9 +120,20 @@ export async function POST(request: Request) {
     )
   }
 
+  if (!isUuid(bookId) || !isUuid(studentId)) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'INVALID_ID',
+          message: '도서 ID와 학생 ID 형식이 올바르지 않습니다.',
+        },
+      },
+      { status: 400 }
+    )
+  }
+
   try {
-    const session = await requireAdminSession(request)
-    const supabase = session.supabase
+    const supabase = createServiceRoleSupabaseClient()
 
     const { data: book, error: bookError } = await supabase
       .from('books')
@@ -126,7 +158,7 @@ export async function POST(request: Request) {
         {
           error: {
             code: 'NO_AVAILABLE_COPIES',
-            message: '이미 대여 중인 도서입니다.',
+            message: '대여 가능한 도서가 없습니다.',
           },
         },
         { status: 409 }
@@ -231,10 +263,6 @@ export async function POST(request: Request) {
       { status: 201 }
     )
   } catch (error) {
-    if (error instanceof AdminAuthError) {
-      return adminAuthErrorResponse(error)
-    }
-
     if (isLoanLimitError(error)) {
       return NextResponse.json(
         {
