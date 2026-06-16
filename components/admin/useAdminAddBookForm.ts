@@ -1,0 +1,206 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { createAdminBook, lookupAdminBookByIsbn } from '@/components/admin/adminAddBookApi'
+import {
+  sanitizeAdminBookIsbn,
+  sanitizeAdminSchoolBookCode,
+  useAdminAddBookDraft,
+  type AdminBookFormState,
+} from '@/components/admin/useAdminAddBookDraft'
+import { ApiClientError } from '@/lib/api-client'
+import { useInputFocus } from '@/hooks/useInputFocus'
+import { useStatusMessages } from '@/hooks/useStatusMessages'
+
+function shouldRedirectToLogin(error: unknown) {
+  return error instanceof ApiClientError && (error.status === 401 || error.status === 403)
+}
+
+export function useAdminAddBookForm() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const {
+    activeStep,
+    applyLookupResult,
+    applyPrefillParams,
+    form,
+    getTrimmedForm,
+    isInfoComplete,
+    resetDraft,
+    setActiveStep,
+    updateField,
+  } = useAdminAddBookDraft()
+  const {
+    clearMessages,
+    errorMessage,
+    infoMessage,
+    setErrorMessage,
+    setInfoMessage,
+    setSuccessMessage,
+    successMessage,
+  } = useStatusMessages()
+  const { focusInput: focusIsbnInput, inputRef: isbnInputRef } = useInputFocus<HTMLInputElement>()
+  const {
+    focusInput: focusSchoolBookCodeInput,
+    inputRef: schoolBookCodeInputRef,
+  } = useInputFocus<HTMLInputElement>()
+  const [isLookingUpIsbn, setIsLookingUpIsbn] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  function updateFormField(field: keyof AdminBookFormState, value: string) {
+    setSuccessMessage('')
+    updateField(field, value)
+  }
+
+  async function submitBook(nextForm = form) {
+    const input = nextForm === form ? getTrimmedForm() : {
+      author: nextForm.author.trim(),
+      isbn: nextForm.isbn.trim(),
+      publisher: nextForm.publisher.trim(),
+      schoolBookCode: nextForm.schoolBookCode.trim(),
+      title: nextForm.title.trim(),
+    }
+
+    if (!input.isbn || !input.schoolBookCode || !input.title || !input.author || !input.publisher) {
+      setErrorMessage('책 이름, 저자, 출판사, ISBN 코드, 학교 내 도서 코드를 모두 입력해주세요.')
+      return
+    }
+
+    setIsSubmitting(true)
+    clearMessages()
+
+    try {
+      await createAdminBook(input)
+      resetDraft()
+      setSuccessMessage('책이 등록되었습니다. 다음 ISBN 바코드를 스캔해주세요.')
+
+      if (searchParams.toString()) {
+        router.replace('/admin/add_books', { scroll: false })
+      }
+
+      router.refresh()
+      focusIsbnInput()
+    } catch (error) {
+      if (shouldRedirectToLogin(error)) {
+        router.replace('/admin/login')
+        return
+      }
+
+      setErrorMessage(error instanceof Error ? error.message : '책 등록에 실패했습니다.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function lookupIsbn(nextIsbn = form.isbn) {
+    const isbn = sanitizeAdminBookIsbn(nextIsbn.trim())
+
+    if (!isbn) {
+      setErrorMessage('ISBN 코드를 입력해주세요.')
+      return
+    }
+
+    clearMessages()
+    setIsLookingUpIsbn(true)
+
+    try {
+      const book = await lookupAdminBookByIsbn(isbn)
+
+      applyLookupResult(book, isbn)
+      setInfoMessage('ISBN 정보를 불러왔습니다. 내용을 확인하고 필요하면 수정해주세요.')
+      setActiveStep('info')
+    } catch (error) {
+      if (shouldRedirectToLogin(error)) {
+        router.replace('/admin/login')
+        return
+      }
+
+      if (error instanceof ApiClientError && error.status === 404) {
+        updateField('isbn', isbn)
+        setInfoMessage(error.message || 'ISBN 정보를 찾지 못했습니다. 책 정보를 직접 입력해주세요.')
+        setActiveStep('info')
+        return
+      }
+
+      setErrorMessage(error instanceof Error ? error.message : 'ISBN 정보 조회에 실패했습니다.')
+    } finally {
+      setIsLookingUpIsbn(false)
+    }
+  }
+
+  function handleIsbnEnter() {
+    void lookupIsbn()
+  }
+
+  function handleSchoolBookCodeEnter() {
+    const nextForm = getTrimmedForm()
+
+    if (!isInfoComplete) {
+      setErrorMessage('책 이름, 저자, 출판사를 먼저 입력해주세요.')
+      setActiveStep('info')
+      return
+    }
+
+    void submitBook(nextForm)
+  }
+
+  function moveToCodeStep() {
+    if (!isInfoComplete) {
+      setErrorMessage('책 이름, 저자, 출판사를 모두 입력해주세요.')
+      return
+    }
+
+    clearMessages()
+    setActiveStep('code')
+    focusSchoolBookCodeInput()
+  }
+
+  function handleReset() {
+    resetDraft()
+    clearMessages()
+    focusIsbnInput()
+  }
+
+  function handleCancel() {
+    router.push('/admin/books')
+  }
+
+  useEffect(() => {
+    const paramIsbn = searchParams.get('isbn') ?? ''
+    const paramSchoolBookCode = searchParams.get('schoolBookCode') ?? ''
+
+    applyPrefillParams(paramIsbn, paramSchoolBookCode)
+
+    if (paramIsbn) {
+      setActiveStep('isbn')
+      focusIsbnInput()
+    } else if (paramSchoolBookCode) {
+      setActiveStep('code')
+      focusSchoolBookCodeInput()
+    } else {
+      setActiveStep('isbn')
+      focusIsbnInput()
+    }
+  }, [applyPrefillParams, focusIsbnInput, focusSchoolBookCodeInput, searchParams, setActiveStep])
+
+  return {
+    activeStep,
+    errorMessage,
+    form,
+    handleCancel,
+    handleIsbnEnter,
+    handleReset,
+    handleSchoolBookCodeEnter,
+    infoMessage,
+    isInfoComplete,
+    isLookingUpIsbn,
+    isSubmitting,
+    isbnInputRef,
+    moveToCodeStep,
+    schoolBookCodeInputRef,
+    submitBook,
+    successMessage,
+    updateField: updateFormField,
+  }
+}

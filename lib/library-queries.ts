@@ -1,31 +1,23 @@
 import type { TypedSupabaseClient } from '@/lib/supabase'
-import type { Database } from '@/types/supabase'
+import type {
+  ActiveLoanWithStudent,
+  DashboardOverdueLoan,
+  DashboardOverdueLoanWithStudent,
+  DashboardSummary,
+  RecentBook,
+  RecentLoan,
+  SearchBook,
+  StudentLoanStat,
+} from '@/types/library'
 
-export type DashboardSummary = Database['public']['Views']['dashboard_summary']['Row']
-export type RecentLoan = Database['public']['Views']['dashboard_recent_loans']['Row']
-export type SearchBook = Database['public']['Functions']['search_books']['Returns'][number]
-export type RecentBook = Pick<
-  Database['public']['Tables']['books']['Row'],
-  'id' | 'title' | 'author' | 'category' | 'available_copies' | 'total_copies' | 'created_at'
->
-export type StudentLoanStat = {
-  student_id: string
-  student_name: string
-  total_loans: number
-}
-export type OverdueLoan = {
-  due_on: string
-  id: string
-  student_name: string
-}
-
-type ActiveLoanWithStudent = Pick<Database['public']['Tables']['loans']['Row'], 'id' | 'student_id'> & {
-  students: Pick<Database['public']['Tables']['students']['Row'], 'name'> | null
-}
-
-type OverdueLoanWithStudent = Pick<Database['public']['Tables']['loans']['Row'], 'due_on' | 'id'> & {
-  students: Pick<Database['public']['Tables']['students']['Row'], 'name'> | null
-}
+export type {
+  DashboardOverdueLoan as OverdueLoan,
+  DashboardSummary,
+  RecentBook,
+  RecentLoan,
+  SearchBook,
+  StudentLoanStat,
+} from '@/types/library'
 
 export type DashboardData = {
   summary: DashboardSummary
@@ -109,7 +101,7 @@ export async function getStudentLoanStats(client: TypedSupabaseClient): Promise<
   })
 }
 
-export async function getOverdueLoans(client: TypedSupabaseClient, limit = 20): Promise<OverdueLoan[]> {
+export async function getOverdueLoans(client: TypedSupabaseClient, limit = 20): Promise<DashboardOverdueLoan[]> {
   const today = new Date().toISOString().slice(0, 10)
   const { data, error } = await client
     .from('loans')
@@ -118,7 +110,7 @@ export async function getOverdueLoans(client: TypedSupabaseClient, limit = 20): 
     .lt('due_on', today)
     .order('due_on', { ascending: true })
     .limit(limit)
-    .returns<OverdueLoanWithStudent[]>()
+    .returns<DashboardOverdueLoanWithStudent[]>()
 
   if (error) {
     throw error

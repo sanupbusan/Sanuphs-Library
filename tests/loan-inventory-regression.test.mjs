@@ -35,7 +35,7 @@ test('public return route uses RPCs instead of direct loan table access', async 
   const source = await readProjectFile('app/api/returns/loans/route.ts')
 
   assert.match(source, /\.rpc\([\s\S]*'get_returnable_loan_by_school_book_code'/)
-  assert.match(source, /\.rpc\('return_loans_by_school_book_codes'/)
+  assert.match(source, /\.rpc\([\s\S]*'return_loans_by_school_book_codes'/)
   assert.doesNotMatch(source, /\.from\('loans'\)/)
 })
 

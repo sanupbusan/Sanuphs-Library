@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server'
 import { normalizeIsbnInput } from '@/lib/barcode-input'
-import { adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
+import { requireAdminSession } from '@/lib/admin-auth'
+import { jsonData, runApiRoute, throwApiError } from '@/lib/api-route'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,18 +16,6 @@ type NormalizedBookInfo = {
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
-}
-
-function jsonError(code: string, message: string, status: number) {
-  return NextResponse.json(
-    {
-      error: {
-        code,
-        message,
-      },
-    },
-    { status }
-  )
 }
 
 function getNationalLibraryApiKey() {
@@ -180,76 +168,81 @@ async function parseBookInfoResponse(response: Response, isbn: string) {
 }
 
 export async function GET(request: Request) {
-  try {
-    await requireAdminSession(request)
+  return runApiRoute(
+    {
+      fallback: {
+        code: 'ISBN_LOOKUP_FAILED',
+        message: 'ISBN 정보 조회에 실패했습니다.',
+      },
+      logLabel: 'ISBN lookup error:',
+    },
+    async () => {
+      await requireAdminSession(request)
 
-    const isbn = getIsbnFromRequest(request)
-    if (!isbn) {
-      return jsonError('MISSING_ISBN', 'ISBN 코드를 입력해주세요.', 400)
+      const isbn = getIsbnFromRequest(request)
+      if (!isbn) {
+        throwApiError(400, 'MISSING_ISBN', 'ISBN 코드를 입력해주세요.')
+      }
+
+      const apiKey = getNationalLibraryApiKey()
+      if (!apiKey) {
+        throwApiError(
+          503,
+          'ISBN_API_NOT_CONFIGURED',
+          '국립중앙도서관 ISBN API 키가 설정되지 않았습니다.'
+        )
+      }
+
+      let apiUrl: URL
+      try {
+        apiUrl = new URL(getNationalLibraryApiUrl())
+      } catch {
+        throwApiError(
+          500,
+          'INVALID_ISBN_API_URL',
+          '국립중앙도서관 ISBN API URL 설정이 올바르지 않습니다.'
+        )
+      }
+
+      apiUrl.searchParams.set('cert_key', apiKey)
+      apiUrl.searchParams.set('result_style', 'json')
+      apiUrl.searchParams.set('page_no', '1')
+      apiUrl.searchParams.set('page_size', '1')
+      apiUrl.searchParams.set('isbn', isbn)
+
+      let response: Response
+      try {
+        response = await fetchWithTimeout(apiUrl)
+      } catch (error) {
+        console.error('National Library ISBN API fetch failed:', error)
+
+        const isTimeout =
+          error instanceof DOMException && error.name === 'AbortError'
+
+        throwApiError(
+          502,
+          isTimeout ? 'ISBN_API_TIMEOUT' : 'ISBN_API_FETCH_FAILED',
+          isTimeout
+            ? '국립중앙도서관 ISBN API 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
+            : '국립중앙도서관 ISBN API에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.'
+        )
+      }
+
+      if (!response.ok) {
+        throwApiError(
+          502,
+          'ISBN_API_REQUEST_FAILED',
+          '국립중앙도서관 ISBN API 요청에 실패했습니다.'
+        )
+      }
+
+      const book = await parseBookInfoResponse(response, isbn)
+
+      if (!book) {
+        throwApiError(404, 'BOOK_NOT_FOUND', 'ISBN으로 책 정보를 찾지 못했습니다.')
+      }
+
+      return jsonData(book)
     }
-
-    const apiKey = getNationalLibraryApiKey()
-    if (!apiKey) {
-      return jsonError(
-        'ISBN_API_NOT_CONFIGURED',
-        '국립중앙도서관 ISBN API 키가 설정되지 않았습니다.',
-        503
-      )
-    }
-
-    let apiUrl: URL
-    try {
-      apiUrl = new URL(getNationalLibraryApiUrl())
-    } catch {
-      return jsonError(
-        'INVALID_ISBN_API_URL',
-        '국립중앙도서관 ISBN API URL 설정이 올바르지 않습니다.',
-        500
-      )
-    }
-
-    apiUrl.searchParams.set('cert_key', apiKey)
-    apiUrl.searchParams.set('result_style', 'json')
-    apiUrl.searchParams.set('page_no', '1')
-    apiUrl.searchParams.set('page_size', '1')
-    apiUrl.searchParams.set('isbn', isbn)
-
-    let response: Response
-    try {
-      response = await fetchWithTimeout(apiUrl)
-    } catch (error) {
-      console.error('National Library ISBN API fetch failed:', error)
-
-      const isTimeout =
-        error instanceof DOMException && error.name === 'AbortError'
-
-      return jsonError(
-        isTimeout ? 'ISBN_API_TIMEOUT' : 'ISBN_API_FETCH_FAILED',
-        isTimeout
-          ? '국립중앙도서관 ISBN API 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
-          : '국립중앙도서관 ISBN API에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.',
-        502
-      )
-    }
-
-    if (!response.ok) {
-      return jsonError(
-        'ISBN_API_REQUEST_FAILED',
-        '국립중앙도서관 ISBN API 요청에 실패했습니다.',
-        502
-      )
-    }
-
-    const book = await parseBookInfoResponse(response, isbn)
-
-    if (!book) {
-      return jsonError('BOOK_NOT_FOUND', 'ISBN으로 책 정보를 찾지 못했습니다.', 404)
-    }
-
-    return NextResponse.json({
-      data: book,
-    })
-  } catch (error) {
-    return adminAuthErrorResponse(error)
-  }
+  )
 }

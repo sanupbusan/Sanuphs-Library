@@ -1,312 +1,31 @@
 'use client'
 
-import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { Barcode, BookPlus, Loader2, Save, Search } from 'lucide-react'
-import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
-
-type CreateBookResponse = {
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-type LookupBookResponse = {
-  data?: {
-    author: string
-    isbn: string
-    publisher: string
-    title: string
-  }
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-type BookFormState = {
-  author: string
-  isbn: string
-  publisher: string
-  schoolBookCode: string
-  title: string
-}
-
-const initialFormState: BookFormState = {
-  author: '',
-  isbn: '',
-  publisher: '',
-  schoolBookCode: '',
-  title: '',
-}
-
-function sanitizeIsbn(value: string) {
-  return normalizeIsbnInput(value)
-}
-
-function sanitizeSchoolBookCode(value: string) {
-  return normalizeBarcodeInput(value)
-}
-
-function trimFormState(form: BookFormState) {
-  return {
-    author: form.author.trim(),
-    isbn: form.isbn.trim(),
-    publisher: form.publisher.trim(),
-    schoolBookCode: form.schoolBookCode.trim(),
-    title: form.title.trim(),
-  }
-}
-
-async function readJsonResponse<T>(response: Response): Promise<T> {
-  try {
-    return (await response.json()) as T
-  } catch {
-    return {} as T
-  }
-}
+import { BookPlus, Loader2, Save, Search } from 'lucide-react'
+import { useAdminAddBookForm } from '@/components/admin/useAdminAddBookForm'
+import { ScanInput } from '@/components/ui/ScanInput'
+import { StatusMessage } from '@/components/ui/StatusMessage'
+import { WorkflowStepCard } from '@/components/ui/WorkflowStepCard'
 
 export default function AdminAddBookForm() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const isbnInputRef = useRef<HTMLInputElement>(null)
-  const schoolBookCodeInputRef = useRef<HTMLInputElement>(null)
-  const titleInputRef = useRef<HTMLInputElement>(null)
-  const [form, setForm] = useState<BookFormState>(initialFormState)
-  const [errorMessage, setErrorMessage] = useState('')
-  const [isCheckingSession, setIsCheckingSession] = useState(true)
-  const [isLookingUpIsbn, setIsLookingUpIsbn] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [lookupMessage, setLookupMessage] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
-
-  useEffect(() => {
-    let didCancel = false
-
-    async function checkSession() {
-      try {
-        const response = await fetch('/api/auth/admin/session', {
-          cache: 'no-store',
-        })
-
-        if (!didCancel && (response.status === 401 || response.status === 403)) {
-          router.replace('/admin/login')
-          return
-        }
-
-        if (!didCancel) {
-          setIsCheckingSession(false)
-        }
-      } catch {
-        if (!didCancel) {
-          setErrorMessage('세션 확인에 실패했습니다.')
-          setIsCheckingSession(false)
-        }
-      }
-    }
-
-    void checkSession()
-
-    return () => {
-      didCancel = true
-    }
-  }, [router])
-
-  useEffect(() => {
-    if (isCheckingSession) return
-
-    const paramIsbn = searchParams.get('isbn') ?? ''
-    const paramSchoolBookCode = searchParams.get('schoolBookCode') ?? ''
-
-    if (paramIsbn || paramSchoolBookCode) {
-      setForm((current) => ({
-        ...current,
-        isbn: sanitizeIsbn(paramIsbn),
-        schoolBookCode: sanitizeSchoolBookCode(paramSchoolBookCode),
-      }))
-    }
-
-    if (paramIsbn) {
-      isbnInputRef.current?.focus()
-    } else if (paramSchoolBookCode) {
-      schoolBookCodeInputRef.current?.focus()
-    } else {
-      isbnInputRef.current?.focus()
-    }
-  }, [isCheckingSession, searchParams])
-
-  function updateField(field: keyof BookFormState, value: string) {
-    const nextValue =
-      field === 'isbn'
-        ? sanitizeIsbn(value)
-        : field === 'schoolBookCode'
-          ? sanitizeSchoolBookCode(value)
-          : value
-
-    setSuccessMessage('')
-    setForm((current) => ({
-      ...current,
-      [field]: nextValue,
-    }))
-  }
-
-  function focusIsbnInput() {
-    window.setTimeout(() => {
-      const input = isbnInputRef.current
-      input?.focus()
-      input?.select()
-    }, 0)
-  }
-
-  async function submitBook(nextForm = form) {
-    const input = trimFormState(nextForm)
-
-    if (!input.isbn || !input.schoolBookCode || !input.title || !input.author || !input.publisher) {
-      setErrorMessage('책 이름, 저자, 출판사, ISBN 코드, 학교 내 도서 코드를 모두 입력해주세요.')
-      return
-    }
-
-    setIsSubmitting(true)
-    setErrorMessage('')
-    setSuccessMessage('')
-
-    try {
-      const response = await fetch('/api/admin/books', {
-        body: JSON.stringify(input),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-      })
-      const payload = (await response.json()) as CreateBookResponse
-
-      if (response.status === 401 || response.status === 403) {
-        router.replace('/admin/login')
-        return
-      }
-
-      if (!response.ok) {
-        throw new Error(payload.error?.message ?? '책 등록에 실패했습니다.')
-      }
-
-      setForm(initialFormState)
-      setLookupMessage('')
-      setSuccessMessage('책이 등록되었습니다. 다음 ISBN 바코드를 스캔해주세요.')
-      if (searchParams.toString()) {
-        router.replace('/admin/add_books', { scroll: false })
-      }
-      router.refresh()
-      focusIsbnInput()
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '책 등록에 실패했습니다.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  async function lookupIsbn(nextIsbn = form.isbn) {
-    const isbn = sanitizeIsbn(nextIsbn.trim())
-
-    if (!isbn) {
-      setErrorMessage('ISBN 코드를 입력해주세요.')
-      return false
-    }
-
-    setErrorMessage('')
-    setLookupMessage('')
-    setSuccessMessage('')
-    setIsLookingUpIsbn(true)
-
-    try {
-      const params = new URLSearchParams({ isbn })
-      let response: Response
-
-      try {
-        response = await fetch(`/api/admin/books/isbn?${params.toString()}`, {
-          cache: 'no-store',
-        })
-      } catch {
-        throw new Error('ISBN 조회 API에 연결하지 못했습니다. 개발 서버가 실행 중인지 확인해주세요.')
-      }
-
-      const payload = await readJsonResponse<LookupBookResponse>(response)
-
-      if (response.status === 401 || response.status === 403) {
-        router.replace('/admin/login')
-        return false
-      }
-
-      if (response.status === 404) {
-        setForm((current) => ({
-          ...current,
-          isbn,
-        }))
-        setLookupMessage(payload.error?.message ?? 'ISBN 정보를 찾지 못했습니다. 책 정보를 직접 입력해주세요.')
-        return false
-      }
-
-      if (!response.ok || !payload.data) {
-        throw new Error(payload.error?.message ?? 'ISBN 정보 조회에 실패했습니다.')
-      }
-
-      setForm((current) => ({
-        ...current,
-        author: payload.data?.author || current.author,
-        isbn: payload.data?.isbn || isbn,
-        publisher: payload.data?.publisher || current.publisher,
-        title: payload.data?.title || current.title,
-      }))
-      setLookupMessage('ISBN 정보를 불러왔습니다.')
-
-      return true
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'ISBN 정보 조회에 실패했습니다.')
-      return false
-    } finally {
-      setIsLookingUpIsbn(false)
-    }
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    void submitBook()
-  }
-
-  function handleIsbnKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key !== 'Enter') {
-      return
-    }
-
-    event.preventDefault()
-    void lookupIsbn().finally(() => {
-      schoolBookCodeInputRef.current?.focus()
-    })
-  }
-
-  function handleSchoolBookCodeKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key !== 'Enter') {
-      return
-    }
-
-    event.preventDefault()
-    const nextForm = trimFormState(form)
-
-    if (nextForm.title && nextForm.author && nextForm.publisher) {
-      void submitBook(nextForm)
-      return
-    }
-
-    titleInputRef.current?.focus()
-  }
-
-  if (isCheckingSession) {
-    return (
-      <div className="flex min-h-[360px] items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
-      </div>
-    )
-  }
+  const {
+    activeStep,
+    errorMessage,
+    form,
+    handleCancel,
+    handleIsbnEnter,
+    handleReset,
+    handleSchoolBookCodeEnter,
+    infoMessage,
+    isInfoComplete,
+    isLookingUpIsbn,
+    isSubmitting,
+    isbnInputRef,
+    moveToCodeStep,
+    schoolBookCodeInputRef,
+    submitBook,
+    successMessage,
+    updateField,
+  } = useAdminAddBookForm()
 
   return (
     <section className="bg-gray-50 py-14 sm:py-16">
@@ -317,147 +36,175 @@ export default function AdminAddBookForm() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">새 책 추가</h1>
-            <p className="mt-1 text-sm text-gray-600">ISBN 바코드와 학교 내 도서 코드를 순서대로 입력합니다.</p>
+            <p className="mt-1 text-sm text-gray-600">ISBN 바코드로 책 정보를 찾고, 학교 내 도서 코드를 등록합니다.</p>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="rounded-lg border border-gray-100 bg-white p-6 shadow-sm">
-          <div className="mb-6 grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="isbn" className="mb-2 block text-sm font-medium text-gray-700">
-                ISBN 코드
-              </label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Barcode className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <div className="space-y-4">
+          <WorkflowStepCard
+            step={1}
+            title="ISBN 스캔"
+            description="책 뒷면의 ISBN 바코드를 스캔하면 도서 정보를 자동으로 불러옵니다."
+            state={activeStep === 'isbn' ? 'current' : 'complete'}
+          >
+            <div className="flex gap-2">
+              <ScanInput
+                ref={isbnInputRef}
+                id="isbn"
+                label="ISBN 코드"
+                value={form.isbn}
+                onChangeValue={(value) => updateField('isbn', value)}
+                onEnter={handleIsbnEnter}
+                loading={isLookingUpIsbn}
+                disabled={isSubmitting}
+                placeholder="ISBN 바코드 스캔"
+                helperText="바코드 스캔 또는 Enter 키로 조회할 수 있습니다."
+                className="flex-1"
+              />
+              <button
+                type="button"
+                title="ISBN 정보 조회"
+                disabled={isLookingUpIsbn || isSubmitting}
+                onClick={handleIsbnEnter}
+                className="mt-auto inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
+              >
+                {isLookingUpIsbn ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              </button>
+            </div>
+          </WorkflowStepCard>
+
+          <WorkflowStepCard
+            step={2}
+            title="도서 정보 확인"
+            description="자동으로 불러온 정보를 확인하고 필요한 부분만 수정해주세요."
+            state={activeStep === 'info' ? 'current' : activeStep === 'isbn' ? 'locked' : 'complete'}
+          >
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="book-title" className="mb-2 block text-sm font-medium text-gray-700">
+                  책 이름
+                </label>
+                <input
+                  id="book-title"
+                  value={form.title}
+                  onChange={(event) => updateField('title', event.target.value)}
+                  disabled={activeStep === 'isbn' || isSubmitting}
+                  className="h-11 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
+                  placeholder="책 이름"
+                  type="text"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="author" className="mb-2 block text-sm font-medium text-gray-700">
+                    저자
+                  </label>
                   <input
-                    id="isbn"
-                    ref={isbnInputRef}
-                    value={form.isbn}
-                    onChange={(event) => updateField('isbn', event.target.value)}
-                    onKeyDown={handleIsbnKeyDown}
-                    className="h-11 w-full rounded-lg border border-gray-200 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-                    inputMode="numeric"
-                    placeholder="ISBN 바코드 스캔"
+                    id="author"
+                    value={form.author}
+                    onChange={(event) => updateField('author', event.target.value)}
+                    disabled={activeStep === 'isbn' || isSubmitting}
+                    className="h-11 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
+                    placeholder="저자"
                     type="text"
                   />
                 </div>
-                <button
-                  className="inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
-                  disabled={isLookingUpIsbn || isSubmitting}
-                  onClick={() => {
-                    void lookupIsbn().finally(() => {
-                      schoolBookCodeInputRef.current?.focus()
-                    })
-                  }}
-                  title="ISBN 정보 조회"
-                  type="button"
-                >
-                  {isLookingUpIsbn ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                </button>
+
+                <div>
+                  <label htmlFor="publisher" className="mb-2 block text-sm font-medium text-gray-700">
+                    출판사
+                  </label>
+                  <input
+                    id="publisher"
+                    value={form.publisher}
+                    onChange={(event) => updateField('publisher', event.target.value)}
+                    disabled={activeStep === 'isbn' || isSubmitting}
+                    className="h-11 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
+                    placeholder="출판사"
+                    type="text"
+                  />
+                </div>
               </div>
-              {lookupMessage ? (
-                <p className="mt-2 text-xs text-gray-500">{lookupMessage}</p>
+
+              {activeStep === 'info' ? (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={moveToCodeStep}
+                    disabled={!isInfoComplete || isSubmitting}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    다음
+                  </button>
+                </div>
               ) : null}
             </div>
+          </WorkflowStepCard>
 
-            <div>
-              <label htmlFor="school-book-code" className="mb-2 block text-sm font-medium text-gray-700">
-                학교 내 도서 코드
-              </label>
-              <div className="relative">
-                <Barcode className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input
-                  id="school-book-code"
-                  ref={schoolBookCodeInputRef}
-                  value={form.schoolBookCode}
-                  onChange={(event) => updateField('schoolBookCode', event.target.value)}
-                  onKeyDown={handleSchoolBookCodeKeyDown}
-                  className="h-11 w-full rounded-lg border border-gray-200 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-                  placeholder="학교 바코드 스캔"
-                  type="text"
-                />
-              </div>
-            </div>
+          <WorkflowStepCard
+            step={3}
+            title="학교 내 도서 코드 등록"
+            description="학교에서 부착한 도서 코드 바코드를 스캔하면 등록이 완료됩니다."
+            state={activeStep === 'code' ? 'current' : 'locked'}
+          >
+            <ScanInput
+              ref={schoolBookCodeInputRef}
+              id="school-book-code"
+              label="학교 내 도서 코드"
+              value={form.schoolBookCode}
+              onChangeValue={(value) => updateField('schoolBookCode', value)}
+              onEnter={handleSchoolBookCodeEnter}
+              disabled={activeStep !== 'code' || isSubmitting}
+              loading={isSubmitting}
+              placeholder="학교 바코드 스캔"
+            />
+          </WorkflowStepCard>
+        </div>
+
+        {errorMessage ? (
+          <div className="mt-4">
+            <StatusMessage variant="error">{errorMessage}</StatusMessage>
           </div>
+        ) : null}
 
-          <div className="grid gap-4">
-            <div>
-              <label htmlFor="book-title" className="mb-2 block text-sm font-medium text-gray-700">
-                책 이름
-              </label>
-              <input
-                id="book-title"
-                ref={titleInputRef}
-                value={form.title}
-                onChange={(event) => updateField('title', event.target.value)}
-                className="h-11 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-                placeholder="책 이름"
-                type="text"
-              />
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label htmlFor="author" className="mb-2 block text-sm font-medium text-gray-700">
-                  저자
-                </label>
-                <input
-                  id="author"
-                  value={form.author}
-                  onChange={(event) => updateField('author', event.target.value)}
-                  className="h-11 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-                  placeholder="저자"
-                  type="text"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="publisher" className="mb-2 block text-sm font-medium text-gray-700">
-                  출판사
-                </label>
-                <input
-                  id="publisher"
-                  value={form.publisher}
-                  onChange={(event) => updateField('publisher', event.target.value)}
-                  className="h-11 w-full rounded-lg border border-gray-200 px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-                  placeholder="출판사"
-                  type="text"
-                />
-              </div>
-            </div>
+        {infoMessage ? (
+          <div className="mt-4">
+            <StatusMessage variant="info">{infoMessage}</StatusMessage>
           </div>
+        ) : null}
 
-          {errorMessage ? (
-            <div className="mt-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
-              {errorMessage}
-            </div>
-          ) : null}
-
-          {successMessage ? (
-            <div className="mt-4 rounded-lg border border-green-100 bg-green-50 px-3 py-2 text-sm text-green-700">
-              {successMessage}
-            </div>
-          ) : null}
-
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-            <button
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
-              onClick={() => router.push('/admin/books')}
-              type="button"
-            >
-              취소
-            </button>
-            <button
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
-              disabled={isSubmitting}
-              type="submit"
-            >
-              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              등록
-            </button>
+        {successMessage ? (
+          <div className="mt-4">
+            <StatusMessage variant="success">{successMessage}</StatusMessage>
           </div>
-        </form>
+        ) : null}
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+            onClick={handleCancel}
+            type="button"
+          >
+            취소
+          </button>
+          <button
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+            onClick={handleReset}
+            type="button"
+          >
+            초기화
+          </button>
+          <button
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
+            disabled={isSubmitting || activeStep !== 'code'}
+            onClick={() => void submitBook()}
+            type="button"
+          >
+            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            등록
+          </button>
+        </div>
       </div>
     </section>
   )

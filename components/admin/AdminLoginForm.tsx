@@ -1,7 +1,7 @@
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { FormEvent, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, LogIn } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -12,45 +12,13 @@ type LoginResponse = {
   }
 }
 
-type SessionResponse = {
-  data?: {
-    user: {
-      loginId: string
-    }
-  } | null
-}
-
 export default function AdminLoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [loginId, setLoginId] = useState('')
   const [password, setPassword] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-
-  useEffect(() => {
-    let didCancel = false
-
-    async function redirectIfLoggedIn() {
-      try {
-        const response = await fetch('/api/auth/admin/session?optional=1', {
-          cache: 'no-store',
-        })
-        const payload = (await response.json()) as SessionResponse
-
-        if (!didCancel && response.ok && payload.data?.user.loginId) {
-          router.replace('/admin')
-        }
-      } catch {
-        // 로그인 화면에서는 세션 확인 실패 시 입력 폼을 그대로 보여줍니다.
-      }
-    }
-
-    void redirectIfLoggedIn()
-
-    return () => {
-      didCancel = true
-    }
-  }, [router])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -72,7 +40,8 @@ export default function AdminLoginForm() {
       }
 
       window.dispatchEvent(new Event('admin-session-changed'))
-      router.push('/admin')
+      const nextPath = searchParams.get('next')
+      router.push(nextPath?.startsWith('/admin') ? nextPath : '/admin')
       router.refresh()
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '로그인에 실패했습니다.')

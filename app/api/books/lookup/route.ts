@@ -10,16 +10,6 @@ function getCode(request: Request) {
   return url.searchParams.get('code')?.trim() ?? ''
 }
 
-function normalizeCode(value: string) {
-  return normalizeBarcodeInput(value).toUpperCase()
-}
-
-function isLikelyIsbn(value: string) {
-  const digits = value.replace(/[^0-9Xx]/g, '')
-
-  return digits.length === 10 || digits.length === 13
-}
-
 export async function GET(request: Request) {
   if (!isSupabaseConfigured()) {
     return NextResponse.json(
@@ -43,55 +33,37 @@ export async function GET(request: Request) {
           message: '도서 코드를 입력해주세요.',
         },
       },
-      { status: 400 }
-    )
-  }
+      logLabel: 'Book lookup error:',
+    },
+    async () => {
+      const code = getCode(request)
 
   try {
     const supabase = createServerSupabaseClient()
     const normalizedCode = normalizeCode(code)
     const isIsbn = isLikelyIsbn(normalizedCode)
 
-    let query = supabase
-      .from('books')
-      .select('id, isbn, school_book_code, title, author, publisher, available_copies, total_copies')
+      const supabase = createRouteSupabaseClient()
+      const normalizedCode = normalizeBookLookupCode(code)
+      const isIsbn = isLikelyIsbn(normalizedCode)
 
-    if (isIsbn) {
-      query = query.eq('isbn', normalizedCode)
-    } else {
-      query = query.eq('school_book_code', normalizedCode)
-    }
+      let query = supabase
+        .from('books')
+        .select('id, isbn, school_book_code, title, author, publisher, available_copies, total_copies')
 
-    const { data, error } = await query.maybeSingle()
+      if (isIsbn) {
+        query = query.eq('isbn', normalizedCode)
+      } else {
+        query = query.eq('school_book_code', normalizedCode)
+      }
 
-    if (error) {
-      throw error
-    }
-
-    if (!data) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'BOOK_NOT_FOUND',
-            message: '해당 도서 코드의 책을 찾을 수 없습니다.',
-          },
-        },
-        { status: 404 }
-      )
-    }
+      const { data, error } = await query.maybeSingle()
 
     return NextResponse.json({ data })
   } catch (error) {
     console.error('Book lookup error:', error)
 
-    return NextResponse.json(
-      {
-        error: {
-          code: 'FETCH_FAILED',
-          message: '도서 정보를 조회하는 중 오류가 발생했습니다.',
-        },
-      },
-      { status: 500 }
-    )
-  }
+      return jsonData(data)
+    }
+  )
 }

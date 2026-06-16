@@ -1,10 +1,9 @@
-import { NextResponse } from 'next/server'
 import {
   AdminAuthError,
-  adminAuthErrorResponse,
   requireAdminSession,
   serializeAdminSession,
 } from '@/lib/admin-auth'
+import { jsonData, runApiRoute, withNoStore } from '@/lib/api-route'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,26 +14,26 @@ function isOptionalSessionCheck(request: Request) {
 }
 
 export async function GET(request: Request) {
-  try {
-    const session = await requireAdminSession(request)
+  return runApiRoute(
+    {
+      fallback: {
+        code: 'ADMIN_SESSION_FAILED',
+        message: '세션 확인에 실패했습니다.',
+      },
+      logLabel: 'Admin session check error:',
+    },
+    async () => {
+      try {
+        const session = await requireAdminSession(request)
 
-    return NextResponse.json({
-      data: serializeAdminSession(session),
-    })
-  } catch (error) {
-    if (isOptionalSessionCheck(request) && error instanceof AdminAuthError && error.status === 401) {
-      return NextResponse.json(
-        {
-          data: null,
-        },
-        {
-          headers: {
-            'Cache-Control': 'no-store, max-age=0',
-          },
+        return jsonData(serializeAdminSession(session), withNoStore())
+      } catch (error) {
+        if (isOptionalSessionCheck(request) && error instanceof AdminAuthError && error.status === 401) {
+          return jsonData(null, withNoStore())
         }
-      )
-    }
 
-    return adminAuthErrorResponse(error)
-  }
+        throw error
+      }
+    }
+  )
 }

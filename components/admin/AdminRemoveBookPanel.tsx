@@ -1,96 +1,39 @@
 'use client'
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { AlertTriangle, Loader2, Search, Trash2 } from 'lucide-react'
-import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
-
-export type RemovableBook = {
-  author: string
-  available_copies: number
-  id: string
-  isbn: string | null
-  publisher: string | null
-  school_book_code: string | null
-  title: string
-  total_copies: number
-}
-
-type BooksResponse = {
-  data?: RemovableBook[]
-  error?: {
-    code: string
-    message: string
-  }
-}
-
-type DeleteBookResponse = {
-  data?: {
-    id: string
-    title: string
-  }
-  error?: {
-    code: string
-    message: string
-  }
-}
+import { deleteBookAction } from '@/app/admin/books/actions'
+import { useToast } from '@/components/ui/ToastProvider'
+import { displayValue } from '@/lib/display'
+import {
+  isLikelyBarcode,
+  isLikelyIsbn,
+  normalizeBookBarcode,
+  normalizeBookIsbn,
+} from '@/lib/validators'
+import { useStatusMessages } from '@/hooks/useStatusMessages'
+import type { RemovableBook } from '@/types/library'
 
 type AdminRemoveBookPanelProps = {
-  books?: RemovableBook[]
+  books: RemovableBook[]
   isLoading?: boolean
   onBookDeleted?: (bookId: string) => void
-}
-
-function displayValue(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') {
-    return '-'
-  }
-
-  return String(value)
 }
 
 function normalize(value: string | null | undefined) {
   return (value ?? '').toLowerCase()
 }
 
-function getBarcodeCandidate(value: string) {
-  return normalizeBarcodeInput(value)
-}
-
-function getIsbnCandidate(value: string) {
-  return normalizeIsbnInput(value)
-}
-
-function isLikelyBarcode(value: string) {
-  const barcode = getBarcodeCandidate(value)
-
-  return barcode.length >= 4 && /^[0-9A-Za-z-]+$/.test(barcode)
-}
-
-function isLikelyIsbnBarcode(value: string) {
-  const isbn = getIsbnCandidate(value)
-
-  return isbn.length === 10 || isbn.length === 13
-}
-
 function getAddBookUrl(scannedCode: string) {
   const params = new URLSearchParams()
 
-  if (isLikelyIsbnBarcode(scannedCode)) {
-    params.set('isbn', getIsbnCandidate(scannedCode))
+  if (isLikelyIsbn(scannedCode)) {
+    params.set('isbn', normalizeBookIsbn(scannedCode))
   } else {
-    params.set('schoolBookCode', getBarcodeCandidate(scannedCode))
+    params.set('schoolBookCode', normalizeBookBarcode(scannedCode))
   }
 
   return `/admin/add_books?${params.toString()}#add-book-form`
-}
-
-async function readJsonResponse<T>(response: Response): Promise<T> {
-  try {
-    return (await response.json()) as T
-  } catch {
-    return {} as T
-  }
 }
 
 export default function AdminRemoveBookPanel({
@@ -98,74 +41,32 @@ export default function AdminRemoveBookPanel({
   isLoading = false,
   onBookDeleted,
 }: AdminRemoveBookPanelProps) {
-  const router = useRouter()
-  const [loadedBooks, setLoadedBooks] = useState<RemovableBook[]>([])
+  const { addToast } = useToast()
+  const [localBooks, setLocalBooks] = useState<RemovableBook[]>(books)
   const [query, setQuery] = useState('')
-  const [errorMessage, setErrorMessage] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
-  const [isFetching, setIsFetching] = useState(books === undefined)
+  const {
+    clearMessages,
+    errorMessage,
+    setErrorMessage,
+    setSuccessMessage,
+    successMessage,
+  } = useStatusMessages()
   const [deletingBookId, setDeletingBookId] = useState<string | null>(null)
 
   useEffect(() => {
-    if (books !== undefined) {
-      return
-    }
+    setLocalBooks(books)
+  }, [books])
 
-    let didCancel = false
-
-    async function loadBooks() {
-      setIsFetching(true)
-      setErrorMessage('')
-
-      try {
-        const response = await fetch('/api/admin/books', {
-          cache: 'no-store',
-        })
-        const payload = await readJsonResponse<BooksResponse>(response)
-
-        if (didCancel) {
-          return
-        }
-
-        if (response.status === 401 || response.status === 403) {
-          router.replace('/admin/login')
-          return
-        }
-
-        if (!response.ok) {
-          throw new Error(payload.error?.message ?? '도서 목록을 불러오지 못했습니다.')
-        }
-
-        setLoadedBooks(payload.data ?? [])
-      } catch (error) {
-        if (!didCancel) {
-          setErrorMessage(error instanceof Error ? error.message : '도서 목록을 불러오지 못했습니다.')
-        }
-      } finally {
-        if (!didCancel) {
-          setIsFetching(false)
-        }
-      }
-    }
-
-    void loadBooks()
-
-    return () => {
-      didCancel = true
-    }
-  }, [books, router])
-
-  const sourceBooks = books ?? loadedBooks
-  const isPanelLoading = isLoading || isFetching
+  const isPanelLoading = isLoading
   const filteredBooks = useMemo(() => {
     const keyword = query.trim().toLowerCase()
-    const barcodeKeyword = normalizeBarcodeInput(query).toLowerCase()
+    const barcodeKeyword = normalizeBookBarcode(query).toLowerCase()
 
     if (!keyword) {
-      return sourceBooks
+      return localBooks
     }
 
-    return sourceBooks.filter((book) =>
+    return localBooks.filter((book) =>
       [
         book.title,
         book.author,
@@ -174,7 +75,7 @@ export default function AdminRemoveBookPanel({
         book.school_book_code,
       ].some((value) => normalize(value).includes(keyword) || (!!barcodeKeyword && normalize(value).includes(barcodeKeyword)))
     )
-  }, [query, sourceBooks])
+  }, [query, localBooks])
 
   async function deleteBook(book: RemovableBook) {
     const confirmed = window.confirm(`"${book.title}" 도서를 제거할까요? 이 작업은 되돌릴 수 없습니다.`)
@@ -184,30 +85,24 @@ export default function AdminRemoveBookPanel({
     }
 
     setDeletingBookId(book.id)
-    setErrorMessage('')
-    setSuccessMessage('')
+    clearMessages()
 
     try {
-      const params = new URLSearchParams({ id: book.id })
-      const response = await fetch(`/api/admin/books?${params.toString()}`, {
-        method: 'DELETE',
-      })
-      const payload = await readJsonResponse<DeleteBookResponse>(response)
+      const result = await deleteBookAction(book.id)
 
-      if (response.status === 401 || response.status === 403) {
-        router.replace('/admin/login')
-        return
+      if (result.error) {
+        throw new Error(result.error.message)
       }
 
-      if (!response.ok) {
-        throw new Error(payload.error?.message ?? '도서 제거에 실패했습니다.')
-      }
-
-      setLoadedBooks((current) => current.filter((item) => item.id !== book.id))
+      setLocalBooks((current) => current.filter((item) => item.id !== book.id))
       onBookDeleted?.(book.id)
-      setSuccessMessage(`"${payload.data?.title ?? book.title}" 도서를 제거했습니다.`)
+      const message = `"${result.data?.title ?? book.title}" 도서를 제거했습니다.`
+      setSuccessMessage(message)
+      addToast(message, 'success')
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '도서 제거에 실패했습니다.')
+      const message = error instanceof Error ? error.message : '도서 제거에 실패했습니다.'
+      setErrorMessage(message)
+      addToast(message, 'error')
     } finally {
       setDeletingBookId(null)
     }
