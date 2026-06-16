@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createAdminBook, lookupAdminBookByIsbn } from '@/components/admin/adminAddBookApi'
 import {
   sanitizeAdminBookIsbn,
-  sanitizeAdminSchoolBookCode,
   useAdminAddBookDraft,
   type AdminBookFormState,
 } from '@/components/admin/useAdminAddBookDraft'
@@ -52,6 +51,7 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
   } = useInputFocus<HTMLInputElement>()
   const [isLookingUpIsbn, setIsLookingUpIsbn] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [shouldFocusNextIsbn, setShouldFocusNextIsbn] = useState(false)
 
   function updateFormField(field: keyof AdminBookFormState, value: string) {
     setSuccessMessage('')
@@ -80,12 +80,11 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
       resetDraft()
       onBookCreated?.(createdBook)
       setSuccessMessage('책이 등록되었습니다. 다음 ISBN 바코드를 스캔해주세요.')
+      setShouldFocusNextIsbn(true)
 
       if (searchParams.toString()) {
         router.replace('/admin/add_books', { scroll: false })
       }
-
-      focusIsbnInput()
     } catch (error) {
       if (shouldRedirectToLogin(error)) {
         router.replace('/admin/login')
@@ -150,27 +149,6 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
     void submitBook(nextForm)
   }
 
-  function moveToCodeStep() {
-    if (!isInfoComplete) {
-      setErrorMessage('책 이름, 저자, 출판사를 모두 입력해주세요.')
-      return
-    }
-
-    clearMessages()
-    setActiveStep('code')
-    focusSchoolBookCodeInput()
-  }
-
-  function handleReset() {
-    resetDraft()
-    clearMessages()
-    focusIsbnInput()
-  }
-
-  function handleCancel() {
-    router.push('/admin/books')
-  }
-
   useEffect(() => {
     const paramIsbn = searchParams.get('isbn') ?? ''
     const paramSchoolBookCode = searchParams.get('schoolBookCode') ?? ''
@@ -189,22 +167,37 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
     }
   }, [applyPrefillParams, focusIsbnInput, focusSchoolBookCodeInput, searchParams, setActiveStep])
 
+  useEffect(() => {
+    if (activeStep !== 'info' || !isInfoComplete || isSubmitting) {
+      return
+    }
+
+    clearMessages()
+    setActiveStep('code')
+    focusSchoolBookCodeInput({ select: true })
+  }, [activeStep, clearMessages, focusSchoolBookCodeInput, isInfoComplete, isSubmitting, setActiveStep])
+
+  useEffect(() => {
+    if (!shouldFocusNextIsbn || isSubmitting || activeStep !== 'isbn') {
+      return
+    }
+
+    focusIsbnInput({ select: true })
+    setShouldFocusNextIsbn(false)
+  }, [activeStep, focusIsbnInput, isSubmitting, shouldFocusNextIsbn])
+
   return {
     activeStep,
     errorMessage,
     form,
-    handleCancel,
     handleIsbnEnter,
-    handleReset,
     handleSchoolBookCodeEnter,
     infoMessage,
     isInfoComplete,
     isLookingUpIsbn,
     isSubmitting,
     isbnInputRef,
-    moveToCodeStep,
     schoolBookCodeInputRef,
-    submitBook,
     successMessage,
     updateField: updateFormField,
   }

@@ -1,6 +1,6 @@
 'use client'
 
-import { BookPlus, Loader2, Save, Search } from 'lucide-react'
+import { BookPlus } from 'lucide-react'
 import { useAdminAddBookForm } from '@/components/admin/useAdminAddBookForm'
 import { ScanInput } from '@/components/ui/ScanInput'
 import { StatusMessage } from '@/components/ui/StatusMessage'
@@ -16,18 +16,13 @@ export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProp
     activeStep,
     errorMessage,
     form,
-    handleCancel,
     handleIsbnEnter,
-    handleReset,
     handleSchoolBookCodeEnter,
     infoMessage,
-    isInfoComplete,
     isLookingUpIsbn,
     isSubmitting,
     isbnInputRef,
-    moveToCodeStep,
     schoolBookCodeInputRef,
-    submitBook,
     successMessage,
     updateField,
   } = useAdminAddBookForm({ onBookCreated })
@@ -52,30 +47,18 @@ export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProp
             description="책 뒷면의 ISBN 바코드를 스캔하면 도서 정보를 자동으로 불러옵니다."
             state={activeStep === 'isbn' ? 'current' : 'complete'}
           >
-            <div className="flex gap-2">
-              <ScanInput
-                ref={isbnInputRef}
-                id="isbn"
-                label="ISBN 코드"
-                value={form.isbn}
-                onChangeValue={(value) => updateField('isbn', value)}
-                onEnter={handleIsbnEnter}
-                loading={isLookingUpIsbn}
-                disabled={isSubmitting}
-                placeholder="ISBN 바코드 스캔"
-                helperText="바코드 스캔 또는 Enter 키로 조회할 수 있습니다."
-                className="flex-1"
-              />
-              <button
-                type="button"
-                title="ISBN 정보 조회"
-                disabled={isLookingUpIsbn || isSubmitting}
-                onClick={handleIsbnEnter}
-                className="mt-auto inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
-              >
-                {isLookingUpIsbn ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              </button>
-            </div>
+            <ScanInput
+              ref={isbnInputRef}
+              id="isbn"
+              label="ISBN 코드"
+              value={form.isbn}
+              onChangeValue={(value) => updateField('isbn', value)}
+              onEnter={handleIsbnEnter}
+              loading={isLookingUpIsbn}
+              disabled={isSubmitting}
+              placeholder="ISBN 바코드 스캔"
+              helperText="바코드를 스캔하면 조회가 진행됩니다."
+            />
           </WorkflowStepCard>
 
           <WorkflowStepCard
@@ -132,18 +115,6 @@ export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProp
                 </div>
               </div>
 
-              {activeStep === 'info' ? (
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={moveToCodeStep}
-                    disabled={!isInfoComplete || isSubmitting}
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    다음
-                  </button>
-                </div>
-              ) : null}
             </div>
           </WorkflowStepCard>
 
@@ -184,32 +155,6 @@ export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProp
             <StatusMessage variant="success">{successMessage}</StatusMessage>
           </div>
         ) : null}
-
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-          <button
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
-            onClick={handleCancel}
-            type="button"
-          >
-            취소
-          </button>
-          <button
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
-            onClick={handleReset}
-            type="button"
-          >
-            초기화
-          </button>
-          <button
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
-            disabled={isSubmitting || activeStep !== 'code'}
-            onClick={() => void submitBook()}
-            type="button"
-          >
-            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            등록
-          </button>
-        </div>
       </div>
     </section>
   )
