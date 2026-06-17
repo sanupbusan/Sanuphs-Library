@@ -177,7 +177,7 @@ export default function AdminRemoveBookPanel({
                 <th className="px-4 py-3">저자</th>
                 <th className="px-4 py-3">학교 도서 코드</th>
                 <th className="px-4 py-3">ISBN</th>
-                <th className="px-4 py-3">소장</th>
+                <th className="whitespace-nowrap px-4 py-3">소장</th>
                 <th className="px-4 py-3 text-right">작업</th>
               </tr>
             </thead>
@@ -197,7 +197,7 @@ export default function AdminRemoveBookPanel({
                     <td className="px-4 py-3">{displayValue(book.author)}</td>
                     <td className="px-4 py-3">{displayValue(displaySchoolBookCodes(book))}</td>
                     <td className="px-4 py-3">{displayValue(book.isbn)}</td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3 tabular-nums">
                       {book.available_copies} / {book.total_copies}
                     </td>
                     <td className="px-4 py-3 text-right">

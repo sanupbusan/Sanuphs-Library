@@ -193,7 +193,7 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
                   <th className="px-4 py-3">출판사</th>
                   <th className="px-4 py-3">ISBN</th>
                   <th className="px-4 py-3">학교 도서 코드</th>
-                  <th className="px-4 py-3">소장</th>
+                  <th className="whitespace-nowrap px-4 py-3">소장</th>
                   <th className="px-4 py-3">위치</th>
                   <th className="px-4 py-3 text-right">작업</th>
                 </tr>
@@ -230,7 +230,7 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
                             ? renderEditInput(book, 'schoolBookCode', '학교 도서 코드')
                             : displayValue(displaySchoolBookCodes(book))}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="whitespace-nowrap px-4 py-3 tabular-nums">
                           {book.available_copies} / {book.total_copies}
                         </td>
                         <td className="px-4 py-3">
