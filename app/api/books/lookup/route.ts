@@ -80,7 +80,16 @@ export async function GET(request: Request) {
       )
     }
 
-    return NextResponse.json({ data })
+    const matchedSchoolBookCode = isIsbn
+      ? data.school_book_code ?? data.school_book_codes?.[0] ?? null
+      : normalizedCode
+
+    return NextResponse.json({
+      data: {
+        ...data,
+        matched_school_book_code: matchedSchoolBookCode,
+      },
+    })
   } catch (error) {
     console.error('Book lookup error:', error)
 
