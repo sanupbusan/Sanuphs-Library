@@ -65,6 +65,7 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [shouldFocusSchoolBookCode, setShouldFocusSchoolBookCode] = useState(false)
   const [shouldFocusNextIsbn, setShouldFocusNextIsbn] = useState(false)
+  const activeLookupIsbnRef = useRef('')
   const composingFieldRef = useRef<keyof AdminBookFormState | null>(null)
 
   function updateFormField(field: keyof AdminBookFormState, value: string) {
@@ -147,8 +148,12 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
       return
     }
 
-    activeLookupIsbnRef.current = isbn
+    if (activeLookupIsbnRef.current === isbn) {
+      return
+    }
+
     clearMessages()
+    activeLookupIsbnRef.current = isbn
     setIsLookingUpIsbn(true)
 
     try {
