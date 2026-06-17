@@ -68,10 +68,12 @@ test('public return function migration leaves availability updates to the trigge
 })
 
 test('latest public return functions use the singular school book code column', async () => {
-  const source = await readProjectFile('supabase/migrations/20260617090000_fix_return_school_book_code_column.sql')
+  const source = await readProjectFile('supabase/migrations/20260617100000_force_replace_return_school_book_code_functions.sql')
 
-  assert.match(source, /create or replace function public\.get_returnable_loan_by_school_book_code/i)
-  assert.match(source, /create or replace function public\.return_loans_by_school_book_codes/i)
+  assert.match(source, /drop function if exists public\.get_returnable_loan_by_school_book_code\(text\)/i)
+  assert.match(source, /drop function if exists public\.return_loans_by_school_book_codes\(text\[\]\)/i)
+  assert.match(source, /create function public\.get_returnable_loan_by_school_book_code/i)
+  assert.match(source, /create function public\.return_loans_by_school_book_codes/i)
   assert.match(source, /books\.school_book_code/i)
   assert.doesNotMatch(source, /books\.school_book_codes/i)
 })
