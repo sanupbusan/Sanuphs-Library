@@ -1,11 +1,13 @@
 import { normalizeIsbnInput } from '@/lib/barcode-input'
 import { requireAdminSession } from '@/lib/admin-auth'
 import { jsonData, runApiRoute, throwApiError } from '@/lib/api-route'
+import type { TypedSupabaseClient } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
 const DEFAULT_ISBN_API_URL = 'https://www.nl.go.kr/seoji/SearchApi.do'
-const ISBN_API_TIMEOUT_MS = 15_000
+const ISBN_API_TIMEOUT_MS = 5_000
+const ISBN_LOOKUP_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 type NormalizedBookInfo = {
   author: string
@@ -13,6 +15,13 @@ type NormalizedBookInfo = {
   publisher: string
   title: string
 }
+
+type IsbnLookupCacheEntry = {
+  book: NormalizedBookInfo
+  expiresAt: number
+}
+
+const isbnLookupCache = new Map<string, IsbnLookupCacheEntry>()
 
 function cleanText(value: unknown) {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
@@ -30,6 +39,31 @@ function getIsbnFromRequest(request: Request) {
   const url = new URL(request.url)
 
   return normalizeIsbnInput(cleanText(url.searchParams.get('isbn')))
+}
+
+function getCachedBookInfo(isbn: string) {
+  const cached = isbnLookupCache.get(isbn)
+
+  if (!cached) {
+    return null
+  }
+
+  if (cached.expiresAt <= Date.now()) {
+    isbnLookupCache.delete(isbn)
+    return null
+  }
+
+  return cached.book
+}
+
+function setCachedBookInfo(isbn: string, book: NormalizedBookInfo) {
+  const expiresAt = Date.now() + ISBN_LOOKUP_CACHE_TTL_MS
+  isbnLookupCache.set(isbn, { book, expiresAt })
+
+  const normalizedBookIsbn = normalizeIsbnInput(book.isbn)
+  if (normalizedBookIsbn && normalizedBookIsbn !== isbn) {
+    isbnLookupCache.set(normalizedBookIsbn, { book, expiresAt })
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -134,6 +168,45 @@ function normalizeBookInfo(payload: unknown, fallbackIsbn: string): NormalizedBo
   }
 }
 
+function normalizeStoredBookInfo(
+  book: {
+    author: string | null
+    isbn: string | null
+    publisher: string | null
+    title: string | null
+  },
+  fallbackIsbn: string
+): NormalizedBookInfo | null {
+  const title = cleanText(book.title)
+  const author = cleanText(book.author)
+  const publisher = cleanText(book.publisher)
+
+  if (!title && !author && !publisher) {
+    return null
+  }
+
+  return {
+    author,
+    isbn: normalizeIsbnInput(cleanText(book.isbn)) || fallbackIsbn,
+    publisher,
+    title,
+  }
+}
+
+async function lookupStoredBookByIsbn(supabase: TypedSupabaseClient, isbn: string) {
+  const { data, error } = await supabase
+    .from('books')
+    .select('isbn, title, author, publisher')
+    .eq('isbn', isbn)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  return data ? normalizeStoredBookInfo(data, isbn) : null
+}
+
 async function fetchWithTimeout(url: URL) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), ISBN_API_TIMEOUT_MS)
@@ -177,11 +250,22 @@ export async function GET(request: Request) {
       logLabel: 'ISBN lookup error:',
     },
     async () => {
-      await requireAdminSession(request)
+      const session = await requireAdminSession(request)
 
       const isbn = getIsbnFromRequest(request)
       if (!isbn) {
         throwApiError(400, 'MISSING_ISBN', 'ISBN 코드를 입력해주세요.')
+      }
+
+      const cachedBook = getCachedBookInfo(isbn)
+      if (cachedBook) {
+        return jsonData(cachedBook)
+      }
+
+      const storedBook = await lookupStoredBookByIsbn(session.supabase, isbn)
+      if (storedBook) {
+        setCachedBookInfo(isbn, storedBook)
+        return jsonData(storedBook)
       }
 
       const apiKey = getNationalLibraryApiKey()
@@ -241,6 +325,8 @@ export async function GET(request: Request) {
       if (!book) {
         throwApiError(404, 'BOOK_NOT_FOUND', 'ISBN으로 책 정보를 찾지 못했습니다.')
       }
+
+      setCachedBookInfo(isbn, book)
 
       return jsonData(book)
     }
