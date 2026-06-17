@@ -66,6 +66,7 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
   const [shouldFocusSchoolBookCode, setShouldFocusSchoolBookCode] = useState(false)
   const [shouldFocusNextIsbn, setShouldFocusNextIsbn] = useState(false)
   const activeLookupIsbnRef = useRef('')
+  const lastAutoLookupIsbnRef = useRef('')
   const composingFieldRef = useRef<keyof AdminBookFormState | null>(null)
 
   function updateFormField(field: keyof AdminBookFormState, value: string) {
