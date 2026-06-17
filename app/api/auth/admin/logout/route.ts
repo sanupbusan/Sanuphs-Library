@@ -1,4 +1,4 @@
-import { clearAdminSessionCookie } from '@/lib/admin-auth'
+import { clearAdminSessionCache, clearAdminSessionCookie } from '@/lib/admin-auth'
 import { jsonData, runApiRoute } from '@/lib/api-route'
 
 export const dynamic = 'force-dynamic'
@@ -14,6 +14,7 @@ export async function POST() {
     },
     async () => {
       const response = jsonData({ ok: true })
+      clearAdminSessionCache()
       clearAdminSessionCookie(response)
 
       return response

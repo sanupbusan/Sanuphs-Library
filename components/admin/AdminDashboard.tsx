@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { AlertTriangle, BookOpen, Loader2, LogOut, ShieldCheck } from 'lucide-react'
@@ -13,6 +13,11 @@ type AdminDashboardProps = {
 export default function AdminDashboard({ session }: AdminDashboardProps) {
   const router = useRouter()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+
+  useEffect(() => {
+    router.prefetch('/admin/books')
+    router.prefetch('/admin/add_books')
+  }, [router])
 
   async function handleLogout() {
     setIsLoggingOut(true)

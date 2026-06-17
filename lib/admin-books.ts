@@ -17,7 +17,20 @@ function duplicateBookCodeError() {
   return new ApiRouteError(409, 'DUPLICATE_BOOK_CODE', '이미 등록된 ISBN 또는 학교 내 도서 코드입니다.')
 }
 
-export async function listAdminBooks(supabase: TypedSupabaseClient): Promise<AdminBookRow[]> {
+type AdminBookListCacheEntry = {
+  books: AdminBookRow[]
+  expiresAt: number
+}
+
+const ADMIN_BOOK_LIST_CACHE_TTL_MS = 5_000
+let adminBookListCache: AdminBookListCacheEntry | null = null
+let adminBookListCachePromise: Promise<AdminBookRow[]> | null = null
+
+function cloneAdminBooks(books: AdminBookRow[]) {
+  return books.map((book) => ({ ...book }))
+}
+
+async function fetchAdminBooks(supabase: TypedSupabaseClient): Promise<AdminBookRow[]> {
   const { data, error } = await supabase
     .from('books')
     .select(ADMIN_BOOK_COLUMNS)
@@ -29,6 +42,36 @@ export async function listAdminBooks(supabase: TypedSupabaseClient): Promise<Adm
   }
 
   return (data ?? []) as AdminBookRow[]
+}
+
+export function invalidateAdminBooksCache() {
+  adminBookListCache = null
+  adminBookListCachePromise = null
+}
+
+export async function listAdminBooks(supabase: TypedSupabaseClient): Promise<AdminBookRow[]> {
+  const now = Date.now()
+
+  if (adminBookListCache && adminBookListCache.expiresAt > now) {
+    return cloneAdminBooks(adminBookListCache.books)
+  }
+
+  if (!adminBookListCachePromise) {
+    adminBookListCachePromise = fetchAdminBooks(supabase)
+      .then((books) => {
+        adminBookListCache = {
+          books,
+          expiresAt: Date.now() + ADMIN_BOOK_LIST_CACHE_TTL_MS,
+        }
+
+        return books
+      })
+      .finally(() => {
+        adminBookListCachePromise = null
+      })
+  }
+
+  return cloneAdminBooks(await adminBookListCachePromise)
 }
 
 export async function deleteAdminBook(supabase: TypedSupabaseClient, bookId: string) {
@@ -54,6 +97,8 @@ export async function deleteAdminBook(supabase: TypedSupabaseClient, bookId: str
   if (!data) {
     throw new ApiRouteError(404, 'BOOK_NOT_FOUND', '제거할 도서를 찾을 수 없습니다.')
   }
+
+  invalidateAdminBooksCache()
 
   return data
 }

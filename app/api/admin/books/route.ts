@@ -1,5 +1,5 @@
 import { requireAdminSession } from '@/lib/admin-auth'
-import { createAdminBook } from '@/lib/admin-books'
+import { ADMIN_BOOK_COLUMNS, invalidateAdminBooksCache } from '@/lib/admin-books'
 import {
   getText,
   jsonData,
@@ -42,6 +42,8 @@ export async function POST(request: Request) {
       const body = await readJsonBody<CreateBookBody>(request)
       const input = getCreateBookInput(body)
       const data = await createAdminBook(session.supabase, input)
+
+      invalidateAdminBooksCache()
 
       return jsonData(data, { status: 201 })
     }
