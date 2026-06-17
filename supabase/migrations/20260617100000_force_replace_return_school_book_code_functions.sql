@@ -1,5 +1,47 @@
-drop function if exists public.get_returnable_loan_by_school_book_code(text);
-drop function if exists public.return_loans_by_school_book_codes(text[]);
+alter table public.books
+  add column if not exists school_book_codes text[] not null default '{}';
+
+alter table public.loans
+  add column if not exists school_book_code text;
+
+update public.books
+set school_book_codes = array_append(school_book_codes, school_book_code)
+where school_book_code is not null
+  and not school_book_code = any(school_book_codes);
+
+create index if not exists books_school_book_codes_idx
+  on public.books using gin (school_book_codes);
+
+create unique index if not exists loans_one_active_school_book_code_idx
+  on public.loans (school_book_code)
+  where status = 'rented'
+    and school_book_code is not null;
+
+do $$
+declare
+  target_function record;
+begin
+  for target_function in
+    select
+      n.nspname as schema_name,
+      p.proname as function_name,
+      pg_get_function_identity_arguments(p.oid) as function_arguments
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in (
+        'get_returnable_loan_by_school_book_code',
+        'return_loans_by_school_book_codes'
+      )
+  loop
+    execute format(
+      'drop function if exists %I.%I(%s)',
+      target_function.schema_name,
+      target_function.function_name,
+      target_function.function_arguments
+    );
+  end loop;
+end $$;
 
 create function public.get_returnable_loan_by_school_book_code(input_school_book_code text)
 returns table (
@@ -15,19 +57,29 @@ stable
 security definer
 set search_path = public
 as $$
+  with normalized_code as (
+    select nullif(trim(input_school_book_code), '') as school_book_code
+  )
   select
     loans.id as loan_id,
-    books.school_book_code,
+    coalesce(loans.school_book_code, books.school_book_code, normalized_code.school_book_code) as school_book_code,
     books.title as book_title,
     students.name as student_name,
     loans.borrowed_on,
     loans.due_on
-  from public.loans
+  from normalized_code
+  join public.loans on loans.status = 'rented'
+    and loans.returned_on is null
   join public.books on books.id = loans.book_id
   join public.students on students.id = loans.student_id
-  where books.school_book_code = nullif(trim(input_school_book_code), '')
-    and loans.status = 'rented'
-    and loans.returned_on is null
+  where normalized_code.school_book_code is not null
+    and (
+      loans.school_book_code = normalized_code.school_book_code
+      or (
+        loans.school_book_code is null
+        and books.school_book_code = normalized_code.school_book_code
+      )
+    )
   limit 1;
 $$;
 
@@ -54,7 +106,7 @@ as $$
   target_loans as (
     select
       loans.id,
-      books.school_book_code,
+      coalesce(loans.school_book_code, books.school_book_code, normalized_codes.school_book_code) as school_book_code,
       books.title as book_title,
       students.id as student_id,
       students.name as student_name,
@@ -62,7 +114,11 @@ as $$
     from public.loans
     join public.books on books.id = loans.book_id
     join public.students on students.id = loans.student_id
-    join normalized_codes on normalized_codes.school_book_code = books.school_book_code
+    join normalized_codes on normalized_codes.school_book_code = loans.school_book_code
+      or (
+        loans.school_book_code is null
+        and normalized_codes.school_book_code = books.school_book_code
+      )
     where loans.status = 'rented'
       and loans.returned_on is null
     for update of loans
