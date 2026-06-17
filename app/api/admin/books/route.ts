@@ -1,5 +1,5 @@
 import { requireAdminSession } from '@/lib/admin-auth'
-import { createAdminBook } from '@/lib/admin-books'
+import { insertAdminBook } from '@/lib/admin-books'
 import {
   getText,
   jsonData,
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
         throwApiError(400, 'MISSING_REQUIRED_FIELDS', `${missingFields.join(', ')}을(를) 입력해주세요.`)
       }
 
-      const data = await createAdminBook(session.supabase, input)
+      const data = await insertAdminBook(session.supabase, input)
 
       return jsonData(data, { status: 201 })
     }
