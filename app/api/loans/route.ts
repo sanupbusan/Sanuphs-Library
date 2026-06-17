@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic'
 
 type CreateLoanBody = {
   bookId?: unknown
+  schoolBookCode?: unknown
   studentId?: unknown
   notes?: unknown
 }
@@ -159,6 +160,7 @@ export async function POST(request: Request) {
   }
 
   const bookId = getText(body.bookId)
+  const schoolBookCode = normalizeBarcodeInput(getText(body.schoolBookCode))
   const studentId = getText(body.studentId)
 
   if (!bookId || !studentId) {

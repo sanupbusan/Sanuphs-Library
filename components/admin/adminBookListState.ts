@@ -7,3 +7,7 @@ export function prependCreatedAdminBook(books: AdminBookRow[], createdBook: Admi
 export function removeAdminBookById(books: AdminBookRow[], bookId: string) {
   return books.filter((book) => book.id !== bookId)
 }
+
+export function replaceUpdatedAdminBook(books: AdminBookRow[], updatedBook: AdminBookRow) {
+  return books.map((book) => (book.id === updatedBook.id ? updatedBook : book))
+}
