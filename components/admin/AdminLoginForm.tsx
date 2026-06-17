@@ -39,10 +39,8 @@ export default function AdminLoginForm() {
         throw new Error(payload.error?.message ?? '로그인에 실패했습니다.')
       }
 
-      window.dispatchEvent(new Event('admin-session-changed'))
       const nextPath = searchParams.get('next')
-      router.push(nextPath?.startsWith('/admin') ? nextPath : '/admin')
-      router.refresh()
+      router.replace(nextPath?.startsWith('/admin') ? nextPath : '/admin')
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '로그인에 실패했습니다.')
     } finally {
