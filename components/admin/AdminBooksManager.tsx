@@ -240,7 +240,7 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
                           {isEditing ? (
                             <div className="flex justify-end gap-2">
                               <button
-                                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-primary-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
+                                className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-primary-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
                                 disabled={isSaving}
                                 onClick={() => {
                                   void saveBookEdit(book)
@@ -251,7 +251,7 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
                                 저장
                               </button>
                               <button
-                                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
+                                className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
                                 disabled={isSaving}
                                 onClick={cancelEditingBook}
                                 type="button"
@@ -262,7 +262,7 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
                             </div>
                           ) : (
                             <button
-                              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
+                              className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
                               disabled={isEditDisabled}
                               onClick={() => startEditingBook(book)}
                               type="button"

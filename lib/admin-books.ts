@@ -265,16 +265,6 @@ export async function updateAdminBook(
     throw new ApiRouteError(400, 'MISSING_REQUIRED_FIELDS', missingFieldsMessage)
   }
 
-  const { data: currentBook, error: currentBookError } = await supabase
-    .from('books')
-    .select('school_book_code, school_book_codes')
-    .eq('id', bookId)
-    .maybeSingle()
-
-  if (currentBookError) {
-    throw currentBookError
-  }
-
   const { data, error } = await supabase
     .from('books')
     .update({
@@ -283,7 +273,7 @@ export async function updateAdminBook(
       location: getNullableAdminBookLocation(input),
       publisher: input.publisher,
       school_book_code: input.schoolBookCode,
-      school_book_codes: addSchoolBookCode(currentBook ?? {}, input.schoolBookCode),
+      school_book_codes: [input.schoolBookCode],
       title: input.title,
     })
     .eq('id', bookId)
