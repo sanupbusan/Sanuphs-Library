@@ -9,13 +9,13 @@ async function readProjectFile(relativePath) {
   return readFile(path.join(projectRoot, relativePath), 'utf8')
 }
 
-test('admin add book form is driven by barcode inputs instead of action buttons', async () => {
+test('admin add book form is driven by barcode inputs with a manual ISBN fallback', async () => {
   const source = await readProjectFile('components/admin/AdminAddBookForm.tsx')
 
-  assert.doesNotMatch(source, /<button\b/)
-  assert.doesNotMatch(source, /onClick=/)
   assert.match(source, /onEnter=\{handleIsbnEnter\}/)
   assert.match(source, /onEnter=\{handleSchoolBookCodeEnter\}/)
+  assert.match(source, /onClick=\{handleManualEntry\}/)
+  assert.match(source, /ISBN 없이 직접 입력/)
 })
 
 test('admin add book flow advances to school code scan and refocuses ISBN after submit', async () => {

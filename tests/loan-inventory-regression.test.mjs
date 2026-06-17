@@ -67,13 +67,26 @@ test('public return function migration leaves availability updates to the trigge
   assert.doesNotMatch(source, /update public\.books/i)
 })
 
-test('latest public return functions use the singular school book code column', async () => {
-  const source = await readProjectFile('supabase/migrations/20260617090000_fix_return_school_book_code_column.sql')
+test('multiple school-code migration keeps returns copy-aware and preserves loan bans', async () => {
+  const source = await readProjectFile('supabase/migrations/20260617000000_track_multiple_school_book_codes.sql')
 
-  assert.match(source, /create or replace function public\.get_returnable_loan_by_school_book_code/i)
-  assert.match(source, /create or replace function public\.return_loans_by_school_book_codes/i)
-  assert.match(source, /books\.school_book_code/i)
-  assert.doesNotMatch(source, /books\.school_book_codes/i)
+  assert.match(source, /add column if not exists school_book_codes text\[\]/i)
+  assert.match(source, /add column if not exists school_book_code text/i)
+  assert.match(source, /loans_one_active_school_book_code_idx/i)
+  assert.match(source, /join normalized_codes on normalized_codes\.school_book_code = loans\.school_book_code/i)
+  assert.match(source, /overdue_days integer/i)
+  assert.match(source, /loan_banned_until date/i)
+  assert.match(source, /update public\.students/i)
+  assert.doesNotMatch(source, /normalized_codes\.school_book_code = any\(books\.school_book_codes\)/i)
+})
+
+test('loan creation stores the matched school book code on the loan', async () => {
+  const source = await readProjectFile('app/api/loans/route.ts')
+
+  assert.match(source, /schoolBookCode\?: unknown/)
+  assert.match(source, /normalizeBarcodeInput\(getText\(body\.schoolBookCode\)\)/)
+  assert.match(source, /\.eq\('school_book_code', loanSchoolBookCode\)/)
+  assert.match(source, /school_book_code: loanSchoolBookCode/)
 })
 
 test('loan due date repair migration removes stale loan triggers and qualifies due_on references', async () => {
