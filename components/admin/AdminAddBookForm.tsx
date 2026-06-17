@@ -38,7 +38,7 @@ export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProp
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">새 책 추가</h1>
-            <p className="mt-1 text-sm text-gray-600">ISBN 바코드로 책 정보를 찾고, 학교 내 도서 코드를 등록합니다.</p>
+            <p className="mt-1 text-sm text-gray-600">ISBN 조회 또는 직접 입력으로 책 정보와 학교 내 도서 코드를 등록합니다.</p>
           </div>
         </div>
 
@@ -46,7 +46,7 @@ export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProp
           <WorkflowStepCard
             step={1}
             title="ISBN 스캔"
-            description="책 뒷면의 ISBN 바코드를 스캔하면 도서 정보를 자동으로 불러옵니다."
+            description="ISBN이 있으면 바코드로 도서 정보를 불러오고, 없으면 직접 입력할 수 있습니다."
             state={activeStep === 'isbn' ? 'current' : 'complete'}
           >
             <ScanInput
@@ -68,7 +68,7 @@ export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProp
           <WorkflowStepCard
             step={2}
             title="도서 정보 확인"
-            description="자동으로 불러온 정보를 확인하고 필요한 부분만 수정해주세요."
+            description="조회된 정보를 확인하거나 ISBN이 없는 책 정보를 직접 입력해주세요."
             state={activeStep === 'info' ? 'current' : activeStep === 'isbn' ? 'locked' : 'complete'}
           >
             <div className="space-y-4">

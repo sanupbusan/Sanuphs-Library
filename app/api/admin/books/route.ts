@@ -5,7 +5,6 @@ import {
   jsonData,
   readJsonBody,
   runApiRoute,
-  throwApiError,
 } from '@/lib/api-route'
 import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
 

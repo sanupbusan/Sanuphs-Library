@@ -54,12 +54,12 @@ export async function GET(request: Request) {
 
     let query = supabase
       .from('books')
-      .select('id, isbn, school_book_code, title, author, publisher, available_copies, total_copies')
+      .select('id, isbn, school_book_code, school_book_codes, title, author, publisher, available_copies, total_copies')
 
     if (isIsbn) {
       query = query.eq('isbn', normalizedCode)
     } else {
-      query = query.eq('school_book_code', normalizedCode)
+      query = query.contains('school_book_codes', [normalizedCode])
     }
 
     const { data, error } = await query.maybeSingle()
@@ -80,7 +80,16 @@ export async function GET(request: Request) {
       )
     }
 
-    return NextResponse.json({ data })
+    const matchedSchoolBookCode = isIsbn
+      ? data.school_book_code ?? data.school_book_codes?.[0] ?? null
+      : normalizedCode
+
+    return NextResponse.json({
+      data: {
+        ...data,
+        matched_school_book_code: matchedSchoolBookCode,
+      },
+    })
   } catch (error) {
     console.error('Book lookup error:', error)
 

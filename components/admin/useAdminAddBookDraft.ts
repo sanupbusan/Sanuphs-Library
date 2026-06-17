@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
+import { isAdminBookInfoComplete, type AdminBookCreateInput } from '@/lib/admin-book-input'
 import type { IsbnLookupResult } from '@/types/library'
 
 export type AdminBookFormState = {
@@ -12,7 +13,7 @@ export type AdminBookFormState = {
   title: string
 }
 
-export type AdminBookFormInput = AdminBookFormState
+export type AdminBookFormInput = AdminBookCreateInput
 export type AdminAddBookStep = 'isbn' | 'info' | 'code'
 
 const initialFormState: AdminBookFormState = {
@@ -46,9 +47,7 @@ export function useAdminAddBookDraft() {
   const [activeStep, setActiveStep] = useState<AdminAddBookStep>('isbn')
 
   const isInfoComplete = useMemo(() => {
-    const trimmed = trimAdminBookForm(form)
-
-    return Boolean(trimmed.title && trimmed.author && trimmed.publisher)
+    return isAdminBookInfoComplete(form)
   }, [form])
 
   const updateField = useCallback((field: keyof AdminBookFormState, value: string) => {
