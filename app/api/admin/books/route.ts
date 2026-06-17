@@ -1,9 +1,8 @@
 import { requireAdminSession } from '@/lib/admin-auth'
-import { insertAdminBook } from '@/lib/admin-books'
+import { createAdminBook } from '@/lib/admin-books'
 import {
   getText,
   jsonData,
-  jsonError,
   readJsonBody,
   runApiRoute,
 } from '@/lib/api-route'
@@ -42,19 +41,7 @@ export async function POST(request: Request) {
       const session = await requireAdminSession(request)
       const body = await readJsonBody<CreateBookBody>(request)
       const input = getCreateBookInput(body)
-      const missingFields = [
-        !input.title && '책 이름',
-        !input.author && '저자',
-        !input.publisher && '출판사',
-        !input.isbn && 'ISBN 코드',
-        !input.schoolBookCode && '학교 도서 코드',
-      ].filter(Boolean)
-
-      if (missingFields.length > 0) {
-        return jsonError('MISSING_REQUIRED_FIELDS', `${missingFields.join(', ')}을(를) 입력해주세요.`, 400)
-      }
-
-      const data = await insertAdminBook(session.supabase, input)
+      const data = await createAdminBook(session.supabase, input)
 
       return jsonData(data, { status: 201 })
     }
