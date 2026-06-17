@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
 import { createRouteSupabaseClient } from '@/lib/api-route'
+import { normalizeBarcodeInput } from '@/lib/barcode-input'
 import type { BorrowerType, CreatedPublicLoan, LoanCreationResult } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
