@@ -1,5 +1,6 @@
 import {
   AdminAuthError,
+  cacheAdminSession,
   serializeAdminSession,
   setAdminSessionCookie,
 } from '@/lib/admin-auth'
@@ -77,16 +78,18 @@ export async function POST(request: Request) {
         throw new AdminAuthError(403, 'FORBIDDEN', '관리자 권한이 필요합니다.')
       }
 
-      const response = jsonData(
-        serializeAdminSession({
-          role: adminUser.role,
-          supabase: authedClient,
-          user: {
-            id: data.user.id,
-            loginId: adminUser.login_id,
-          },
-        })
-      )
+      const adminSession = {
+        role: adminUser.role,
+        supabase: authedClient,
+        user: {
+          id: data.user.id,
+          loginId: adminUser.login_id,
+        },
+      }
+
+      cacheAdminSession(data.session.access_token, adminSession)
+
+      const response = jsonData(serializeAdminSession(adminSession))
       setAdminSessionCookie(response, data.session)
 
       return response

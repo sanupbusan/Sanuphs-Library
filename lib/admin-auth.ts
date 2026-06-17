@@ -28,6 +28,15 @@ export type SerializedAdminSession = {
   user: AdminSession['user']
 }
 
+type AdminSessionCacheEntry = {
+  expiresAt: number
+  session: AdminSession
+}
+
+const ADMIN_SESSION_CACHE_TTL_MS = 30_000
+const ADMIN_SESSION_CACHE_MAX_ENTRIES = 20
+const adminSessionCache = new Map<string, AdminSessionCacheEntry>()
+
 const cookieOptions = {
   httpOnly: true,
   path: '/',
@@ -56,6 +65,48 @@ function parseCookieHeader(cookieHeader: string | null) {
 
 function getAccessTokenFromRequest(request: Request) {
   return parseCookieHeader(request.headers.get('cookie')).get(ADMIN_ACCESS_TOKEN_COOKIE) ?? ''
+}
+
+function getCachedAdminSession(accessToken: string) {
+  const cached = adminSessionCache.get(accessToken)
+
+  if (!cached) {
+    return null
+  }
+
+  if (cached.expiresAt <= Date.now()) {
+    adminSessionCache.delete(accessToken)
+    return null
+  }
+
+  return cached.session
+}
+
+export function cacheAdminSession(accessToken: string, session: AdminSession) {
+  if (!accessToken) {
+    return
+  }
+
+  adminSessionCache.set(accessToken, {
+    expiresAt: Date.now() + ADMIN_SESSION_CACHE_TTL_MS,
+    session,
+  })
+
+  if (adminSessionCache.size > ADMIN_SESSION_CACHE_MAX_ENTRIES) {
+    const oldestKey = adminSessionCache.keys().next().value
+    if (oldestKey) {
+      adminSessionCache.delete(oldestKey)
+    }
+  }
+}
+
+export function clearAdminSessionCache(accessToken?: string) {
+  if (accessToken) {
+    adminSessionCache.delete(accessToken)
+    return
+  }
+
+  adminSessionCache.clear()
 }
 
 export function setAdminSessionCookie(response: NextResponse, session: Session) {
@@ -105,6 +156,11 @@ export async function createAdminSessionFromAccessToken(accessToken: string): Pr
     throw new AdminAuthError(401, 'UNAUTHENTICATED', '로그인이 필요합니다.')
   }
 
+  const cachedSession = getCachedAdminSession(accessToken)
+  if (cachedSession) {
+    return cachedSession
+  }
+
   const authClient = createServerSupabaseClient()
   const {
     data: { user },
@@ -130,7 +186,7 @@ export async function createAdminSessionFromAccessToken(accessToken: string): Pr
     throw new AdminAuthError(403, 'FORBIDDEN', '관리자 권한이 필요합니다.')
   }
 
-  return {
+  const session = {
     role: adminUser.role,
     supabase: authedClient,
     user: {
@@ -138,6 +194,10 @@ export async function createAdminSessionFromAccessToken(accessToken: string): Pr
       loginId: adminUser.login_id,
     },
   }
+
+  cacheAdminSession(accessToken, session)
+
+  return session
 }
 
 export async function requireAdminSession(request: Request): Promise<AdminSession> {

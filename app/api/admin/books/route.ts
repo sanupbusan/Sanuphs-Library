@@ -1,5 +1,5 @@
 import { requireAdminSession } from '@/lib/admin-auth'
-import { ADMIN_BOOK_COLUMNS } from '@/lib/admin-books'
+import { ADMIN_BOOK_COLUMNS, invalidateAdminBooksCache } from '@/lib/admin-books'
 import {
   ApiRouteError,
   getText,
@@ -77,6 +77,8 @@ export async function POST(request: Request) {
 
         throw error
       }
+
+      invalidateAdminBooksCache()
 
       return jsonData(data, { status: 201 })
     }
