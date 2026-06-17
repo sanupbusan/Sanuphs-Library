@@ -35,6 +35,7 @@ type BookIdentityFields =
   | 'isbn'
   | 'publisher'
   | 'school_book_code'
+  | 'school_book_codes'
   | 'title'
   | 'total_copies'
 
@@ -56,7 +57,9 @@ type RecentBookFields =
 
 export type AdminBookRow = Pick<BookRow, AdminBookFields>
 export type RemovableBook = Pick<BookRow, BookIdentityFields>
-export type BookLookupResult = RemovableBook
+export type BookLookupResult = RemovableBook & {
+  matched_school_book_code: string | null
+}
 export type IsbnLookupResult = Pick<BookRow, IsbnLookupFields>
 export type RecentBook = Pick<BookRow, RecentBookFields>
 

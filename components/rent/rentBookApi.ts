@@ -21,10 +21,11 @@ export async function lookupRentBook(code: string) {
   return readApiData<RentBook>(response, '도서 정보 조회에 실패했습니다.')
 }
 
-export async function createRentLoan(bookId: string, studentId: string) {
+export async function createRentLoan(bookId: string, studentId: string, schoolBookCode: string | null) {
   const response = await fetch('/api/loans', {
     body: JSON.stringify({
       bookId,
+      schoolBookCode,
       studentId,
     }),
     headers: {
