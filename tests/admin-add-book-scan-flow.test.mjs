@@ -23,7 +23,22 @@ test('admin add book flow advances to school code scan and refocuses ISBN after 
 
   assert.match(source, /activeStep !== 'info' \|\| !isInfoComplete/)
   assert.match(source, /setActiveStep\('code'\)/)
+  assert.match(source, /isLookupInfoComplete\(book\)/)
+  assert.match(source, /setShouldFocusSchoolBookCode\(true\)/)
   assert.match(source, /focusSchoolBookCodeInput\(\{ select: true \}\)/)
   assert.match(source, /setShouldFocusNextIsbn\(true\)/)
   assert.match(source, /focusIsbnInput\(\{ select: true \}\)/)
+})
+
+test('admin add book barcode fields normalize once after Korean IME composition', async () => {
+  const formSource = await readProjectFile('components/admin/AdminAddBookForm.tsx')
+  const hookSource = await readProjectFile('components/admin/useAdminAddBookForm.ts')
+  const barcodeSource = await readProjectFile('lib/barcode-input.ts')
+
+  assert.match(formSource, /onCompositionStart=\{\(\) => handleScanCompositionStart\('schoolBookCode'\)\}/)
+  assert.match(formSource, /onCompositionEnd=\{\(value\) => handleScanCompositionEnd\('schoolBookCode', value\)\}/)
+  assert.match(hookSource, /composingFieldRef\.current === field/)
+  assert.match(hookSource, /\[field\]: value/)
+  assert.match(barcodeSource, /normalizeBarcodeInput[\s\S]*\.toUpperCase\(\)/)
+  assert.match(barcodeSource, /normalizeIsbnInput[\s\S]*\.toUpperCase\(\)/)
 })

@@ -17,7 +17,8 @@ export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProp
     errorMessage,
     form,
     handleIsbnEnter,
-    handleManualEntry,
+    handleScanCompositionEnd,
+    handleScanCompositionStart,
     handleSchoolBookCodeEnter,
     infoMessage,
     isLookingUpIsbn,
@@ -48,28 +49,20 @@ export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProp
             description="ISBN이 있으면 바코드로 도서 정보를 불러오고, 없으면 직접 입력할 수 있습니다."
             state={activeStep === 'isbn' ? 'current' : 'complete'}
           >
-            <div className="space-y-3">
-              <ScanInput
-                ref={isbnInputRef}
-                id="isbn"
-                label="ISBN 코드"
-                value={form.isbn}
-                onChangeValue={(value) => updateField('isbn', value)}
-                onEnter={handleIsbnEnter}
-                loading={isLookingUpIsbn}
-                disabled={isSubmitting}
-                placeholder="ISBN 바코드 스캔"
-                helperText="ISBN 조회가 완료되면 학교 내 도서 코드 입력칸으로 바로 이동합니다. ISBN이 없으면 아래 버튼을 눌러주세요."
-              />
-              <button
-                type="button"
-                onClick={handleManualEntry}
-                disabled={isLookingUpIsbn || isSubmitting}
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
-              >
-                ISBN 없이 직접 입력
-              </button>
-            </div>
+            <ScanInput
+              ref={isbnInputRef}
+              id="isbn"
+              label="ISBN 코드"
+              value={form.isbn}
+              onChangeValue={(value) => updateField('isbn', value)}
+              onCompositionStart={() => handleScanCompositionStart('isbn')}
+              onCompositionEnd={(value) => handleScanCompositionEnd('isbn', value)}
+              onEnter={handleIsbnEnter}
+              loading={isLookingUpIsbn}
+              disabled={isSubmitting}
+              placeholder="ISBN 바코드 스캔"
+              helperText="바코드를 스캔하면 조회가 진행됩니다."
+            />
           </WorkflowStepCard>
 
           <WorkflowStepCard
@@ -141,6 +134,8 @@ export default function AdminAddBookForm({ onBookCreated }: AdminAddBookFormProp
               label="학교 내 도서 코드"
               value={form.schoolBookCode}
               onChangeValue={(value) => updateField('schoolBookCode', value)}
+              onCompositionStart={() => handleScanCompositionStart('schoolBookCode')}
+              onCompositionEnd={(value) => handleScanCompositionEnd('schoolBookCode', value)}
               onEnter={handleSchoolBookCodeEnter}
               disabled={activeStep !== 'code' || isSubmitting}
               loading={isSubmitting}

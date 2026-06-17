@@ -39,6 +39,17 @@ test('public return route uses RPCs instead of direct loan table access', async 
   assert.doesNotMatch(source, /\.from\('loans'\)/)
 })
 
+test('public borrower lookup and loan creation use single RPC calls', async () => {
+  const loanRoute = await readProjectFile('app/api/loans/route.ts')
+  const loanPost = routeHandlerSource(loanRoute, 'POST')
+  const studentRoute = await readProjectFile('app/api/students/route.ts')
+
+  assert.match(studentRoute, /\.rpc\([\s\S]*'lookup_student_for_loan'/)
+  assert.doesNotMatch(studentRoute, /\.from\('students'\)|\.from\('loans'\)/)
+  assert.match(loanPost, /\.rpc\([\s\S]*'create_public_loan'/)
+  assert.doesNotMatch(loanPost, /\.from\('books'\)|\.from\('students'\)|\.from\('loans'\)/)
+})
+
 test('availability correction migration recomputes from total copies minus active rentals', async () => {
   const source = await readProjectFile('supabase/migrations/20260611143000_recompute_book_available_copies.sql')
 
@@ -97,9 +108,9 @@ test('public book lookup, borrower lookup, and loan creation do not require admi
 
   assert.match(loanGet, /requireAdminSession/)
   assert.doesNotMatch(loanPost, /requireAdminSession|adminAuthErrorResponse/)
-  assert.match(loanPost, /createServiceRoleSupabaseClient/)
+  assert.match(loanPost, /createRouteSupabaseClient/)
   assert.doesNotMatch(studentRoute, /requireAdminSession|adminAuthErrorResponse/)
-  assert.match(studentRoute, /createServiceRoleSupabaseClient/)
+  assert.match(studentRoute, /createRouteSupabaseClient/)
   assert.doesNotMatch(bookLookupRoute, /requireAdminSession|adminAuthErrorResponse/)
   assert.match(bookLookupRoute, /createServerSupabaseClient/)
 })
@@ -107,9 +118,14 @@ test('public book lookup, borrower lookup, and loan creation do not require admi
 test('service role key is documented as server-only', async () => {
   const envExample = await readProjectFile('.env.example')
   const serviceClient = await readProjectFile('lib/supabase-service.ts')
+  const publicLoanRoute = await readProjectFile('app/api/loans/route.ts')
+  const studentRoute = await readProjectFile('app/api/students/route.ts')
 
   assert.match(envExample, /^SUPABASE_SERVICE_ROLE_KEY=/m)
   assert.doesNotMatch(envExample, /NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY/)
+  assert.match(envExample, /Public rent APIs use RPCs and do not require it/)
   assert.match(serviceClient, /import 'server-only'/)
   assert.doesNotMatch(serviceClient, /NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY/)
+  assert.doesNotMatch(publicLoanRoute, /supabase-service|SUPABASE_SERVICE_ROLE_KEY/)
+  assert.doesNotMatch(studentRoute, /supabase-service|SUPABASE_SERVICE_ROLE_KEY/)
 })
