@@ -45,7 +45,7 @@ export type CreateAdminBookInput = {
   title: string
 }
 
-export async function createAdminBook(
+export async function insertAdminBook(
   supabase: TypedSupabaseClient,
   input: CreateAdminBookInput
 ): Promise<AdminBookRow> {
