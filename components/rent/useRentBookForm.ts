@@ -141,7 +141,11 @@ export function useRentBookForm() {
     clearMessages()
 
     try {
-      const loanResult = await createRentLoan(targetBook.id, student.id)
+      const loanResult = await createRentLoan(
+        targetBook.id,
+        student.id,
+        targetBook.matched_school_book_code ?? targetBook.school_book_code
+      )
 
       setSuccessMessage(
         `${loanResult.studentName} ${loanResult.borrowerLabel}이 "${loanResult.bookTitle}" 도서를 대여했습니다. (반납 예정일: ${loanResult.dueOn})`

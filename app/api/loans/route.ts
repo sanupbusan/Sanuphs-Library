@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
+import { normalizeBarcodeInput } from '@/lib/barcode-input'
 import { getBorrowerLoanLimit } from '@/lib/loan-limits'
 import { createServiceRoleSupabaseClient, isSupabaseServiceRoleConfigured } from '@/lib/supabase-service'
 
@@ -7,6 +8,7 @@ export const dynamic = 'force-dynamic'
 
 type CreateLoanBody = {
   bookId?: unknown
+  schoolBookCode?: unknown
   studentId?: unknown
   notes?: unknown
 }
@@ -106,6 +108,7 @@ export async function POST(request: Request) {
   }
 
   const bookId = getText(body.bookId)
+  const schoolBookCode = normalizeBarcodeInput(getText(body.schoolBookCode))
   const studentId = getText(body.studentId)
 
   if (!bookId || !studentId) {
@@ -137,7 +140,7 @@ export async function POST(request: Request) {
 
     const { data: book, error: bookError } = await supabase
       .from('books')
-      .select('id, title, available_copies')
+      .select('id, title, available_copies, school_book_code, school_book_codes')
       .eq('id', bookId)
       .single()
 
@@ -162,6 +165,26 @@ export async function POST(request: Request) {
           },
         },
         { status: 409 }
+      )
+    }
+
+    const bookSchoolBookCodes = Array.from(
+      new Set([
+        book.school_book_code ?? '',
+        ...(book.school_book_codes ?? []),
+      ].filter(Boolean))
+    )
+    const loanSchoolBookCode = schoolBookCode || bookSchoolBookCodes[0] || ''
+
+    if (!loanSchoolBookCode || !bookSchoolBookCodes.includes(loanSchoolBookCode)) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'INVALID_BOOK_CODE',
+            message: '대여할 학교 도서 코드가 올바르지 않습니다.',
+          },
+        },
+        { status: 400 }
       )
     }
 
@@ -207,6 +230,29 @@ export async function POST(request: Request) {
       )
     }
 
+    const { data: activeCodeLoan, error: activeCodeLoanError } = await supabase
+      .from('loans')
+      .select('id')
+      .eq('school_book_code', loanSchoolBookCode)
+      .eq('status', 'rented')
+      .maybeSingle()
+
+    if (activeCodeLoanError) {
+      throw activeCodeLoanError
+    }
+
+    if (activeCodeLoan) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'ALREADY_RENTED',
+            message: '이미 대여 중인 도서입니다.',
+          },
+        },
+        { status: 409 }
+      )
+    }
+
     const { count: activeLoanCount, error: activeLoanCountError } = await supabase
       .from('loans')
       .select('id', { count: 'exact', head: true })
@@ -236,10 +282,11 @@ export async function POST(request: Request) {
       .from('loans')
       .insert({
         book_id: bookId,
+        school_book_code: loanSchoolBookCode,
         student_id: studentId,
         notes: getText(body.notes) || null,
       })
-      .select('id, book_id, student_id, borrowed_on, due_on, status')
+      .select('id, book_id, school_book_code, student_id, borrowed_on, due_on, status')
       .single()
 
     if (loanError) {
