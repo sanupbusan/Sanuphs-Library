@@ -58,6 +58,7 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [shouldFocusSchoolBookCode, setShouldFocusSchoolBookCode] = useState(false)
   const [shouldFocusNextIsbn, setShouldFocusNextIsbn] = useState(false)
+  const activeLookupIsbnRef = useRef('')
   const composingFieldRef = useRef<keyof AdminBookFormState | null>(null)
 
   function updateFormField(field: keyof AdminBookFormState, value: string) {
@@ -134,7 +135,12 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
       return
     }
 
+    if (activeLookupIsbnRef.current === isbn) {
+      return
+    }
+
     clearMessages()
+    activeLookupIsbnRef.current = isbn
     setIsLookingUpIsbn(true)
 
     try {
@@ -165,6 +171,10 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
 
       setErrorMessage(error instanceof Error ? error.message : 'ISBN 정보 조회에 실패했습니다.')
     } finally {
+      if (activeLookupIsbnRef.current === isbn) {
+        activeLookupIsbnRef.current = ''
+      }
+
       setIsLookingUpIsbn(false)
     }
   }

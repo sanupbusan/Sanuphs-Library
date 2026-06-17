@@ -67,6 +67,15 @@ test('public return function migration leaves availability updates to the trigge
   assert.doesNotMatch(source, /update public\.books/i)
 })
 
+test('latest public return functions use the singular school book code column', async () => {
+  const source = await readProjectFile('supabase/migrations/20260617090000_fix_return_school_book_code_column.sql')
+
+  assert.match(source, /create or replace function public\.get_returnable_loan_by_school_book_code/i)
+  assert.match(source, /create or replace function public\.return_loans_by_school_book_codes/i)
+  assert.match(source, /books\.school_book_code/i)
+  assert.doesNotMatch(source, /books\.school_book_codes/i)
+})
+
 test('loan due date repair migration removes stale loan triggers and qualifies due_on references', async () => {
   const source = await readProjectFile('supabase/migrations/20260612120000_repair_loan_due_on_ambiguity.sql')
 

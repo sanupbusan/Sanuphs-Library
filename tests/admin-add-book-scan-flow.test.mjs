@@ -21,6 +21,8 @@ test('admin add book form is driven by barcode inputs instead of action buttons'
 test('admin add book flow advances to school code scan and refocuses ISBN after submit', async () => {
   const source = await readProjectFile('components/admin/useAdminAddBookForm.ts')
 
+  assert.match(source, /activeLookupIsbnRef = useRef\(''\)/)
+  assert.match(source, /activeLookupIsbnRef\.current === isbn/)
   assert.match(source, /activeStep !== 'info' \|\| !isInfoComplete/)
   assert.match(source, /setActiveStep\('code'\)/)
   assert.match(source, /isLookupInfoComplete\(book\)/)
