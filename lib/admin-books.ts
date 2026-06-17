@@ -49,6 +49,46 @@ export function invalidateAdminBooksCache() {
   adminBookListCachePromise = null
 }
 
+export type CreateAdminBookInput = {
+  author: string
+  isbn: string
+  publisher: string
+  schoolBookCode: string
+  title: string
+}
+
+export async function createAdminBook(
+  supabase: TypedSupabaseClient,
+  input: CreateAdminBookInput
+): Promise<AdminBookRow> {
+  const { data, error } = await supabase
+    .from('books')
+    .insert({
+      author: input.author,
+      available_copies: 1,
+      category: '미분류',
+      isbn: input.isbn,
+      publisher: input.publisher,
+      school_book_code: input.schoolBookCode,
+      title: input.title,
+      total_copies: 1,
+    })
+    .select(ADMIN_BOOK_COLUMNS)
+    .single()
+
+  if (error) {
+    if (error.code === '23505') {
+      throw new ApiRouteError(409, 'DUPLICATE_BOOK_CODE', '이미 등록된 ISBN 또는 학교 도서 코드입니다.')
+    }
+
+    throw error
+  }
+
+  invalidateAdminBooksCache()
+
+  return data as AdminBookRow
+}
+
 export async function listAdminBooks(supabase: TypedSupabaseClient): Promise<AdminBookRow[]> {
   const now = Date.now()
 
