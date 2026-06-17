@@ -215,6 +215,8 @@ export async function createAdminBook(
         throw error
       }
 
+      invalidateAdminBooksCache()
+
       return data as AdminBookRow
     }
   }
@@ -242,6 +244,8 @@ export async function createAdminBook(
 
     throw error
   }
+
+  invalidateAdminBooksCache()
 
   return data as AdminBookRow
 }
@@ -297,6 +301,8 @@ export async function updateAdminBook(
   if (!data) {
     throw new ApiRouteError(404, 'BOOK_NOT_FOUND', '수정할 도서를 찾을 수 없습니다.')
   }
+
+  invalidateAdminBooksCache()
 
   return data as AdminBookRow
 }
