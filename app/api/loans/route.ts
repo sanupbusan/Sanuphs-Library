@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
-import { getBorrowerLoanLimit } from '@/lib/loan-limits'
-import { createServiceRoleSupabaseClient, isSupabaseServiceRoleConfigured } from '@/lib/supabase-service'
+import { createRouteSupabaseClient } from '@/lib/api-route'
+import type { BorrowerType, CreatedPublicLoan, LoanCreationResult } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,16 +31,73 @@ function isLoanLimitError(error: unknown) {
   )
 }
 
-function supabaseServiceRoleNotConfiguredResponse() {
+function getErrorMessage(error: unknown) {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return error.message
+  }
+
+  return ''
+}
+
+function jsonLoanError(status: number, code: string, message: string) {
   return NextResponse.json(
     {
       error: {
-        code: 'SUPABASE_SERVICE_ROLE_NOT_CONFIGURED',
-        message: 'Supabase service role 키가 설정되지 않았습니다.',
+        code,
+        message,
       },
     },
-    { status: 503 }
+    { status }
   )
+}
+
+function mapCreatedLoan(loan: CreatedPublicLoan): LoanCreationResult {
+  return {
+    activeLoanCount: loan.active_loan_count,
+    bookTitle: loan.book_title,
+    borrowerLabel: loan.borrower_label,
+    borrowerType: loan.borrower_type as BorrowerType,
+    dueOn: loan.due_on,
+    loanId: loan.loan_id,
+    loanLimit: loan.loan_limit,
+    remainingLoanCount: loan.remaining_loan_count,
+    studentName: loan.student_name,
+  }
+}
+
+function loanRpcErrorResponse(error: unknown) {
+  const message = getErrorMessage(error)
+  const [code, detail] = message.split('|')
+
+  switch (code) {
+    case 'BOOK_NOT_FOUND':
+      return jsonLoanError(404, 'BOOK_NOT_FOUND', '해당 도서를 찾을 수 없습니다.')
+    case 'STUDENT_NOT_FOUND':
+      return jsonLoanError(404, 'STUDENT_NOT_FOUND', '해당 학생을 찾을 수 없습니다.')
+    case 'NO_AVAILABLE_COPIES':
+      return jsonLoanError(409, 'NO_AVAILABLE_COPIES', '대여 가능한 도서가 없습니다.')
+    case 'ALREADY_RENTED':
+      return jsonLoanError(409, 'ALREADY_RENTED', '이미 대여 중인 도서입니다.')
+    case 'STUDENT_LOAN_BANNED':
+      return jsonLoanError(
+        409,
+        'STUDENT_LOAN_BANNED',
+        detail ? `대여 정지 기간입니다. ${detail}까지 대여할 수 없습니다.` : '대여 정지 기간입니다.'
+      )
+    case 'STUDENT_HAS_OVERDUE_LOAN':
+      return jsonLoanError(
+        409,
+        'STUDENT_HAS_OVERDUE_LOAN',
+        detail ? `연체 중인 도서가 있어 대여할 수 없습니다. 가장 오래된 반납 예정일: ${detail}` : '연체 중인 도서가 있어 대여할 수 없습니다.'
+      )
+    default:
+      return null
+  }
 }
 
 export async function GET(request: Request) {
@@ -85,10 +142,6 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!isSupabaseServiceRoleConfigured()) {
-    return supabaseServiceRoleNotConfiguredResponse()
-  }
-
   let body: CreateLoanBody
 
   try {
@@ -133,135 +186,30 @@ export async function POST(request: Request) {
   }
 
   try {
-    const supabase = createServiceRoleSupabaseClient()
+    const supabase = createRouteSupabaseClient()
+    const { data, error } = await supabase.rpc('create_public_loan', {
+      input_book_id: bookId,
+      input_student_id: studentId,
+      input_notes: getText(body.notes) || null,
+    })
 
-    const { data: book, error: bookError } = await supabase
-      .from('books')
-      .select('id, title, available_copies')
-      .eq('id', bookId)
-      .single()
+    if (error) {
+      const mappedResponse = loanRpcErrorResponse(error)
 
-    if (bookError || !book) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'BOOK_NOT_FOUND',
-            message: '해당 도서를 찾을 수 없습니다.',
-          },
-        },
-        { status: 404 }
-      )
+      if (mappedResponse) {
+        return mappedResponse
+      }
+
+      throw error
     }
 
-    if (book.available_copies <= 0) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'NO_AVAILABLE_COPIES',
-            message: '대여 가능한 도서가 없습니다.',
-          },
-        },
-        { status: 409 }
-      )
+    const loan = data?.[0]
+
+    if (!loan) {
+      throw new Error('Loan RPC returned no result.')
     }
 
-    const { data: student, error: studentError } = await supabase
-      .from('students')
-      .select('id, name, student_number, class_number')
-      .eq('id', studentId)
-      .single()
-
-    if (studentError || !student) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'STUDENT_NOT_FOUND',
-            message: '해당 학생을 찾을 수 없습니다.',
-          },
-        },
-        { status: 404 }
-      )
-    }
-
-    const { data: existingLoan, error: existingLoanError } = await supabase
-      .from('loans')
-      .select('id')
-      .eq('book_id', bookId)
-      .eq('student_id', studentId)
-      .eq('status', 'rented')
-      .maybeSingle()
-
-    if (existingLoanError) {
-      throw existingLoanError
-    }
-
-    if (existingLoan) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'ALREADY_RENTED',
-            message: '이미 대여 중인 도서입니다.',
-          },
-        },
-        { status: 409 }
-      )
-    }
-
-    const { count: activeLoanCount, error: activeLoanCountError } = await supabase
-      .from('loans')
-      .select('id', { count: 'exact', head: true })
-      .eq('student_id', studentId)
-      .eq('status', 'rented')
-
-    if (activeLoanCountError) {
-      throw activeLoanCountError
-    }
-
-    const currentActiveLoanCount = activeLoanCount ?? 0
-    const { borrowerLabel, borrowerType, loanLimit } = getBorrowerLoanLimit(student)
-
-    if (currentActiveLoanCount >= loanLimit) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'LOAN_LIMIT_EXCEEDED',
-            message: `${borrowerLabel}은 최대 ${loanLimit}권까지 대여할 수 있습니다. 현재 ${currentActiveLoanCount}권 대여 중입니다.`,
-          },
-        },
-        { status: 409 }
-      )
-    }
-
-    const { data: loan, error: loanError } = await supabase
-      .from('loans')
-      .insert({
-        book_id: bookId,
-        student_id: studentId,
-        notes: getText(body.notes) || null,
-      })
-      .select('id, book_id, student_id, borrowed_on, due_on, status')
-      .single()
-
-    if (loanError) {
-      throw loanError
-    }
-
-    return NextResponse.json(
-      {
-        data: {
-          bookTitle: book.title,
-          activeLoanCount: currentActiveLoanCount + 1,
-          borrowerLabel,
-          borrowerType,
-          dueOn: loan.due_on,
-          loanLimit,
-          loanId: loan.id,
-          remainingLoanCount: Math.max(loanLimit - currentActiveLoanCount - 1, 0),
-          studentName: student.name,
-        },
-      },
-      { status: 201 }
-    )
+    return NextResponse.json({ data: mapCreatedLoan(loan) }, { status: 201 })
   } catch (error) {
     if (isLoanLimitError(error)) {
       return NextResponse.json(
