@@ -1,5 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { ADMIN_ACCESS_TOKEN_COOKIE, AdminAuthError } from '@/lib/admin-auth-shared'
+import {
+  ADMIN_ACCESS_TOKEN_COOKIE,
+  ADMIN_SIGNED_SESSION_COOKIE,
+  AdminAuthError,
+  getAdminCookieOptions,
+} from '@/lib/admin-auth-shared'
+import { getAdminSessionFromSignedCookie } from '@/lib/admin-session-cookie'
 
 const ADMIN_LOGIN_PATH = '/admin/login'
 const missingSupabaseEnvMessage = 'Supabase 환경변수가 설정되지 않았습니다.'
@@ -51,12 +57,14 @@ function getLoginRedirect(request: NextRequest) {
 }
 
 function clearAdminCookie(response: NextResponse) {
+  const cookieOptions = getAdminCookieOptions()
   response.cookies.set(ADMIN_ACCESS_TOKEN_COOKIE, '', {
-    httpOnly: true,
+    ...cookieOptions,
     maxAge: 0,
-    path: '/',
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+  })
+  response.cookies.set(ADMIN_SIGNED_SESSION_COOKIE, '', {
+    ...cookieOptions,
+    maxAge: 0,
   })
 }
 
@@ -91,6 +99,14 @@ function shouldClearAdminCookie(error: unknown) {
 }
 
 async function validateAdminRequest(request: NextRequest) {
+  const signedSession = await getAdminSessionFromSignedCookie(request)
+  if (signedSession) {
+    const accessToken = request.cookies.get(ADMIN_ACCESS_TOKEN_COOKIE)?.value ?? ''
+    if (accessToken) {
+      return
+    }
+  }
+
   const accessToken = request.cookies.get(ADMIN_ACCESS_TOKEN_COOKIE)?.value ?? ''
 
   if (!accessToken) {

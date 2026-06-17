@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import type { Session } from '@supabase/supabase-js'
 import {
   createServerSupabaseClient,
   createSupabaseClientWithAccessToken,
@@ -7,7 +6,17 @@ import {
   type TypedSupabaseClient,
 } from '@/lib/supabase'
 import { ApiRouteError, jsonError } from '@/lib/api-route'
-import { ADMIN_ACCESS_TOKEN_COOKIE, AdminAuthError } from '@/lib/admin-auth-shared'
+import {
+  ADMIN_ACCESS_TOKEN_COOKIE,
+  AdminAuthError,
+  getAdminCookieOptions,
+  parseCookieHeader,
+} from '@/lib/admin-auth-shared'
+import {
+  clearAdminSessionSignedCookie,
+  getAdminSessionFromSignedCookie,
+  setAdminSessionSignedCookie,
+} from '@/lib/admin-session-cookie'
 import type { Database } from '@/types/supabase'
 
 export { ADMIN_ACCESS_TOKEN_COOKIE, AdminAuthError } from '@/lib/admin-auth-shared'
@@ -33,35 +42,9 @@ type AdminSessionCacheEntry = {
   session: AdminSession
 }
 
-const ADMIN_SESSION_CACHE_TTL_MS = 30_000
+const ADMIN_SESSION_CACHE_TTL_MS = 5 * 60 * 1000
 const ADMIN_SESSION_CACHE_MAX_ENTRIES = 20
 const adminSessionCache = new Map<string, AdminSessionCacheEntry>()
-
-const cookieOptions = {
-  httpOnly: true,
-  path: '/',
-  sameSite: 'lax' as const,
-  secure: process.env.NODE_ENV === 'production',
-}
-
-function parseCookieHeader(cookieHeader: string | null) {
-  const cookies = new Map<string, string>()
-
-  if (!cookieHeader) {
-    return cookies
-  }
-
-  for (const cookie of cookieHeader.split(';')) {
-    const [rawName, ...rawValue] = cookie.trim().split('=')
-    if (!rawName || rawValue.length === 0) {
-      continue
-    }
-
-    cookies.set(rawName, decodeURIComponent(rawValue.join('=')))
-  }
-
-  return cookies
-}
 
 function getAccessTokenFromRequest(request: Request) {
   return parseCookieHeader(request.headers.get('cookie')).get(ADMIN_ACCESS_TOKEN_COOKIE) ?? ''
@@ -109,18 +92,38 @@ export function clearAdminSessionCache(accessToken?: string) {
   adminSessionCache.clear()
 }
 
-export function setAdminSessionCookie(response: NextResponse, session: Session) {
-  response.cookies.set(ADMIN_ACCESS_TOKEN_COOKIE, session.access_token, {
+export async function setAdminSessionCookie(
+  response: NextResponse,
+  accessToken: string,
+  expiresIn: number,
+  expiresAt: number | undefined,
+  serializedSession: SerializedAdminSession
+) {
+  const cookieOptions = getAdminCookieOptions()
+  response.cookies.set(ADMIN_ACCESS_TOKEN_COOKIE, accessToken, {
     ...cookieOptions,
-    maxAge: session.expires_in,
+    maxAge: expiresIn,
   })
+
+  const fallbackExp = Math.floor(Date.now() / 1000) + expiresIn
+  await setAdminSessionSignedCookie(
+    response,
+    {
+      role: serializedSession.role,
+      user: serializedSession.user,
+      exp: expiresAt ?? fallbackExp,
+    },
+    { maxAge: expiresIn }
+  )
 }
 
 export function clearAdminSessionCookie(response: NextResponse) {
+  const cookieOptions = getAdminCookieOptions()
   response.cookies.set(ADMIN_ACCESS_TOKEN_COOKIE, '', {
     ...cookieOptions,
     maxAge: 0,
   })
+  clearAdminSessionSignedCookie(response)
 }
 
 export function adminAuthErrorResponse(error: unknown) {
@@ -200,6 +203,42 @@ export async function createAdminSessionFromAccessToken(accessToken: string): Pr
   return session
 }
 
+async function createAdminSessionFromSignedPayload(
+  accessToken: string,
+  request: Request
+): Promise<AdminSession | null> {
+  if (!accessToken) {
+    return null
+  }
+
+  const signedSession = await getAdminSessionFromSignedCookie(request)
+  if (!signedSession) {
+    return null
+  }
+
+  const cachedSession = getCachedAdminSession(accessToken)
+  if (cachedSession) {
+    return cachedSession
+  }
+
+  const authedClient = createSupabaseClientWithAccessToken(accessToken)
+  const session: AdminSession = {
+    role: signedSession.role as AdminRole,
+    supabase: authedClient,
+    user: signedSession.user,
+  }
+
+  cacheAdminSession(accessToken, session)
+  return session
+}
+
 export async function requireAdminSession(request: Request): Promise<AdminSession> {
-  return createAdminSessionFromAccessToken(getAccessTokenFromRequest(request))
+  const accessToken = getAccessTokenFromRequest(request)
+
+  const signedSession = await createAdminSessionFromSignedPayload(accessToken, request)
+  if (signedSession) {
+    return signedSession
+  }
+
+  return createAdminSessionFromAccessToken(accessToken)
 }
