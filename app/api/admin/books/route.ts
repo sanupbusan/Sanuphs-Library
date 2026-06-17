@@ -3,6 +3,7 @@ import { insertAdminBook } from '@/lib/admin-books'
 import {
   getText,
   jsonData,
+  jsonError,
   readJsonBody,
   runApiRoute,
 } from '@/lib/api-route'
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
       ].filter(Boolean)
 
       if (missingFields.length > 0) {
-        throwApiError(400, 'MISSING_REQUIRED_FIELDS', `${missingFields.join(', ')}을(를) 입력해주세요.`)
+        return jsonError('MISSING_REQUIRED_FIELDS', `${missingFields.join(', ')}을(를) 입력해주세요.`, 400)
       }
 
       const data = await insertAdminBook(session.supabase, input)
