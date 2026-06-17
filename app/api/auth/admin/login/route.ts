@@ -5,7 +5,6 @@ import {
   setAdminSessionCookie,
 } from '@/lib/admin-auth'
 import { createRouteSupabaseClient, jsonData, readJsonBody, runApiRoute } from '@/lib/api-route'
-import { createSupabaseClientWithAccessToken } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
@@ -63,8 +62,7 @@ export async function POST(request: Request) {
         throw new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
       }
 
-      const authedClient = createSupabaseClientWithAccessToken(data.session.access_token)
-      const { data: adminUser, error: adminUserError } = await authedClient
+      const { data: adminUser, error: adminUserError } = await authClient
         .from('admin_users')
         .select('login_id, role')
         .eq('user_id', data.user.id)
@@ -80,7 +78,7 @@ export async function POST(request: Request) {
 
       const adminSession = {
         role: adminUser.role,
-        supabase: authedClient,
+        supabase: authClient,
         user: {
           id: data.user.id,
           loginId: adminUser.login_id,
@@ -90,7 +88,13 @@ export async function POST(request: Request) {
       cacheAdminSession(data.session.access_token, adminSession)
 
       const response = jsonData(serializeAdminSession(adminSession))
-      setAdminSessionCookie(response, data.session)
+      await setAdminSessionCookie(
+        response,
+        data.session.access_token,
+        data.session.expires_in,
+        data.session.expires_at,
+        serializeAdminSession(adminSession)
+      )
 
       return response
     }
