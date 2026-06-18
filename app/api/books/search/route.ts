@@ -49,7 +49,6 @@ export async function GET(request: Request) {
         publisher: book.publisher,
         available_copies: book.available_copies,
         total_copies: book.total_copies,
-        location: book.location,
       }))
 
       return jsonDataWithMeta(books, {
