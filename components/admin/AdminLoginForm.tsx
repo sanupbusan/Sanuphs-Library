@@ -1,7 +1,7 @@
 'use client'
 
 import { FormEvent, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { Loader2, LogIn } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -12,8 +12,19 @@ type LoginResponse = {
   }
 }
 
+function getSafeAdminRedirect(nextPath: string | null) {
+  if (!nextPath) {
+    return '/admin'
+  }
+
+  if (nextPath === '/admin' || nextPath.startsWith('/admin/') || nextPath.startsWith('/admin?')) {
+    return nextPath
+  }
+
+  return '/admin'
+}
+
 export default function AdminLoginForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const [loginId, setLoginId] = useState('')
   const [password, setPassword] = useState('')
@@ -24,6 +35,7 @@ export default function AdminLoginForm() {
     event.preventDefault()
     setErrorMessage('')
     setIsLoading(true)
+    let shouldResetLoading = true
 
     try {
       const response = await fetch('/api/auth/admin/login', {
@@ -31,6 +43,7 @@ export default function AdminLoginForm() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'same-origin',
         method: 'POST',
       })
       const payload = (await response.json()) as LoginResponse
@@ -39,12 +52,14 @@ export default function AdminLoginForm() {
         throw new Error(payload.error?.message ?? '로그인에 실패했습니다.')
       }
 
-      const nextPath = searchParams.get('next')
-      router.replace(nextPath?.startsWith('/admin') ? nextPath : '/admin')
+      shouldResetLoading = false
+      window.location.replace(getSafeAdminRedirect(searchParams.get('next')))
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : '로그인에 실패했습니다.')
     } finally {
-      setIsLoading(false)
+      if (shouldResetLoading) {
+        setIsLoading(false)
+      }
     }
   }
 

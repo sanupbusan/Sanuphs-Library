@@ -4,7 +4,7 @@ import {
   serializeAdminSession,
   setAdminSessionCookie,
 } from '@/lib/admin-auth'
-import { createRouteSupabaseClient, jsonData, readJsonBody, runApiRoute } from '@/lib/api-route'
+import { createRouteSupabaseClient, jsonData, readJsonBody, runApiRoute, withNoStore } from '@/lib/api-route'
 
 export const dynamic = 'force-dynamic'
 
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
 
       cacheAdminSession(data.session.access_token, adminSession)
 
-      const response = jsonData(serializeAdminSession(adminSession))
+      const response = jsonData(serializeAdminSession(adminSession), withNoStore())
       await setAdminSessionCookie(
         response,
         data.session.access_token,
