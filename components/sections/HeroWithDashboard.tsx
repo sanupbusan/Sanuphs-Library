@@ -29,6 +29,14 @@ import {
 } from '@/lib/dashboard-data'
 import type { DashboardSummary } from '@/lib/library-queries'
 
+type OptionalAdminSessionResponse = {
+  data?: {
+    user: {
+      loginId: string
+    }
+  } | null
+}
+
 export default function HeroWithDashboard() {
   const router = useRouter()
   const { addToast } = useToast()
@@ -37,7 +45,30 @@ export default function HeroWithDashboard() {
   const [recentRentals, setRecentRentals] = useState<RecentRental[]>([])
   const [recentBooks, setRecentBooks] = useState<RecentBook[]>([])
   const [studentLoanStats, setStudentLoanStats] = useState<StudentLoanStatistic[]>([])
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false)
+  const [isCheckingAdminSession, setIsCheckingAdminSession] = useState(true)
   const [isDashboardRefreshing, setIsDashboardRefreshing] = useState(false)
+
+  function clearDashboardData() {
+    setSummary(null)
+    setOverdueLoans([])
+    setRecentRentals([])
+    setRecentBooks([])
+    setStudentLoanStats([])
+  }
+
+  async function checkAdminSession() {
+    try {
+      const response = await fetch('/api/auth/admin/session?optional=1', {
+        cache: 'no-store',
+      })
+      const payload = (await response.json()) as OptionalAdminSessionResponse
+
+      return response.ok && Boolean(payload.data?.user.loginId)
+    } catch {
+      return false
+    }
+  }
 
   async function loadDashboardData() {
     if (!isSupabaseConfigured()) {
@@ -83,6 +114,10 @@ export default function HeroWithDashboard() {
   }
 
   async function refreshDashboardData() {
+    if (!isAdminLoggedIn) {
+      return
+    }
+
     setIsDashboardRefreshing(true)
 
     try {
@@ -127,7 +162,9 @@ export default function HeroWithDashboard() {
           }),
           'success'
         )
-        await loadDashboardData()
+        if (isAdminLoggedIn) {
+          await loadDashboardData()
+        }
       }
     } catch (error) {
       addToast(error instanceof Error ? error.message : '반납 처리에 실패했습니다.', 'error')
@@ -143,7 +180,42 @@ export default function HeroWithDashboard() {
   }, [summary])
 
   useEffect(() => {
-    void loadDashboardData()
+    let didCancel = false
+
+    async function syncDashboardAccess() {
+      setIsCheckingAdminSession(true)
+
+      const isLoggedIn = await checkAdminSession()
+
+      if (didCancel) {
+        return
+      }
+
+      setIsAdminLoggedIn(isLoggedIn)
+
+      if (isLoggedIn) {
+        await loadDashboardData()
+      } else {
+        clearDashboardData()
+      }
+
+      if (!didCancel) {
+        setIsCheckingAdminSession(false)
+      }
+    }
+
+    void syncDashboardAccess()
+
+    function handleSessionChange() {
+      void syncDashboardAccess()
+    }
+
+    window.addEventListener('admin-session-changed', handleSessionChange)
+
+    return () => {
+      didCancel = true
+      window.removeEventListener('admin-session-changed', handleSessionChange)
+    }
   }, [])
 
   useDashboardBarcodeListener({
@@ -192,6 +264,8 @@ export default function HeroWithDashboard() {
 
           <div className="hidden lg:block">
             <DashboardMockup
+              canViewStatistics={isAdminLoggedIn}
+              isCheckingSession={isCheckingAdminSession}
               summary={summary}
               overdueLoans={overdueLoans}
               stats={stats}
