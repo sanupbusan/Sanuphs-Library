@@ -32,7 +32,6 @@ function trimUpdateInput(input: AdminBookUpdateActionInput): AdminBookUpdateInpu
   return {
     author: getText(input.author),
     isbn: normalizeIsbnInput(getText(input.isbn)),
-    location: getText(input.location),
     publisher: getText(input.publisher),
     schoolBookCode: normalizeBarcodeInput(getText(input.schoolBookCode)),
     title: getText(input.title),

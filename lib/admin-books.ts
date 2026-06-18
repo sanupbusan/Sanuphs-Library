@@ -2,7 +2,6 @@ import { ApiRouteError } from '@/lib/api-route'
 import {
   getMissingAdminBookRequiredFieldsMessage,
   getNullableAdminBookIsbn,
-  getNullableAdminBookLocation,
   type AdminBookCreateInput,
   type AdminBookUpdateInput,
 } from '@/lib/admin-book-input'
@@ -67,6 +66,10 @@ export const ADMIN_BOOK_IMPORT_HEADER_TO_FIELD: Record<string, keyof BookRow> = 
 }
 
 export const ADMIN_BOOK_IMPORT_BATCH_SIZE = 200
+
+function duplicateBookCodeError() {
+  return new ApiRouteError(409, 'DUPLICATE_BOOK_CODE', '이미 등록된 ISBN 또는 학교 내 도서 코드입니다.')
+}
 
 type AdminBookListCacheEntry = {
   books: AdminBookRow[]
@@ -443,7 +446,6 @@ export async function updateAdminBook(
     .update({
       author: input.author,
       isbn: getNullableAdminBookIsbn(input),
-      location: getNullableAdminBookLocation(input),
       publisher: input.publisher,
       school_book_code: input.schoolBookCode,
       school_book_codes: [input.schoolBookCode],
