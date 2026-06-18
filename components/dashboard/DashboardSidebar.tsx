@@ -17,6 +17,7 @@ type SidebarMenuItem = {
   href?: string
   icon: LucideIcon
   label: string
+  requiresLogin?: boolean
   section: DashboardSection | null
 }
 
@@ -24,8 +25,8 @@ const sidebarMenuItems: SidebarMenuItem[] = [
   { icon: LayoutDashboard, label: '대시보드', section: 'dashboard' },
   { icon: Library, label: '도서 관리', href: '/admin/books', section: null },
   { icon: ClipboardList, label: '대여 관리', href: '/admin/loans', section: null },
-  { icon: AlertCircle, label: '연체 관리', section: 'overdue' },
-  { icon: BarChart3, label: '통계', section: 'statistics' },
+  { icon: AlertCircle, label: '연체 관리', requiresLogin: true, section: 'overdue' },
+  { icon: BarChart3, label: '통계', requiresLogin: true, section: 'statistics' },
 ]
 
 type DashboardSidebarProps = {
@@ -45,7 +46,7 @@ export function DashboardSidebar({ activeSection, canViewStatistics, onSectionCh
 
       <nav className="flex flex-1 flex-col gap-1 px-2">
         {sidebarMenuItems
-          .filter((item) => item.section !== 'statistics' || canViewStatistics)
+          .filter((item) => !item.requiresLogin || canViewStatistics)
           .map((item) => {
             const isActive = item.section === activeSection
 

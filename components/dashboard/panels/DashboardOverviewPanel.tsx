@@ -35,10 +35,10 @@ export function DashboardOverviewPanel({
               <LockKeyhole className="h-5 w-5" />
             </div>
             <p className="text-sm font-semibold text-gray-900">
-              {isCheckingSession ? '로그인 상태를 확인하고 있습니다' : '로그인 후 통계를 볼 수 있습니다'}
+              {isCheckingSession ? '로그인 상태를 확인하고 있습니다' : '지금 바로 바코드를 찍어 대출, 반납을 하세요'}
             </p>
             <p className="mt-2 text-xs leading-5 text-gray-500">
-              도서 수, 대여 현황, 학생별 통계는 관리자 로그인 후 표시됩니다.
+              통계와 연체 관리는 관리자 로그인 후 표시됩니다.
             </p>
             {isCheckingSession ? null : (
               <Link

@@ -42,7 +42,7 @@ export function DashboardMockup({
   const [activeSection, setActiveSection] = useState<DashboardSection>('dashboard')
 
   useEffect(() => {
-    if (!canViewStatistics && activeSection === 'statistics') {
+    if (!canViewStatistics && (activeSection === 'statistics' || activeSection === 'overdue')) {
       setActiveSection('dashboard')
     }
   }, [activeSection, canViewStatistics])
@@ -59,7 +59,7 @@ export function DashboardMockup({
         <div className="flex-1 overflow-hidden p-4">
           {activeSection === 'books' ? (
             <BookManagementPanel books={recentBooks} isRefreshing={isRefreshing} onRefresh={onRefresh} />
-          ) : activeSection === 'overdue' ? (
+          ) : activeSection === 'overdue' && canViewStatistics ? (
             <OverduePanel overdueLoans={overdueLoans} isRefreshing={isRefreshing} onRefresh={onRefresh} />
           ) : activeSection === 'statistics' && canViewStatistics ? (
             <StatisticsPanel
