@@ -1,4 +1,12 @@
 import { ApiRouteError } from '@/lib/api-route'
+import {
+  getMissingAdminBookRequiredFieldsMessage,
+  getNullableAdminBookIsbn,
+  getNullableAdminBookLocation,
+  type AdminBookCreateInput,
+  type AdminBookUpdateInput,
+} from '@/lib/admin-book-input'
+import { addSchoolBookCode } from '@/lib/school-book-codes'
 import type { TypedSupabaseClient } from '@/lib/supabase'
 import type { AdminBookRow, BookRow } from '@/types/library'
 import type { Database } from '@/types/supabase'
@@ -306,4 +314,158 @@ export async function deleteAdminBook(supabase: TypedSupabaseClient, bookId: str
   invalidateAdminBooksCache()
 
   return data
+}
+
+export async function createAdminBook(
+  supabase: TypedSupabaseClient,
+  input: AdminBookCreateInput
+): Promise<AdminBookRow> {
+  const missingFieldsMessage = getMissingAdminBookRequiredFieldsMessage(input)
+
+  if (missingFieldsMessage) {
+    throw new ApiRouteError(400, 'MISSING_REQUIRED_FIELDS', missingFieldsMessage)
+  }
+
+  const { data: bookWithSchoolBookCodeList, error: schoolBookCodesError } = await supabase
+    .from('books')
+    .select(ADMIN_BOOK_COLUMNS)
+    .contains('school_book_codes', [input.schoolBookCode])
+    .maybeSingle()
+
+  if (schoolBookCodesError) {
+    throw schoolBookCodesError
+  }
+
+  if (bookWithSchoolBookCodeList) {
+    throw duplicateBookCodeError()
+  }
+
+  const { data: bookWithPrimarySchoolBookCode, error: primarySchoolBookCodeError } = await supabase
+    .from('books')
+    .select(ADMIN_BOOK_COLUMNS)
+    .eq('school_book_code', input.schoolBookCode)
+    .maybeSingle()
+
+  if (primarySchoolBookCodeError) {
+    throw primarySchoolBookCodeError
+  }
+
+  if (bookWithPrimarySchoolBookCode) {
+    throw duplicateBookCodeError()
+  }
+
+  const isbn = getNullableAdminBookIsbn(input)
+
+  if (isbn) {
+    const { data: existingBook, error: existingBookError } = await supabase
+      .from('books')
+      .select(ADMIN_BOOK_COLUMNS)
+      .eq('isbn', isbn)
+      .maybeSingle()
+
+    if (existingBookError) {
+      throw existingBookError
+    }
+
+    if (existingBook) {
+      const { data, error } = await supabase
+        .from('books')
+        .update({
+          available_copies: existingBook.available_copies + 1,
+          school_book_code: existingBook.school_book_code || input.schoolBookCode,
+          school_book_codes: addSchoolBookCode(existingBook, input.schoolBookCode),
+          total_copies: existingBook.total_copies + 1,
+        })
+        .eq('id', existingBook.id)
+        .select(ADMIN_BOOK_COLUMNS)
+        .single()
+
+      if (error) {
+        if (error.code === '23505') {
+          throw duplicateBookCodeError()
+        }
+
+        throw error
+      }
+
+      invalidateAdminBooksCache()
+
+      return data as AdminBookRow
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('books')
+    .insert({
+      author: input.author,
+      available_copies: 1,
+      category: '미분류',
+      isbn,
+      publisher: input.publisher,
+      school_book_code: input.schoolBookCode,
+      school_book_codes: [input.schoolBookCode],
+      title: input.title,
+      total_copies: 1,
+    })
+    .select(ADMIN_BOOK_COLUMNS)
+    .single()
+
+  if (error) {
+    if (error.code === '23505') {
+      throw duplicateBookCodeError()
+    }
+
+    throw error
+  }
+
+  invalidateAdminBooksCache()
+
+  return data as AdminBookRow
+}
+
+export async function updateAdminBook(
+  supabase: TypedSupabaseClient,
+  bookId: string,
+  input: AdminBookUpdateInput
+): Promise<AdminBookRow> {
+  if (!bookId) {
+    throw new ApiRouteError(400, 'MISSING_BOOK_ID', '수정할 도서를 선택해주세요.')
+  }
+
+  const missingFieldsMessage = getMissingAdminBookRequiredFieldsMessage(input)
+
+  if (missingFieldsMessage) {
+    throw new ApiRouteError(400, 'MISSING_REQUIRED_FIELDS', missingFieldsMessage)
+  }
+
+  const { data, error } = await supabase
+    .from('books')
+    .update({
+      author: input.author,
+      isbn: getNullableAdminBookIsbn(input),
+      location: getNullableAdminBookLocation(input),
+      publisher: input.publisher,
+      school_book_code: input.schoolBookCode,
+      school_book_codes: [input.schoolBookCode],
+      title: input.title,
+    })
+    .eq('id', bookId)
+    .select(ADMIN_BOOK_COLUMNS)
+    .maybeSingle()
+
+  if (error) {
+    if (error.code === '23505') {
+      throw duplicateBookCodeError()
+    }
+
+    throw error
+  }
+
+  if (!data) {
+    throw new ApiRouteError(404, 'BOOK_NOT_FOUND', '수정할 도서를 찾을 수 없습니다.')
+  }
+
+  invalidateAdminBooksCache()
+
+  return data as AdminBookRow
 }

@@ -4,11 +4,35 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import Link from 'next/link'
 import { BookOpen, Download, Plus, Trash2, Upload } from 'lucide-react'
 import AdminRemoveBookPanel from '@/components/admin/AdminRemoveBookPanel'
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { BookOpen, Check, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { deleteBookAction, updateBookAction } from '@/app/admin/books/actions'
+import { removeAdminBookById, replaceUpdatedAdminBook } from '@/components/admin/adminBookListState'
+import { useToast } from '@/components/ui/ToastProvider'
 import { displayValue } from '@/lib/display'
+import { displaySchoolBookCodes } from '@/lib/school-book-codes'
+import type { AdminBookUpdateInput } from '@/lib/admin-book-input'
 import type { AdminBookRow } from '@/types/library'
 
 type AdminBooksManagerProps = {
   initialBooks: AdminBookRow[]
+}
+
+type AdminBookEditField = keyof AdminBookUpdateInput
+
+const editInputClassName =
+  'h-9 w-full min-w-[120px] rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 disabled:cursor-wait disabled:bg-gray-50 disabled:text-gray-400'
+
+function getBookEditInput(book: AdminBookRow): AdminBookUpdateInput {
+  return {
+    author: book.author ?? '',
+    isbn: book.isbn ?? '',
+    location: book.location ?? '',
+    publisher: book.publisher ?? '',
+    schoolBookCode: book.school_book_code ?? '',
+    title: book.title ?? '',
+  }
 }
 
 export default function AdminBooksManager({ initialBooks }: AdminBooksManagerProps) {
@@ -18,23 +42,124 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
   const [isImporting, setIsImporting] = useState(false)
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
+    setBooks(initialBooks)
+  }, [initialBooks])
 
-    if (params.get('mode') !== 'remove' && window.location.hash !== '#remove-books') {
+  function startEditingBook(book: AdminBookRow) {
+    if (savingBookId) {
       return
     }
 
-    window.requestAnimationFrame(() => {
-      removePanelRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      })
-    })
-  }, [])
+    setEditingBookId(book.id)
+    setEditInput(getBookEditInput(book))
+    setEditError('')
+  }
 
-  useEffect(() => {
-    setBooks(initialBooks)
-  }, [initialBooks])
+  function cancelEditingBook() {
+    if (savingBookId) {
+      return
+    }
+
+    setEditingBookId(null)
+    setEditInput(null)
+    setEditError('')
+  }
+
+  function updateEditField(field: AdminBookEditField, value: string) {
+    setEditError('')
+    setEditInput((current) => current ? { ...current, [field]: value } : current)
+  }
+
+  async function saveBookEdit(book: AdminBookRow) {
+    if (!editInput || savingBookId) {
+      return
+    }
+
+    setSavingBookId(book.id)
+    setEditError('')
+
+    try {
+      const result = await updateBookAction(book.id, editInput)
+
+      if (result.error || !result.data) {
+        throw new Error(result.error?.message ?? '도서 정보 수정에 실패했습니다.')
+      }
+
+      const updatedBook = result.data
+
+      setBooks((current) => replaceUpdatedAdminBook(current, updatedBook))
+      setEditingBookId(null)
+      setEditInput(null)
+      addToast(`"${updatedBook.title}" 도서 정보를 수정했습니다.`, 'success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '도서 정보 수정에 실패했습니다.'
+      setEditError(message)
+      addToast(message, 'error')
+    } finally {
+      setSavingBookId(null)
+    }
+  }
+
+  async function deleteBook(book: AdminBookRow) {
+    if (deletingBookId || savingBookId) {
+      return
+    }
+
+    const confirmed = window.confirm(`"${book.title}" 도서를 제거할까요? 이 작업은 되돌릴 수 없습니다.`)
+
+    if (!confirmed) {
+      return
+    }
+
+    setDeletingBookId(book.id)
+    setEditError('')
+
+    try {
+      const result = await deleteBookAction(book.id)
+
+      if (result.error) {
+        throw new Error(result.error.message)
+      }
+
+      setBooks((current) => removeAdminBookById(current, book.id))
+      addToast(`"${result.data?.title ?? book.title}" 도서를 제거했습니다.`, 'success')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '도서 제거에 실패했습니다.'
+      setEditError(message)
+      addToast(message, 'error')
+    } finally {
+      setDeletingBookId(null)
+    }
+  }
+
+  function renderEditInput(book: AdminBookRow, field: AdminBookEditField, label: string) {
+    if (editingBookId !== book.id || !editInput) {
+      return null
+    }
+
+    const isSaving = savingBookId === book.id
+
+    return (
+      <input
+        aria-label={`${label} 수정`}
+        className={editInputClassName}
+        disabled={isSaving}
+        onChange={(event) => updateEditField(field, event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            void saveBookEdit(book)
+          }
+
+          if (event.key === 'Escape') {
+            cancelEditingBook()
+          }
+        }}
+        type="text"
+        value={editInput[field]}
+      />
+    )
+  }
 
   function handleDownloadExcel() {
     window.location.href = '/api/admin/books/export'
@@ -169,6 +294,12 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
           </div>
         </div>
 
+        {editError ? (
+          <div className="mb-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {editError}
+          </div>
+        ) : null}
+
         <div className="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-100 text-sm">
@@ -210,14 +341,6 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
           </div>
         </div>
 
-        <div id="remove-books" ref={removePanelRef} className="mt-8 scroll-mt-24">
-          <AdminRemoveBookPanel
-            books={books}
-            onBookDeleted={(bookId) => {
-              setBooks((current) => current.filter((book) => book.id !== bookId))
-            }}
-          />
-        </div>
       </div>
     </section>
   )

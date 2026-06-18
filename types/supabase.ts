@@ -81,6 +81,7 @@ export type Database = {
           isbn: string | null
           publisher: string | null
           school_book_code: string | null
+          school_book_codes: string[]
           title: string
           total_copies: number
           updated_at: string
@@ -94,6 +95,7 @@ export type Database = {
           isbn?: string | null
           publisher?: string | null
           school_book_code?: string | null
+          school_book_codes?: string[]
           title: string
           total_copies?: number
           updated_at?: string
@@ -107,6 +109,7 @@ export type Database = {
           isbn?: string | null
           publisher?: string | null
           school_book_code?: string | null
+          school_book_codes?: string[]
           title?: string
           total_copies?: number
           updated_at?: string
@@ -122,6 +125,7 @@ export type Database = {
           id: string
           notes: string | null
           returned_on: string | null
+          school_book_code: string | null
           status: Database['public']['Enums']['loan_status']
           student_id: string
           updated_at: string
@@ -134,6 +138,7 @@ export type Database = {
           id?: string
           notes?: string | null
           returned_on?: string | null
+          school_book_code?: string | null
           status?: Database['public']['Enums']['loan_status']
           student_id: string
           updated_at?: string
@@ -146,6 +151,7 @@ export type Database = {
           id?: string
           notes?: string | null
           returned_on?: string | null
+          school_book_code?: string | null
           status?: Database['public']['Enums']['loan_status']
           student_id?: string
           updated_at?: string
