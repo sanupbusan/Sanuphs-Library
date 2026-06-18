@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Library, Plus, Trash2 } from 'lucide-react'
+import { Library, Plus } from 'lucide-react'
 import { DashboardRefreshButton, type DashboardRefreshProps } from '@/components/dashboard/DashboardRefreshButton'
 import type { RecentBook } from '@/lib/dashboard-data'
 
@@ -20,14 +20,6 @@ export function BookManagementPanel({ books, isRefreshing, onRefresh }: BookMana
 
         <div className="flex flex-shrink-0 items-center gap-2">
           <DashboardRefreshButton isRefreshing={isRefreshing} onRefresh={onRefresh} />
-
-          <Link
-            href="/admin/books?mode=remove#remove-books"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 transition-colors hover:border-red-200 hover:bg-red-100"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            기존 책 제거
-          </Link>
 
           <Link
             href="/admin/add_books"

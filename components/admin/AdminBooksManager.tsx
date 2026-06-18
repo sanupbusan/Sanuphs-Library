@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import Link from 'next/link'
 import { BookOpen, Check, Download, Loader2, Pencil, Plus, Trash2, Upload, X } from 'lucide-react'
 import { deleteBookAction, updateBookAction } from '@/app/admin/books/actions'
-import AdminRemoveBookPanel from '@/components/admin/AdminRemoveBookPanel'
 import { removeAdminBookById, replaceUpdatedAdminBook } from '@/components/admin/adminBookListState'
 import { useToast } from '@/components/ui/ToastProvider'
 import { displayValue } from '@/lib/display'
@@ -33,7 +32,6 @@ function getBookEditInput(book: AdminBookRow): AdminBookUpdateInput {
 
 export default function AdminBooksManager({ initialBooks }: AdminBooksManagerProps) {
   const { addToast } = useToast()
-  const removePanelRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [books, setBooks] = useState<AdminBookRow[]>(initialBooks)
   const [isImporting, setIsImporting] = useState(false)
@@ -42,21 +40,6 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
   const [editError, setEditError] = useState('')
   const [deletingBookId, setDeletingBookId] = useState<string | null>(null)
   const [savingBookId, setSavingBookId] = useState<string | null>(null)
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-
-    if (params.get('mode') !== 'remove' && window.location.hash !== '#remove-books') {
-      return
-    }
-
-    window.requestAnimationFrame(() => {
-      removePanelRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      })
-    })
-  }, [])
 
   useEffect(() => {
     setBooks(initialBooks)
@@ -274,14 +257,6 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
               onChange={handleImportFileChange}
             />
 
-            <Link
-              href="#remove-books"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-100 bg-red-50 px-4 text-sm font-semibold text-red-700 shadow-sm transition-colors hover:border-red-200 hover:bg-red-100"
-            >
-              <Trash2 className="h-4 w-4" />
-              기존 책 제거
-            </Link>
-
             <button
               type="button"
               onClick={handleDownloadExcel}
@@ -427,15 +402,6 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
               </tbody>
             </table>
           </div>
-        </div>
-
-        <div id="remove-books" ref={removePanelRef} className="mt-8 scroll-mt-24">
-          <AdminRemoveBookPanel
-            books={books}
-            onBookDeleted={(bookId) => {
-              setBooks((current) => removeAdminBookById(current, bookId))
-            }}
-          />
         </div>
       </div>
     </section>
