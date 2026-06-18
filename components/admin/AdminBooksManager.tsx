@@ -2,12 +2,9 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import Link from 'next/link'
-import { BookOpen, Download, Plus, Trash2, Upload } from 'lucide-react'
-import AdminRemoveBookPanel from '@/components/admin/AdminRemoveBookPanel'
-import { useEffect, useState } from 'react'
-import Link from 'next/link'
-import { BookOpen, Check, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { BookOpen, Check, Download, Loader2, Pencil, Plus, Trash2, Upload, X } from 'lucide-react'
 import { deleteBookAction, updateBookAction } from '@/app/admin/books/actions'
+import AdminRemoveBookPanel from '@/components/admin/AdminRemoveBookPanel'
 import { removeAdminBookById, replaceUpdatedAdminBook } from '@/components/admin/adminBookListState'
 import { useToast } from '@/components/ui/ToastProvider'
 import { displayValue } from '@/lib/display'
@@ -28,7 +25,6 @@ function getBookEditInput(book: AdminBookRow): AdminBookUpdateInput {
   return {
     author: book.author ?? '',
     isbn: book.isbn ?? '',
-    location: book.location ?? '',
     publisher: book.publisher ?? '',
     schoolBookCode: book.school_book_code ?? '',
     title: book.title ?? '',
@@ -36,10 +32,31 @@ function getBookEditInput(book: AdminBookRow): AdminBookUpdateInput {
 }
 
 export default function AdminBooksManager({ initialBooks }: AdminBooksManagerProps) {
+  const { addToast } = useToast()
   const removePanelRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [books, setBooks] = useState<AdminBookRow[]>(initialBooks)
   const [isImporting, setIsImporting] = useState(false)
+  const [editingBookId, setEditingBookId] = useState<string | null>(null)
+  const [editInput, setEditInput] = useState<AdminBookUpdateInput | null>(null)
+  const [editError, setEditError] = useState('')
+  const [deletingBookId, setDeletingBookId] = useState<string | null>(null)
+  const [savingBookId, setSavingBookId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+
+    if (params.get('mode') !== 'remove' && window.location.hash !== '#remove-books') {
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      removePanelRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    })
+  }, [])
 
   useEffect(() => {
     setBooks(initialBooks)
@@ -67,7 +84,7 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
 
   function updateEditField(field: AdminBookEditField, value: string) {
     setEditError('')
-    setEditInput((current) => current ? { ...current, [field]: value } : current)
+    setEditInput((current) => (current ? { ...current, [field]: value } : current))
   }
 
   async function saveBookEdit(book: AdminBookRow) {
@@ -310,37 +327,116 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
                   <th className="px-4 py-3">출판사</th>
                   <th className="px-4 py-3">ISBN</th>
                   <th className="px-4 py-3">학교 도서 코드</th>
-                  <th className="px-4 py-3">소장</th>
+                  <th className="whitespace-nowrap px-4 py-3">소장</th>
+                  <th className="px-4 py-3 text-right">작업</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-gray-700">
                 {books.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-gray-500" colSpan={6}>
+                    <td className="px-4 py-8 text-center text-gray-500" colSpan={7}>
                       -
                     </td>
                   </tr>
                 ) : (
-                  books.map((book) => (
-                    <tr key={book.id}>
-                      <td className="max-w-[260px] px-4 py-3 font-medium text-gray-900">
-                        {displayValue(book.title)}
-                      </td>
-                      <td className="px-4 py-3">{displayValue(book.author)}</td>
-                      <td className="px-4 py-3">{displayValue(book.publisher)}</td>
-                      <td className="px-4 py-3">{displayValue(book.isbn)}</td>
-                      <td className="px-4 py-3">{displayValue(book.school_book_code)}</td>
-                      <td className="px-4 py-3">
-                        {book.available_copies} / {book.total_copies}
-                      </td>
-                    </tr>
-                  ))
+                  books.map((book) => {
+                    const isEditing = editingBookId === book.id
+                    const isDeleting = deletingBookId === book.id
+                    const isSaving = savingBookId === book.id
+                    const areActionsDisabled = Boolean(savingBookId || deletingBookId)
+
+                    return (
+                      <tr key={book.id} className={isEditing ? 'bg-primary-50/30' : undefined}>
+                        <td className="max-w-[260px] px-4 py-3 font-medium text-gray-900">
+                          {isEditing ? renderEditInput(book, 'title', '도서명') : displayValue(book.title)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {isEditing ? renderEditInput(book, 'author', '저자') : displayValue(book.author)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {isEditing ? renderEditInput(book, 'publisher', '출판사') : displayValue(book.publisher)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {isEditing ? renderEditInput(book, 'isbn', 'ISBN') : displayValue(book.isbn)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {isEditing
+                            ? renderEditInput(book, 'schoolBookCode', '학교 도서 코드')
+                            : displayValue(displaySchoolBookCodes(book))}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 tabular-nums">
+                          {book.available_copies} / {book.total_copies}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {isEditing ? (
+                            <div className="flex justify-end gap-2">
+                              <button
+                                className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-primary-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
+                                disabled={isSaving}
+                                onClick={() => {
+                                  void saveBookEdit(book)
+                                }}
+                                type="button"
+                              >
+                                {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                                저장
+                              </button>
+                              <button
+                                className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
+                                disabled={isSaving}
+                                onClick={cancelEditingBook}
+                                type="button"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                                취소
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex justify-end gap-2">
+                              <button
+                                className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
+                                disabled={areActionsDisabled}
+                                onClick={() => startEditingBook(book)}
+                                type="button"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                수정
+                              </button>
+                              <button
+                                className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-red-100 bg-red-50 px-3 text-xs font-semibold text-red-700 transition-colors hover:border-red-200 hover:bg-red-100 disabled:cursor-wait disabled:opacity-70"
+                                disabled={areActionsDisabled}
+                                onClick={() => {
+                                  void deleteBook(book)
+                                }}
+                                type="button"
+                              >
+                                {isDeleting ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                )}
+                                책 제거
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
             </table>
           </div>
         </div>
 
+        <div id="remove-books" ref={removePanelRef} className="mt-8 scroll-mt-24">
+          <AdminRemoveBookPanel
+            books={books}
+            onBookDeleted={(bookId) => {
+              setBooks((current) => removeAdminBookById(current, bookId))
+            }}
+          />
+        </div>
       </div>
     </section>
   )
