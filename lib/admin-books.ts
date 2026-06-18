@@ -14,7 +14,7 @@ export const ADMIN_BOOK_COLUMNS =
   'id, isbn, school_book_code, title, author, publisher, category, total_copies, available_copies, created_at'
 
 export const ADMIN_BOOK_EXPORT_COLUMNS =
-  'id, title, author, publisher, isbn, school_book_code, category, total_copies, available_copies, created_at, updated_at'
+  'id, title, author, publisher, isbn, school_book_code, category, total_copies, available_copies'
 
 export const ADMIN_BOOK_EXPORT_FIELD_ORDER = [
   'id',
@@ -26,8 +26,6 @@ export const ADMIN_BOOK_EXPORT_FIELD_ORDER = [
   'category',
   'total_copies',
   'available_copies',
-  'created_at',
-  'updated_at',
 ] as const satisfies readonly (keyof BookRow)[]
 
 export const ADMIN_BOOK_EXCEL_HEADERS: Record<(typeof ADMIN_BOOK_EXPORT_FIELD_ORDER)[number], string> = {
@@ -40,8 +38,6 @@ export const ADMIN_BOOK_EXCEL_HEADERS: Record<(typeof ADMIN_BOOK_EXPORT_FIELD_OR
   category: '분류',
   total_copies: '총 권수',
   available_copies: '대여 가능 권수',
-  created_at: '생성일시',
-  updated_at: '수정일시',
 }
 
 export const ADMIN_BOOK_IMPORT_HEADER_TO_FIELD: Record<string, keyof BookRow> = {
