@@ -122,16 +122,15 @@ export default function BookSearchSection() {
                     <th className="px-4 py-3">저자</th>
                     <th className="px-4 py-3">출판사</th>
                     <th className="px-4 py-3">대여 가능</th>
-                    <th className="px-4 py-3">위치</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-gray-700">
                   {books.length === 0 ? (
-                    <tr>
-                      <td className="px-4 py-8 text-center text-gray-500" colSpan={5}>
-                        -
-                      </td>
-                    </tr>
+                  <tr>
+                    <td className="px-4 py-8 text-center text-gray-500" colSpan={4}>
+                      -
+                    </td>
+                  </tr>
                   ) : (
                     books.map((book) => (
                       <tr key={book.id}>
@@ -143,7 +142,6 @@ export default function BookSearchSection() {
                         <td className="px-4 py-3">
                           {book.available_copies} / {book.total_copies}
                         </td>
-                        <td className="px-4 py-3">{displayValue(book.location)}</td>
                       </tr>
                     ))
                   )}

@@ -42,7 +42,6 @@ type AdminBookFields =
   | BookIdentityFields
   | 'category'
   | 'created_at'
-  | 'location'
 
 type IsbnLookupFields = 'author' | 'isbn' | 'publisher' | 'title'
 type RecentBookFields =

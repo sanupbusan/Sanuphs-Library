@@ -79,8 +79,6 @@ export type Database = {
           created_at: string
           id: string
           isbn: string | null
-          location: string | null
-          published_year: number | null
           publisher: string | null
           school_book_code: string | null
           title: string
@@ -94,8 +92,6 @@ export type Database = {
           created_at?: string
           id?: string
           isbn?: string | null
-          location?: string | null
-          published_year?: number | null
           publisher?: string | null
           school_book_code?: string | null
           title: string
@@ -109,8 +105,6 @@ export type Database = {
           created_at?: string
           id?: string
           isbn?: string | null
-          location?: string | null
-          published_year?: number | null
           publisher?: string | null
           school_book_code?: string | null
           title?: string
@@ -309,7 +303,6 @@ export type Database = {
           category: string
           id: string
           isbn: string | null
-          location: string | null
           publisher: string | null
           title: string
           total_copies: number

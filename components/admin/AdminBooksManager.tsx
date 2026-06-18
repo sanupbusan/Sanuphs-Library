@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import Link from 'next/link'
-import { BookOpen, Plus, Trash2 } from 'lucide-react'
+import { BookOpen, Download, Plus, Trash2, Upload } from 'lucide-react'
 import AdminRemoveBookPanel from '@/components/admin/AdminRemoveBookPanel'
 import { displayValue } from '@/lib/display'
 import type { AdminBookRow } from '@/types/library'
@@ -13,7 +13,9 @@ type AdminBooksManagerProps = {
 
 export default function AdminBooksManager({ initialBooks }: AdminBooksManagerProps) {
   const removePanelRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [books, setBooks] = useState<AdminBookRow[]>(initialBooks)
+  const [isImporting, setIsImporting] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -34,6 +36,79 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
     setBooks(initialBooks)
   }, [initialBooks])
 
+  function handleDownloadExcel() {
+    window.location.href = '/api/admin/books/export'
+  }
+
+  function handleOpenImportPicker() {
+    if (isImporting) {
+      return
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+      fileInputRef.current.click()
+    }
+  }
+
+  async function handleImportFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+
+    if (!file) {
+      return
+    }
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    setIsImporting(true)
+
+    try {
+      const response = await fetch('/api/admin/books/import', {
+        body: formData,
+        method: 'POST',
+      })
+
+      const result = (await response.json()) as {
+        data?: {
+          errors: Array<{ message: string; row: number }>
+          failed: number
+          inserted: number
+        }
+        error?: {
+          message?: string
+        }
+      }
+
+      if (!response.ok || !result.data) {
+        throw new Error(result.error?.message || '엑셀 업로드에 실패했습니다.')
+      }
+
+      const { errors, failed, inserted } = result.data
+      const detailMessage = errors
+        .slice(0, 5)
+        .map((error) => `${error.row}행: ${error.message}`)
+        .join('\n')
+      const message = [`추가된 도서: ${inserted}권`, `실패한 행: ${failed}건`, detailMessage]
+        .filter(Boolean)
+        .join('\n')
+
+      window.alert(message)
+
+      if (inserted > 0) {
+        window.setTimeout(() => {
+          window.location.reload()
+        }, 150)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '엑셀 업로드에 실패했습니다.'
+      window.alert(message)
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
   return (
     <section className="bg-gray-50 py-14 sm:py-16">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -49,6 +124,14 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx"
+              className="hidden"
+              onChange={handleImportFileChange}
+            />
+
             <Link
               href="#remove-books"
               className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-100 bg-red-50 px-4 text-sm font-semibold text-red-700 shadow-sm transition-colors hover:border-red-200 hover:bg-red-100"
@@ -56,6 +139,25 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
               <Trash2 className="h-4 w-4" />
               기존 책 제거
             </Link>
+
+            <button
+              type="button"
+              onClick={handleDownloadExcel}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-primary-100 bg-white px-4 text-sm font-semibold text-primary-700 shadow-sm transition-colors hover:border-primary-200 hover:bg-primary-50"
+            >
+              <Download className="h-4 w-4" />
+              엑셀 다운로드
+            </button>
+
+            <button
+              type="button"
+              onClick={handleOpenImportPicker}
+              disabled={isImporting}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-primary-100 bg-primary-50 px-4 text-sm font-semibold text-primary-700 shadow-sm transition-colors hover:border-primary-200 hover:bg-primary-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Upload className="h-4 w-4" />
+              {isImporting ? '업로드 중...' : '엑셀로 추가'}
+            </button>
 
             <Link
               href="/admin/add_books"
@@ -78,13 +180,12 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
                   <th className="px-4 py-3">ISBN</th>
                   <th className="px-4 py-3">학교 도서 코드</th>
                   <th className="px-4 py-3">소장</th>
-                  <th className="px-4 py-3">위치</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-gray-700">
                 {books.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-gray-500" colSpan={7}>
+                    <td className="px-4 py-8 text-center text-gray-500" colSpan={6}>
                       -
                     </td>
                   </tr>
@@ -101,7 +202,6 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
                       <td className="px-4 py-3">
                         {book.available_copies} / {book.total_copies}
                       </td>
-                      <td className="px-4 py-3">{displayValue(book.location)}</td>
                     </tr>
                   ))
                 )}
