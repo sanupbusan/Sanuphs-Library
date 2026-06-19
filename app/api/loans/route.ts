@@ -194,6 +194,7 @@ export async function POST(request: Request) {
       input_book_id: bookId,
       input_student_id: studentId,
       input_notes: getText(body.notes) || null,
+      input_school_book_code: schoolBookCode || null,
     })
 
     if (error) {
