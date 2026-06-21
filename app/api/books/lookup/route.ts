@@ -80,9 +80,7 @@ export async function GET(request: Request) {
       )
     }
 
-    const matchedSchoolBookCode = isIsbn
-      ? data.school_book_code ?? data.school_book_codes?.[0] ?? null
-      : normalizedCode
+    const matchedSchoolBookCode = isIsbn ? null : normalizedCode
 
     return NextResponse.json({
       data: {
