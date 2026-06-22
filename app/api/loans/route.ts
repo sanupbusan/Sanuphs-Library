@@ -33,17 +33,32 @@ function isLoanLimitError(error: unknown) {
   )
 }
 
-function getErrorMessage(error: unknown) {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'message' in error &&
-    typeof error.message === 'string'
-  ) {
-    return error.message
+function getStringProperty(error: unknown, property: 'code' | 'details' | 'hint' | 'message') {
+  if (typeof error !== 'object' || error === null || !(property in error)) {
+    return ''
   }
 
-  return ''
+  const value = (error as Record<typeof property, unknown>)[property]
+
+  return typeof value === 'string' ? value : ''
+}
+
+function getErrorMessage(error: unknown) {
+  return getStringProperty(error, 'message')
+}
+
+function isCreatePublicLoanSignatureCacheError(error: unknown) {
+  const errorText = [
+    getErrorMessage(error),
+    getStringProperty(error, 'details'),
+    getStringProperty(error, 'hint'),
+  ].join(' ')
+
+  return (
+    getStringProperty(error, 'code') === 'PGRST202' &&
+    errorText.includes('create_public_loan') &&
+    errorText.includes('input_school_book_code')
+  )
 }
 
 function jsonLoanError(status: number, code: string, message: string) {
@@ -190,12 +205,25 @@ export async function POST(request: Request) {
 
   try {
     const supabase = createRouteSupabaseClient()
-    const { data, error } = await supabase.rpc('create_public_loan', {
+    const loanArgs = {
       input_book_id: bookId,
       input_student_id: studentId,
       input_notes: getText(body.notes) || null,
       input_school_book_code: schoolBookCode || null,
-    })
+    }
+    let loanResult = await supabase.rpc('create_public_loan', loanArgs)
+
+    if (isCreatePublicLoanSignatureCacheError(loanResult.error)) {
+      console.warn('create_public_loan schema cache is missing input_school_book_code; retrying legacy RPC signature.')
+
+      loanResult = await supabase.rpc('create_public_loan', {
+        input_book_id: loanArgs.input_book_id,
+        input_student_id: loanArgs.input_student_id,
+        input_notes: loanArgs.input_notes,
+      })
+    }
+
+    const { data, error } = loanResult
 
     if (error) {
       const mappedResponse = loanRpcErrorResponse(error)
