@@ -11,7 +11,7 @@ import type { AdminBookRow, BookRow } from '@/types/library'
 import type { Database } from '@/types/supabase'
 
 export const ADMIN_BOOK_COLUMNS =
-  'id, isbn, school_book_code, title, author, publisher, category, total_copies, available_copies, created_at'
+  'id, isbn, school_book_code, school_book_codes, title, author, publisher, category, total_copies, available_copies, created_at'
 
 export const ADMIN_BOOK_EXPORT_COLUMNS =
   'id, title, author, publisher, isbn, school_book_code, category, total_copies, available_copies'
@@ -132,6 +132,7 @@ export type ImportAdminBookError = {
 export type ImportAdminBooksResult = {
   errors: ImportAdminBookError[]
   inserted: number
+  skipped: number
 }
 
 export async function insertAdminBook(
@@ -147,6 +148,7 @@ export async function insertAdminBook(
       isbn: input.isbn,
       publisher: input.publisher,
       school_book_code: input.schoolBookCode,
+      school_book_codes: [input.schoolBookCode],
       title: input.title,
       total_copies: 1,
     })
@@ -204,6 +206,122 @@ export async function listAdminBooksForExport(supabase: TypedSupabaseClient): Pr
   return (data ?? []) as BookRow[]
 }
 
+async function findAdminBookBySchoolBookCode(supabase: TypedSupabaseClient, schoolBookCode: string) {
+  const { data: bookWithSchoolBookCodeList, error: schoolBookCodesError } = await supabase
+    .from('books')
+    .select(ADMIN_BOOK_COLUMNS)
+    .contains('school_book_codes', [schoolBookCode])
+    .maybeSingle()
+
+  if (schoolBookCodesError) {
+    throw schoolBookCodesError
+  }
+
+  if (bookWithSchoolBookCodeList) {
+    return bookWithSchoolBookCodeList as AdminBookRow
+  }
+
+  const { data: bookWithPrimarySchoolBookCode, error: primarySchoolBookCodeError } = await supabase
+    .from('books')
+    .select(ADMIN_BOOK_COLUMNS)
+    .eq('school_book_code', schoolBookCode)
+    .maybeSingle()
+
+  if (primarySchoolBookCodeError) {
+    throw primarySchoolBookCodeError
+  }
+
+  return (bookWithPrimarySchoolBookCode as AdminBookRow | null) ?? null
+}
+
+async function findAdminBookByIsbn(supabase: TypedSupabaseClient, isbn: string) {
+  const { data, error } = await supabase
+    .from('books')
+    .select(ADMIN_BOOK_COLUMNS)
+    .eq('isbn', isbn)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  return (data as AdminBookRow | null) ?? null
+}
+
+async function addImportedCopiesToExistingBook(
+  supabase: TypedSupabaseClient,
+  existingBook: AdminBookRow,
+  book: ImportAdminBookInput
+) {
+  const schoolBookCode = book.school_book_code?.trim() || null
+  const totalCopies = book.total_copies ?? 1
+  const availableCopies = book.available_copies ?? totalCopies
+
+  const { error } = await supabase
+    .from('books')
+    .update({
+      available_copies: existingBook.available_copies + availableCopies,
+      school_book_code: existingBook.school_book_code || schoolBookCode,
+      school_book_codes: schoolBookCode
+        ? addSchoolBookCode(existingBook, schoolBookCode)
+        : existingBook.school_book_codes,
+      total_copies: existingBook.total_copies + totalCopies,
+    })
+    .eq('id', existingBook.id)
+
+  if (error) {
+    if (error.code === '23505') {
+      throw duplicateBookCodeError()
+    }
+
+    throw error
+  }
+}
+
+async function insertImportedBook(supabase: TypedSupabaseClient, book: ImportAdminBookInput) {
+  const schoolBookCode = book.school_book_code?.trim() || null
+  const { error } = await supabase
+    .from('books')
+    .insert({
+      ...book,
+      school_book_codes: schoolBookCode ? [schoolBookCode] : [],
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    if (error.code === '23505') {
+      throw duplicateBookCodeError()
+    }
+
+    throw error
+  }
+}
+
+async function importAdminBookRow(supabase: TypedSupabaseClient, row: ImportAdminBookRow) {
+  const schoolBookCode = row.book.school_book_code?.trim() || null
+
+  if (schoolBookCode) {
+    const existingBookWithSchoolBookCode = await findAdminBookBySchoolBookCode(supabase, schoolBookCode)
+
+    if (existingBookWithSchoolBookCode) {
+      return 'skipped' as const
+    }
+  }
+
+  if (row.book.isbn) {
+    const existingBookWithIsbn = await findAdminBookByIsbn(supabase, row.book.isbn)
+
+    if (existingBookWithIsbn) {
+      await addImportedCopiesToExistingBook(supabase, existingBookWithIsbn, row.book)
+      return 'inserted' as const
+    }
+  }
+
+  await insertImportedBook(supabase, row.book)
+  return 'inserted' as const
+}
+
 async function insertAdminBookImportBatch(
   supabase: TypedSupabaseClient,
   rows: ImportAdminBookRow[]
@@ -212,53 +330,35 @@ async function insertAdminBookImportBatch(
     return {
       errors: [],
       inserted: 0,
+      skipped: 0,
     }
-  }
-
-  const { data, error } = await supabase
-    .from('books')
-    .insert(rows.map(({ book }) => book))
-    .select('id')
-
-  if (!error) {
-    return {
-      errors: [],
-      inserted: data?.length ?? rows.length,
-    }
-  }
-
-  if (error.code !== '23505') {
-    throw error
   }
 
   let inserted = 0
+  let skipped = 0
   const errors: ImportAdminBookError[] = []
 
   for (const row of rows) {
-    const { error: rowError } = await supabase.from('books').insert(row.book).select('id').single()
+    try {
+      const result = await importAdminBookRow(supabase, row)
 
-    if (!rowError) {
-      inserted += 1
-      continue
-    }
-
-    if (rowError.code === '23505') {
+      if (result === 'skipped') {
+        skipped += 1
+      } else {
+        inserted += 1
+      }
+    } catch (error) {
       errors.push({
-        message: '이미 등록된 학교 도서 코드입니다.',
+        message: error instanceof Error ? error.message : '도서 추가 중 오류가 발생했습니다.',
         row: row.rowNumber,
       })
-      continue
     }
-
-    errors.push({
-      message: rowError.message || '도서 추가 중 오류가 발생했습니다.',
-      row: row.rowNumber,
-    })
   }
 
   return {
     errors,
     inserted,
+    skipped,
   }
 }
 
@@ -267,12 +367,14 @@ export async function insertAdminBooksInBatches(
   rows: ImportAdminBookRow[]
 ): Promise<ImportAdminBooksResult> {
   let inserted = 0
+  let skipped = 0
   const errors: ImportAdminBookError[] = []
 
   for (let index = 0; index < rows.length; index += ADMIN_BOOK_IMPORT_BATCH_SIZE) {
     const batch = rows.slice(index, index + ADMIN_BOOK_IMPORT_BATCH_SIZE)
     const result = await insertAdminBookImportBatch(supabase, batch)
     inserted += result.inserted
+    skipped += result.skipped
     errors.push(...result.errors)
   }
 
@@ -283,6 +385,7 @@ export async function insertAdminBooksInBatches(
   return {
     errors,
     inserted,
+    skipped,
   }
 }
 
@@ -325,46 +428,16 @@ export async function createAdminBook(
     throw new ApiRouteError(400, 'MISSING_REQUIRED_FIELDS', missingFieldsMessage)
   }
 
-  const { data: bookWithSchoolBookCodeList, error: schoolBookCodesError } = await supabase
-    .from('books')
-    .select(ADMIN_BOOK_COLUMNS)
-    .contains('school_book_codes', [input.schoolBookCode])
-    .maybeSingle()
+  const bookWithSchoolBookCode = await findAdminBookBySchoolBookCode(supabase, input.schoolBookCode)
 
-  if (schoolBookCodesError) {
-    throw schoolBookCodesError
-  }
-
-  if (bookWithSchoolBookCodeList) {
-    throw duplicateBookCodeError()
-  }
-
-  const { data: bookWithPrimarySchoolBookCode, error: primarySchoolBookCodeError } = await supabase
-    .from('books')
-    .select(ADMIN_BOOK_COLUMNS)
-    .eq('school_book_code', input.schoolBookCode)
-    .maybeSingle()
-
-  if (primarySchoolBookCodeError) {
-    throw primarySchoolBookCodeError
-  }
-
-  if (bookWithPrimarySchoolBookCode) {
+  if (bookWithSchoolBookCode) {
     throw duplicateBookCodeError()
   }
 
   const isbn = getNullableAdminBookIsbn(input)
 
   if (isbn) {
-    const { data: existingBook, error: existingBookError } = await supabase
-      .from('books')
-      .select(ADMIN_BOOK_COLUMNS)
-      .eq('isbn', isbn)
-      .maybeSingle()
-
-    if (existingBookError) {
-      throw existingBookError
-    }
+    const existingBook = await findAdminBookByIsbn(supabase, isbn)
 
     if (existingBook) {
       const { data, error } = await supabase
