@@ -202,6 +202,7 @@ export async function POST(request: Request) {
         errors,
         failed: errors.length,
         inserted: importResult.inserted,
+        skipped: importResult.skipped,
       })
     }
   )
