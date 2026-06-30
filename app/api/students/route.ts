@@ -1,6 +1,7 @@
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
 import { normalizeBorrowerLookupCode } from '@/lib/loan-limits'
-import { createRouteSupabaseClient, jsonData, runApiRoute, throwApiError, withNoStore } from '@/lib/api-route'
+import { createRouteDbClient, jsonData, runApiRoute, throwApiError, withNoStore } from '@/lib/api-route'
+import type { LoanStudent } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,16 +27,12 @@ export async function GET(request: Request) {
         throwApiError(400, 'MISSING_STUDENT_NUMBER', '학번을 입력해주세요.')
       }
 
-      const supabase = createRouteSupabaseClient()
-      const { data, error } = await supabase.rpc('lookup_student_for_loan', {
-        input_student_number: studentNumber,
-      })
-
-      if (error) {
-        throw error
-      }
-
-      const student = data?.[0]
+      const db = createRouteDbClient()
+      const { rows } = await db.query<LoanStudent>(
+        'select * from public.lookup_student_for_loan($1)',
+        [studentNumber]
+      )
+      const student = rows[0]
 
       if (!student) {
         throwApiError(404, 'STUDENT_NOT_FOUND', '해당 학번의 학생을 찾을 수 없습니다.')

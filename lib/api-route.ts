@@ -1,9 +1,5 @@
 import { NextResponse } from 'next/server'
-import {
-  createServerSupabaseClient,
-  isSupabaseConfigured,
-  type TypedSupabaseClient,
-} from '@/lib/supabase'
+import { getDb, isPostgresConfigured, type DbClient } from '@/lib/db'
 
 type ApiRouteFallback = {
   code: string
@@ -100,16 +96,16 @@ export function throwApiError(status: number, code: string, message: string): ne
   throw new ApiRouteError(status, code, message)
 }
 
-export function createRouteSupabaseClient(): TypedSupabaseClient {
-  if (!isSupabaseConfigured()) {
+export function createRouteDbClient(): DbClient {
+  if (!isPostgresConfigured()) {
     throw new ApiRouteError(
       503,
-      'SUPABASE_NOT_CONFIGURED',
-      'Supabase 환경변수가 설정되지 않았습니다.'
+      'DATABASE_NOT_CONFIGURED',
+      'PostgreSQL DATABASE_URL이 설정되지 않았습니다.'
     )
   }
 
-  return createServerSupabaseClient()
+  return getDb()
 }
 
 export function handleApiRouteError(error: unknown, options: ApiRouteOptions) {

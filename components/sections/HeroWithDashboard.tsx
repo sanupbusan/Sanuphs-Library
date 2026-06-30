@@ -4,13 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { BookOpen, Search } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
-import {
-  getDashboardData,
-  getOverdueLoans,
-  getRecentBooks,
-  getStudentLoanStats,
-} from '@/lib/library-queries'
-import { isSupabaseConfigured, getBrowserSupabaseClient } from '@/lib/supabase'
 import { useDashboardBarcodeListener } from '@/hooks/useDashboardBarcodeListener'
 import { DashboardMockup } from '@/components/dashboard/DashboardMockup'
 import {
@@ -27,7 +20,13 @@ import {
   type StudentLoanStatistic,
   type DashboardStat,
 } from '@/lib/dashboard-data'
-import type { DashboardSummary } from '@/lib/library-queries'
+import type {
+  DashboardOverdueLoan,
+  DashboardSummary,
+  RecentBook as RecentBookRow,
+  RecentLoan,
+  StudentLoanStat,
+} from '@/types/library'
 
 type OptionalAdminSessionResponse = {
   data?: {
@@ -35,6 +34,16 @@ type OptionalAdminSessionResponse = {
       loginId: string
     }
   } | null
+}
+
+type DashboardResponse = {
+  data?: {
+    overdueLoans: DashboardOverdueLoan[]
+    recentBooks: RecentBookRow[]
+    recentLoans: RecentLoan[]
+    studentLoanStats: StudentLoanStat[]
+    summary: DashboardSummary
+  }
 }
 
 export default function HeroWithDashboard() {
@@ -71,43 +80,21 @@ export default function HeroWithDashboard() {
   }
 
   async function loadDashboardData() {
-    if (!isSupabaseConfigured()) {
-      return
-    }
-
     try {
-      const client = getBrowserSupabaseClient()
-      const [dashboardResult, recentBooksResult, overdueLoansResult, studentLoanStatsResult] = await Promise.allSettled([
-        getDashboardData(client),
-        getRecentBooks(client),
-        getOverdueLoans(client),
-        getStudentLoanStats(client),
-      ])
+      const response = await fetch('/api/dashboard', {
+        cache: 'no-store',
+      })
+      const payload = (await response.json()) as DashboardResponse
 
-      if (dashboardResult.status === 'fulfilled') {
-        setSummary(dashboardResult.value.summary)
-        setRecentRentals(mapRecentLoans(dashboardResult.value.recentLoans))
-      } else if (process.env.NODE_ENV === 'development') {
-        console.warn('Supabase dashboard data unavailable:', dashboardResult.reason)
+      if (!response.ok || !payload.data) {
+        throw new Error('Dashboard data unavailable.')
       }
 
-      if (recentBooksResult.status === 'fulfilled') {
-        setRecentBooks(mapRecentBooks(recentBooksResult.value))
-      } else if (process.env.NODE_ENV === 'development') {
-        console.warn('Supabase recent books unavailable:', recentBooksResult.reason)
-      }
-
-      if (overdueLoansResult.status === 'fulfilled') {
-        setOverdueLoans(mapOverdueLoans(overdueLoansResult.value))
-      } else if (process.env.NODE_ENV === 'development') {
-        console.warn('Supabase overdue loans unavailable:', overdueLoansResult.reason)
-      }
-
-      if (studentLoanStatsResult.status === 'fulfilled') {
-        setStudentLoanStats(mapStudentLoanStats(studentLoanStatsResult.value))
-      } else if (process.env.NODE_ENV === 'development') {
-        console.warn('Supabase student loan stats unavailable:', studentLoanStatsResult.reason)
-      }
+      setSummary(payload.data.summary)
+      setRecentRentals(mapRecentLoans(payload.data.recentLoans))
+      setRecentBooks(mapRecentBooks(payload.data.recentBooks))
+      setOverdueLoans(mapOverdueLoans(payload.data.overdueLoans))
+      setStudentLoanStats(mapStudentLoanStats(payload.data.studentLoanStats))
     } catch (error) {
       console.error('Dashboard data load failed:', error)
     }

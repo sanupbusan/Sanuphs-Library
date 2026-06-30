@@ -6,15 +6,15 @@ import { listAdminLoans } from '@/lib/admin-loans'
 import { requireAdminPageSession } from '@/lib/admin-server-auth'
 
 export const metadata: Metadata = {
-  title: '대여 관리 - SanupHs Library',
-  description: 'SanupHs Library 대여 관리',
+  title: '대출 관리 - SanupHs Library',
+  description: 'SanupHs Library 대출 관리',
 }
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminLoansPage() {
   const session = await requireAdminPageSession()
-  const loans = await listAdminLoans(session.supabase)
+  const loans = await listAdminLoans(session.db)
 
   return (
     <main className="min-h-screen bg-gray-50">

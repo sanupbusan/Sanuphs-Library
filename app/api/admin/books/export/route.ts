@@ -50,7 +50,7 @@ export async function GET(request: Request) {
     },
     async () => {
       const session = await requireAdminSession(request)
-      const books = await listAdminBooksForExport(session.supabase)
+      const books = await listAdminBooksForExport(session.db)
 
       const worksheet = XLSX.utils.aoa_to_sheet([
         ADMIN_BOOK_EXPORT_FIELD_ORDER.map((field) => ADMIN_BOOK_EXCEL_HEADERS[field]),

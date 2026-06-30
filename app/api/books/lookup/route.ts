@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
-import { createServerSupabaseClient, isSupabaseConfigured } from '@/lib/supabase'
+import { createRouteDbClient } from '@/lib/api-route'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import type { BookLookupResult, RemovableBook } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 function getCode(request: Request) {
   const url = new URL(request.url)
@@ -20,19 +22,49 @@ function isLikelyIsbn(value: string) {
   return digits.length === 10 || digits.length === 13
 }
 
-export async function GET(request: Request) {
-  if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: 'SUPABASE_NOT_CONFIGURED',
-          message: 'Supabase 환경변수가 설정되지 않았습니다.',
-        },
-      },
-      { status: 503 }
-    )
-  }
+async function findBook(code: string, isIsbn: boolean) {
+  const db = createRouteDbClient()
+  const sql = isIsbn
+    ? `
+        select
+          id,
+          isbn,
+          school_book_code,
+          school_book_codes,
+          title,
+          author,
+          publisher,
+          available_copies,
+          total_copies
+        from public.books
+        where isbn = $1
+        limit 1
+      `
+    : `
+        select
+          id,
+          isbn,
+          school_book_code,
+          school_book_codes,
+          title,
+          author,
+          publisher,
+          available_copies,
+          total_copies
+        from public.books
+        where coalesce(school_book_codes, '{}'::text[]) @> array[$1]::text[]
+           or school_book_code = $1
+        order by
+          case when coalesce(school_book_codes, '{}'::text[]) @> array[$1]::text[] then 0 else 1 end
+        limit 1
+      `
 
+  const { rows } = await db.query<RemovableBook>(sql, [code])
+
+  return rows[0] ?? null
+}
+
+export async function GET(request: Request) {
   const code = getCode(request)
 
   if (!code) {
@@ -48,25 +80,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = createServerSupabaseClient()
     const normalizedCode = normalizeCode(code)
     const isIsbn = isLikelyIsbn(normalizedCode)
-
-    let query = supabase
-      .from('books')
-      .select('id, isbn, school_book_code, school_book_codes, title, author, publisher, available_copies, total_copies')
-
-    if (isIsbn) {
-      query = query.eq('isbn', normalizedCode)
-    } else {
-      query = query.contains('school_book_codes', [normalizedCode])
-    }
-
-    const { data, error } = await query.maybeSingle()
-
-    if (error) {
-      throw error
-    }
+    const data = await findBook(normalizedCode, isIsbn)
 
     if (!data) {
       return NextResponse.json(
@@ -82,12 +98,12 @@ export async function GET(request: Request) {
 
     const matchedSchoolBookCode = isIsbn ? null : normalizedCode
 
-    return NextResponse.json({
-      data: {
-        ...data,
-        matched_school_book_code: matchedSchoolBookCode,
-      },
-    })
+    const result: BookLookupResult = {
+      ...data,
+      matched_school_book_code: matchedSchoolBookCode,
+    }
+
+    return NextResponse.json({ data: result })
   } catch (error) {
     console.error('Book lookup error:', error)
 

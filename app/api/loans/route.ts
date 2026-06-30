@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
-import { createRouteSupabaseClient } from '@/lib/api-route'
+import { createRouteDbClient } from '@/lib/api-route'
+import { listAdminLoans } from '@/lib/admin-loans'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
 import type { BorrowerType, CreatedPublicLoan, LoanCreationResult } from '@/types/library'
 
@@ -120,19 +121,10 @@ function loanRpcErrorResponse(error: unknown) {
 export async function GET(request: Request) {
   try {
     const session = await requireAdminSession(request)
-    const supabase = session.supabase
-    const { data, error } = await supabase
-      .from('loans')
-      .select('id, book_id, student_id, borrowed_on, due_on, returned_on, status, books(title, school_book_code), students(name, student_number)')
-      .eq('status', 'rented')
-      .order('borrowed_on', { ascending: false })
-
-    if (error) {
-      throw error
-    }
+    const data = await listAdminLoans(session.db)
 
     return NextResponse.json(
-      { data: data ?? [] },
+      { data },
       {
         headers: {
           'Cache-Control': 'no-store, max-age=0',
@@ -204,38 +196,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const supabase = createRouteSupabaseClient()
-    const loanArgs = {
-      input_book_id: bookId,
-      input_student_id: studentId,
-      input_notes: getText(body.notes) || null,
-      input_school_book_code: schoolBookCode || null,
-    }
-    let loanResult = await supabase.rpc('create_public_loan', loanArgs)
-
-    if (isCreatePublicLoanSignatureCacheError(loanResult.error)) {
-      console.warn('create_public_loan schema cache is missing input_school_book_code; retrying legacy RPC signature.')
-
-      loanResult = await supabase.rpc('create_public_loan', {
-        input_book_id: loanArgs.input_book_id,
-        input_student_id: loanArgs.input_student_id,
-        input_notes: loanArgs.input_notes,
-      })
-    }
-
-    const { data, error } = loanResult
-
-    if (error) {
-      const mappedResponse = loanRpcErrorResponse(error)
-
-      if (mappedResponse) {
-        return mappedResponse
-      }
-
-      throw error
-    }
-
-    const loan = data?.[0]
+    const db = createRouteDbClient()
+    const { rows } = await db.query<CreatedPublicLoan>(
+      'select * from public.create_public_loan($1::uuid, $2::uuid, $3::text)',
+      [bookId, studentId, getText(body.notes) || null]
+    )
+    const loan = rows[0]
 
     if (!loan) {
       throw new Error('Loan RPC returned no result.')
@@ -243,6 +209,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ data: mapCreatedLoan(loan) }, { status: 201 })
   } catch (error) {
+    const mappedResponse = loanRpcErrorResponse(error)
+
+    if (mappedResponse) {
+      return mappedResponse
+    }
+
     if (isLoanLimitError(error)) {
       return NextResponse.json(
         {

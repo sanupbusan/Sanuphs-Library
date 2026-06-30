@@ -22,7 +22,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     async () => {
       const body = await readJsonBody<PatchLoanBody>(request)
       const session = await requireAdminSession(request)
-      const data = await updateAdminLoan(session.supabase, params.id, {
+      const data = await updateAdminLoan(session.db, params.id, {
         borrowedOn: getText(body.borrowedOn) || null,
         dueOn: getText(body.dueOn) || null,
         status: getText(body.status) || null,

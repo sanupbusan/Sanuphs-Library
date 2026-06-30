@@ -1,9 +1,10 @@
-import { normalizeIsbnInput } from '@/lib/barcode-input'
+﻿import { normalizeIsbnInput } from '@/lib/barcode-input'
 import { requireAdminSession } from '@/lib/admin-auth'
 import { jsonData, runApiRoute, throwApiError } from '@/lib/api-route'
-import type { TypedSupabaseClient } from '@/lib/supabase'
+import type { DbClient } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 const DEFAULT_ISBN_API_URL = 'https://www.nl.go.kr/seoji/SearchApi.do'
 const ISBN_API_TIMEOUT_MS = 5_000
@@ -193,18 +194,23 @@ function normalizeStoredBookInfo(
   }
 }
 
-async function lookupStoredBookByIsbn(supabase: TypedSupabaseClient, isbn: string) {
-  const { data, error } = await supabase
-    .from('books')
-    .select('isbn, title, author, publisher')
-    .eq('isbn', isbn)
-    .maybeSingle()
+async function lookupStoredBookByIsbn(db: DbClient, isbn: string) {
+  const { rows } = await db.query<{
+    author: string | null
+    isbn: string | null
+    publisher: string | null
+    title: string | null
+  }>(
+    `
+      select isbn, title, author, publisher
+      from public.books
+      where isbn = $1
+      limit 1
+    `,
+    [isbn]
+  )
 
-  if (error) {
-    throw error
-  }
-
-  return data ? normalizeStoredBookInfo(data, isbn) : null
+  return rows[0] ? normalizeStoredBookInfo(rows[0], isbn) : null
 }
 
 async function fetchWithTimeout(url: URL) {
@@ -262,7 +268,7 @@ export async function GET(request: Request) {
         return jsonData(cachedBook)
       }
 
-      const storedBook = await lookupStoredBookByIsbn(session.supabase, isbn)
+      const storedBook = await lookupStoredBookByIsbn(session.db, isbn)
       if (storedBook) {
         setCachedBookInfo(isbn, storedBook)
         return jsonData(storedBook)
@@ -300,8 +306,7 @@ export async function GET(request: Request) {
       } catch (error) {
         console.error('National Library ISBN API fetch failed:', error)
 
-        const isTimeout =
-          error instanceof DOMException && error.name === 'AbortError'
+        const isTimeout = error instanceof DOMException && error.name === 'AbortError'
 
         throwApiError(
           502,

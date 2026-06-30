@@ -6,9 +6,8 @@ import {
   type AdminBookUpdateInput,
 } from '@/lib/admin-book-input'
 import { addSchoolBookCode } from '@/lib/school-book-codes'
-import type { TypedSupabaseClient } from '@/lib/supabase'
+import type { DbClient } from '@/lib/db'
 import type { AdminBookRow, BookRow } from '@/types/library'
-import type { Database } from '@/types/supabase'
 
 export const ADMIN_BOOK_COLUMNS =
   'id, isbn, school_book_code, school_book_codes, title, author, publisher, category, total_copies, available_copies, created_at'
@@ -37,7 +36,7 @@ export const ADMIN_BOOK_EXCEL_HEADERS: Record<(typeof ADMIN_BOOK_EXPORT_FIELD_OR
   school_book_code: '학교 도서 코드',
   category: '분류',
   total_copies: '총 권수',
-  available_copies: '대여 가능 권수',
+  available_copies: '대출 가능 권수',
 }
 
 export const ADMIN_BOOK_IMPORT_HEADER_TO_FIELD: Record<string, keyof BookRow> = {
@@ -52,19 +51,40 @@ export const ADMIN_BOOK_IMPORT_HEADER_TO_FIELD: Record<string, keyof BookRow> = 
   available_copies: 'available_copies',
   author: 'author',
   category: 'category',
-  '도서명': 'title',
-  '분류': 'category',
-  '저자': 'author',
-  '출판사': 'publisher',
+  도서명: 'title',
+  분류: 'category',
+  저자: 'author',
+  출판사: 'publisher',
   '총 권수': 'total_copies',
   '학교 도서 코드': 'school_book_code',
-  '대여 가능 권수': 'available_copies',
+  '대출 가능 권수': 'available_copies',
 }
 
 export const ADMIN_BOOK_IMPORT_BATCH_SIZE = 200
 
+const DEFAULT_BOOK_CATEGORY = '미분류'
+const ADMIN_BOOK_SELECT_SQL = `
+  id,
+  isbn,
+  school_book_code,
+  school_book_codes,
+  title,
+  author,
+  publisher,
+  category,
+  total_copies,
+  available_copies,
+  created_at
+`
+
 function duplicateBookCodeError() {
-  return new ApiRouteError(409, 'DUPLICATE_BOOK_CODE', '이미 등록된 ISBN 또는 학교 내 도서 코드입니다.')
+  return new ApiRouteError(409, 'DUPLICATE_BOOK_CODE', '이미 등록된 ISBN 또는 학교 도서 코드입니다.')
+}
+
+function getDbErrorCode(error: unknown) {
+  return typeof error === 'object' && error !== null && 'code' in error
+    ? String(error.code)
+    : ''
 }
 
 type AdminBookListCacheEntry = {
@@ -80,18 +100,17 @@ function cloneAdminBooks(books: AdminBookRow[]) {
   return books.map((book) => ({ ...book }))
 }
 
-async function fetchAdminBooks(supabase: TypedSupabaseClient): Promise<AdminBookRow[]> {
-  const { data, error } = await supabase
-    .from('books')
-    .select(ADMIN_BOOK_COLUMNS)
-    .order('created_at', { ascending: false })
-    .limit(100)
+async function fetchAdminBooks(db: DbClient): Promise<AdminBookRow[]> {
+  const { rows } = await db.query<AdminBookRow>(
+    `
+      select ${ADMIN_BOOK_SELECT_SQL}
+      from public.books
+      order by created_at desc
+      limit 100
+    `
+  )
 
-  if (error) {
-    throw error
-  }
-
-  return (data ?? []) as AdminBookRow[]
+  return rows
 }
 
 export function invalidateAdminBooksCache() {
@@ -107,17 +126,16 @@ export type CreateAdminBookInput = {
   title: string
 }
 
-export type ImportAdminBookInput = Pick<
-  Database['public']['Tables']['books']['Insert'],
-  | 'author'
-  | 'available_copies'
-  | 'category'
-  | 'isbn'
-  | 'publisher'
-  | 'school_book_code'
-  | 'title'
-  | 'total_copies'
->
+export type ImportAdminBookInput = {
+  author: string
+  available_copies?: number
+  category?: string
+  isbn?: string | null
+  publisher?: string | null
+  school_book_code?: string | null
+  title: string
+  total_copies?: number
+}
 
 export type ImportAdminBookRow = {
   book: ImportAdminBookInput
@@ -136,39 +154,49 @@ export type ImportAdminBooksResult = {
 }
 
 export async function insertAdminBook(
-  supabase: TypedSupabaseClient,
+  db: DbClient,
   input: CreateAdminBookInput
 ): Promise<AdminBookRow> {
-  const { data, error } = await supabase
-    .from('books')
-    .insert({
-      author: input.author,
-      available_copies: 1,
-      category: '미분류',
-      isbn: input.isbn,
-      publisher: input.publisher,
-      school_book_code: input.schoolBookCode,
-      school_book_codes: [input.schoolBookCode],
-      title: input.title,
-      total_copies: 1,
-    })
-    .select(ADMIN_BOOK_COLUMNS)
-    .single()
+  try {
+    const { rows } = await db.query<AdminBookRow>(
+      `
+        insert into public.books (
+          author,
+          available_copies,
+          category,
+          isbn,
+          publisher,
+          school_book_code,
+          school_book_codes,
+          title,
+          total_copies
+        )
+        values ($1, 1, $2, $3, $4, $5, array[$5]::text[], $6, 1)
+        returning ${ADMIN_BOOK_SELECT_SQL}
+      `,
+      [
+        input.author,
+        DEFAULT_BOOK_CATEGORY,
+        input.isbn,
+        input.publisher,
+        input.schoolBookCode,
+        input.title,
+      ]
+    )
 
-  if (error) {
-    if (error.code === '23505') {
-      throw new ApiRouteError(409, 'DUPLICATE_BOOK_CODE', '이미 등록된 ISBN 또는 학교 도서 코드입니다.')
+    invalidateAdminBooksCache()
+
+    return rows[0]
+  } catch (error) {
+    if (getDbErrorCode(error) === '23505') {
+      throw duplicateBookCodeError()
     }
 
     throw error
   }
-
-  invalidateAdminBooksCache()
-
-  return data as AdminBookRow
 }
 
-export async function listAdminBooks(supabase: TypedSupabaseClient): Promise<AdminBookRow[]> {
+export async function listAdminBooks(db: DbClient): Promise<AdminBookRow[]> {
   const now = Date.now()
 
   if (adminBookListCache && adminBookListCache.expiresAt > now) {
@@ -176,7 +204,7 @@ export async function listAdminBooks(supabase: TypedSupabaseClient): Promise<Adm
   }
 
   if (!adminBookListCachePromise) {
-    adminBookListCachePromise = fetchAdminBooks(supabase)
+    adminBookListCachePromise = fetchAdminBooks(db)
       .then((books) => {
         adminBookListCache = {
           books,
@@ -193,63 +221,51 @@ export async function listAdminBooks(supabase: TypedSupabaseClient): Promise<Adm
   return cloneAdminBooks(await adminBookListCachePromise)
 }
 
-export async function listAdminBooksForExport(supabase: TypedSupabaseClient): Promise<BookRow[]> {
-  const { data, error } = await supabase
-    .from('books')
-    .select(ADMIN_BOOK_EXPORT_COLUMNS)
-    .order('created_at', { ascending: false })
+export async function listAdminBooksForExport(db: DbClient): Promise<BookRow[]> {
+  const { rows } = await db.query<BookRow>(
+    `
+      select ${ADMIN_BOOK_EXPORT_COLUMNS}
+      from public.books
+      order by created_at desc
+    `
+  )
 
-  if (error) {
-    throw error
-  }
-
-  return (data ?? []) as BookRow[]
+  return rows
 }
 
-async function findAdminBookBySchoolBookCode(supabase: TypedSupabaseClient, schoolBookCode: string) {
-  const { data: bookWithSchoolBookCodeList, error: schoolBookCodesError } = await supabase
-    .from('books')
-    .select(ADMIN_BOOK_COLUMNS)
-    .contains('school_book_codes', [schoolBookCode])
-    .maybeSingle()
+async function findAdminBookBySchoolBookCode(db: DbClient, schoolBookCode: string) {
+  const { rows } = await db.query<AdminBookRow>(
+    `
+      select ${ADMIN_BOOK_SELECT_SQL}
+      from public.books
+      where coalesce(school_book_codes, '{}'::text[]) @> array[$1]::text[]
+         or school_book_code = $1
+      order by
+        case when coalesce(school_book_codes, '{}'::text[]) @> array[$1]::text[] then 0 else 1 end
+      limit 1
+    `,
+    [schoolBookCode]
+  )
 
-  if (schoolBookCodesError) {
-    throw schoolBookCodesError
-  }
-
-  if (bookWithSchoolBookCodeList) {
-    return bookWithSchoolBookCodeList as AdminBookRow
-  }
-
-  const { data: bookWithPrimarySchoolBookCode, error: primarySchoolBookCodeError } = await supabase
-    .from('books')
-    .select(ADMIN_BOOK_COLUMNS)
-    .eq('school_book_code', schoolBookCode)
-    .maybeSingle()
-
-  if (primarySchoolBookCodeError) {
-    throw primarySchoolBookCodeError
-  }
-
-  return (bookWithPrimarySchoolBookCode as AdminBookRow | null) ?? null
+  return rows[0] ?? null
 }
 
-async function findAdminBookByIsbn(supabase: TypedSupabaseClient, isbn: string) {
-  const { data, error } = await supabase
-    .from('books')
-    .select(ADMIN_BOOK_COLUMNS)
-    .eq('isbn', isbn)
-    .maybeSingle()
+async function findAdminBookByIsbn(db: DbClient, isbn: string) {
+  const { rows } = await db.query<AdminBookRow>(
+    `
+      select ${ADMIN_BOOK_SELECT_SQL}
+      from public.books
+      where isbn = $1
+      limit 1
+    `,
+    [isbn]
+  )
 
-  if (error) {
-    throw error
-  }
-
-  return (data as AdminBookRow | null) ?? null
+  return rows[0] ?? null
 }
 
 async function addImportedCopiesToExistingBook(
-  supabase: TypedSupabaseClient,
+  db: DbClient,
   existingBook: AdminBookRow,
   book: ImportAdminBookInput
 ) {
@@ -257,20 +273,27 @@ async function addImportedCopiesToExistingBook(
   const totalCopies = book.total_copies ?? 1
   const availableCopies = book.available_copies ?? totalCopies
 
-  const { error } = await supabase
-    .from('books')
-    .update({
-      available_copies: existingBook.available_copies + availableCopies,
-      school_book_code: existingBook.school_book_code || schoolBookCode,
-      school_book_codes: schoolBookCode
-        ? addSchoolBookCode(existingBook, schoolBookCode)
-        : existingBook.school_book_codes,
-      total_copies: existingBook.total_copies + totalCopies,
-    })
-    .eq('id', existingBook.id)
-
-  if (error) {
-    if (error.code === '23505') {
+  try {
+    await db.query(
+      `
+        update public.books
+        set
+          available_copies = $1,
+          school_book_code = $2,
+          school_book_codes = $3,
+          total_copies = $4
+        where id = $5
+      `,
+      [
+        existingBook.available_copies + availableCopies,
+        existingBook.school_book_code || schoolBookCode,
+        schoolBookCode ? addSchoolBookCode(existingBook, schoolBookCode) : existingBook.school_book_codes,
+        existingBook.total_copies + totalCopies,
+        existingBook.id,
+      ]
+    )
+  } catch (error) {
+    if (getDbErrorCode(error) === '23505') {
       throw duplicateBookCodeError()
     }
 
@@ -278,19 +301,41 @@ async function addImportedCopiesToExistingBook(
   }
 }
 
-async function insertImportedBook(supabase: TypedSupabaseClient, book: ImportAdminBookInput) {
+async function insertImportedBook(db: DbClient, book: ImportAdminBookInput) {
   const schoolBookCode = book.school_book_code?.trim() || null
-  const { error } = await supabase
-    .from('books')
-    .insert({
-      ...book,
-      school_book_codes: schoolBookCode ? [schoolBookCode] : [],
-    })
-    .select('id')
-    .single()
+  const totalCopies = book.total_copies ?? 1
+  const availableCopies = book.available_copies ?? totalCopies
 
-  if (error) {
-    if (error.code === '23505') {
+  try {
+    await db.query(
+      `
+        insert into public.books (
+          author,
+          available_copies,
+          category,
+          isbn,
+          publisher,
+          school_book_code,
+          school_book_codes,
+          title,
+          total_copies
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `,
+      [
+        book.author,
+        availableCopies,
+        book.category || DEFAULT_BOOK_CATEGORY,
+        book.isbn ?? null,
+        book.publisher ?? null,
+        schoolBookCode,
+        schoolBookCode ? [schoolBookCode] : [],
+        book.title,
+        totalCopies,
+      ]
+    )
+  } catch (error) {
+    if (getDbErrorCode(error) === '23505') {
       throw duplicateBookCodeError()
     }
 
@@ -298,11 +343,11 @@ async function insertImportedBook(supabase: TypedSupabaseClient, book: ImportAdm
   }
 }
 
-async function importAdminBookRow(supabase: TypedSupabaseClient, row: ImportAdminBookRow) {
+async function importAdminBookRow(db: DbClient, row: ImportAdminBookRow) {
   const schoolBookCode = row.book.school_book_code?.trim() || null
 
   if (schoolBookCode) {
-    const existingBookWithSchoolBookCode = await findAdminBookBySchoolBookCode(supabase, schoolBookCode)
+    const existingBookWithSchoolBookCode = await findAdminBookBySchoolBookCode(db, schoolBookCode)
 
     if (existingBookWithSchoolBookCode) {
       return 'skipped' as const
@@ -310,20 +355,20 @@ async function importAdminBookRow(supabase: TypedSupabaseClient, row: ImportAdmi
   }
 
   if (row.book.isbn) {
-    const existingBookWithIsbn = await findAdminBookByIsbn(supabase, row.book.isbn)
+    const existingBookWithIsbn = await findAdminBookByIsbn(db, row.book.isbn)
 
     if (existingBookWithIsbn) {
-      await addImportedCopiesToExistingBook(supabase, existingBookWithIsbn, row.book)
+      await addImportedCopiesToExistingBook(db, existingBookWithIsbn, row.book)
       return 'inserted' as const
     }
   }
 
-  await insertImportedBook(supabase, row.book)
+  await insertImportedBook(db, row.book)
   return 'inserted' as const
 }
 
 async function insertAdminBookImportBatch(
-  supabase: TypedSupabaseClient,
+  db: DbClient,
   rows: ImportAdminBookRow[]
 ): Promise<ImportAdminBooksResult> {
   if (rows.length === 0) {
@@ -340,7 +385,7 @@ async function insertAdminBookImportBatch(
 
   for (const row of rows) {
     try {
-      const result = await importAdminBookRow(supabase, row)
+      const result = await importAdminBookRow(db, row)
 
       if (result === 'skipped') {
         skipped += 1
@@ -363,7 +408,7 @@ async function insertAdminBookImportBatch(
 }
 
 export async function insertAdminBooksInBatches(
-  supabase: TypedSupabaseClient,
+  db: DbClient,
   rows: ImportAdminBookRow[]
 ): Promise<ImportAdminBooksResult> {
   let inserted = 0
@@ -372,7 +417,7 @@ export async function insertAdminBooksInBatches(
 
   for (let index = 0; index < rows.length; index += ADMIN_BOOK_IMPORT_BATCH_SIZE) {
     const batch = rows.slice(index, index + ADMIN_BOOK_IMPORT_BATCH_SIZE)
-    const result = await insertAdminBookImportBatch(supabase, batch)
+    const result = await insertAdminBookImportBatch(db, batch)
     inserted += result.inserted
     skipped += result.skipped
     errors.push(...result.errors)
@@ -389,37 +434,40 @@ export async function insertAdminBooksInBatches(
   }
 }
 
-export async function deleteAdminBook(supabase: TypedSupabaseClient, bookId: string) {
+export async function deleteAdminBook(db: DbClient, bookId: string) {
   if (!bookId) {
     throw new ApiRouteError(400, 'MISSING_BOOK_ID', '제거할 도서를 선택해주세요.')
   }
 
-  const { data, error } = await supabase
-    .from('books')
-    .delete()
-    .eq('id', bookId)
-    .select('id, title')
-    .maybeSingle()
+  try {
+    const { rows } = await db.query<Pick<BookRow, 'id' | 'title'>>(
+      `
+        delete from public.books
+        where id = $1
+        returning id, title
+      `,
+      [bookId]
+    )
 
-  if (error) {
-    if (error.code === '23503') {
-      throw new ApiRouteError(409, 'BOOK_HAS_LOANS', '대여 기록이 있는 도서는 바로 제거할 수 없습니다.')
+    const deletedBook = rows[0]
+    if (!deletedBook) {
+      throw new ApiRouteError(404, 'BOOK_NOT_FOUND', '제거할 도서를 찾을 수 없습니다.')
+    }
+
+    invalidateAdminBooksCache()
+
+    return deletedBook
+  } catch (error) {
+    if (getDbErrorCode(error) === '23503') {
+      throw new ApiRouteError(409, 'BOOK_HAS_LOANS', '대출 기록이 있는 도서는 바로 제거할 수 없습니다.')
     }
 
     throw error
   }
-
-  if (!data) {
-    throw new ApiRouteError(404, 'BOOK_NOT_FOUND', '제거할 도서를 찾을 수 없습니다.')
-  }
-
-  invalidateAdminBooksCache()
-
-  return data
 }
 
 export async function createAdminBook(
-  supabase: TypedSupabaseClient,
+  db: DbClient,
   input: AdminBookCreateInput
 ): Promise<AdminBookRow> {
   const missingFieldsMessage = getMissingAdminBookRequiredFieldsMessage(input)
@@ -428,7 +476,7 @@ export async function createAdminBook(
     throw new ApiRouteError(400, 'MISSING_REQUIRED_FIELDS', missingFieldsMessage)
   }
 
-  const bookWithSchoolBookCode = await findAdminBookBySchoolBookCode(supabase, input.schoolBookCode)
+  const bookWithSchoolBookCode = await findAdminBookBySchoolBookCode(db, input.schoolBookCode)
 
   if (bookWithSchoolBookCode) {
     throw duplicateBookCodeError()
@@ -437,66 +485,84 @@ export async function createAdminBook(
   const isbn = getNullableAdminBookIsbn(input)
 
   if (isbn) {
-    const existingBook = await findAdminBookByIsbn(supabase, isbn)
+    const existingBook = await findAdminBookByIsbn(db, isbn)
 
     if (existingBook) {
-      const { data, error } = await supabase
-        .from('books')
-        .update({
-          available_copies: existingBook.available_copies + 1,
-          school_book_code: existingBook.school_book_code || input.schoolBookCode,
-          school_book_codes: addSchoolBookCode(existingBook, input.schoolBookCode),
-          total_copies: existingBook.total_copies + 1,
-        })
-        .eq('id', existingBook.id)
-        .select(ADMIN_BOOK_COLUMNS)
-        .single()
+      try {
+        const { rows } = await db.query<AdminBookRow>(
+          `
+            update public.books
+            set
+              available_copies = $1,
+              school_book_code = $2,
+              school_book_codes = $3,
+              total_copies = $4
+            where id = $5
+            returning ${ADMIN_BOOK_SELECT_SQL}
+          `,
+          [
+            existingBook.available_copies + 1,
+            existingBook.school_book_code || input.schoolBookCode,
+            addSchoolBookCode(existingBook, input.schoolBookCode),
+            existingBook.total_copies + 1,
+            existingBook.id,
+          ]
+        )
 
-      if (error) {
-        if (error.code === '23505') {
+        invalidateAdminBooksCache()
+
+        return rows[0]
+      } catch (error) {
+        if (getDbErrorCode(error) === '23505') {
           throw duplicateBookCodeError()
         }
 
         throw error
       }
-
-      invalidateAdminBooksCache()
-
-      return data as AdminBookRow
     }
   }
 
-  const { data, error } = await supabase
-    .from('books')
-    .insert({
-      author: input.author,
-      available_copies: 1,
-      category: '미분류',
-      isbn,
-      publisher: input.publisher,
-      school_book_code: input.schoolBookCode,
-      school_book_codes: [input.schoolBookCode],
-      title: input.title,
-      total_copies: 1,
-    })
-    .select(ADMIN_BOOK_COLUMNS)
-    .single()
+  try {
+    const { rows } = await db.query<AdminBookRow>(
+      `
+        insert into public.books (
+          author,
+          available_copies,
+          category,
+          isbn,
+          publisher,
+          school_book_code,
+          school_book_codes,
+          title,
+          total_copies
+        )
+        values ($1, 1, $2, $3, $4, $5, array[$5]::text[], $6, 1)
+        returning ${ADMIN_BOOK_SELECT_SQL}
+      `,
+      [
+        input.author,
+        DEFAULT_BOOK_CATEGORY,
+        isbn,
+        input.publisher,
+        input.schoolBookCode,
+        input.title,
+      ]
+    )
 
-  if (error) {
-    if (error.code === '23505') {
+    invalidateAdminBooksCache()
+
+    return rows[0]
+  } catch (error) {
+    if (getDbErrorCode(error) === '23505') {
       throw duplicateBookCodeError()
     }
 
     throw error
   }
-
-  invalidateAdminBooksCache()
-
-  return data as AdminBookRow
 }
 
 export async function updateAdminBook(
-  supabase: TypedSupabaseClient,
+  db: DbClient,
   bookId: string,
   input: AdminBookUpdateInput
 ): Promise<AdminBookRow> {
@@ -510,33 +576,43 @@ export async function updateAdminBook(
     throw new ApiRouteError(400, 'MISSING_REQUIRED_FIELDS', missingFieldsMessage)
   }
 
-  const { data, error } = await supabase
-    .from('books')
-    .update({
-      author: input.author,
-      isbn: getNullableAdminBookIsbn(input),
-      publisher: input.publisher,
-      school_book_code: input.schoolBookCode,
-      school_book_codes: [input.schoolBookCode],
-      title: input.title,
-    })
-    .eq('id', bookId)
-    .select(ADMIN_BOOK_COLUMNS)
-    .maybeSingle()
+  try {
+    const { rows } = await db.query<AdminBookRow>(
+      `
+        update public.books
+        set
+          author = $1,
+          isbn = $2,
+          publisher = $3,
+          school_book_code = $4,
+          school_book_codes = array[$4]::text[],
+          title = $5
+        where id = $6
+        returning ${ADMIN_BOOK_SELECT_SQL}
+      `,
+      [
+        input.author,
+        getNullableAdminBookIsbn(input),
+        input.publisher,
+        input.schoolBookCode,
+        input.title,
+        bookId,
+      ]
+    )
 
-  if (error) {
-    if (error.code === '23505') {
+    const updatedBook = rows[0]
+    if (!updatedBook) {
+      throw new ApiRouteError(404, 'BOOK_NOT_FOUND', '수정할 도서를 찾을 수 없습니다.')
+    }
+
+    invalidateAdminBooksCache()
+
+    return updatedBook
+  } catch (error) {
+    if (getDbErrorCode(error) === '23505') {
       throw duplicateBookCodeError()
     }
 
     throw error
   }
-
-  if (!data) {
-    throw new ApiRouteError(404, 'BOOK_NOT_FOUND', '수정할 도서를 찾을 수 없습니다.')
-  }
-
-  invalidateAdminBooksCache()
-
-  return data as AdminBookRow
 }

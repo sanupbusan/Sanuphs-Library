@@ -1,6 +1,6 @@
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
 import {
-  createRouteSupabaseClient,
+  createRouteDbClient,
   jsonData,
   jsonDataWithMeta,
   readJsonBody,
@@ -56,19 +56,12 @@ export async function GET(request: Request) {
         throwApiError(400, 'MISSING_CODE', '도서 코드를 입력해주세요.')
       }
 
-      const supabase = createRouteSupabaseClient()
-      const { data: returnableLoans, error: returnableLoanError } = await supabase.rpc(
-        'get_returnable_loan_by_school_book_code',
-        {
-          input_school_book_code: code,
-        }
+      const db = createRouteDbClient()
+      const { rows: returnableLoans } = await db.query<ReturnableLoan>(
+        'select * from public.get_returnable_loan_by_school_book_code($1)',
+        [code]
       )
-
-      if (returnableLoanError) {
-        throw returnableLoanError
-      }
-
-      const loan = (returnableLoans ?? [])[0] as ReturnableLoan | undefined
+      const loan = returnableLoans[0]
 
       if (!loan) {
         throwApiError(404, 'LOAN_NOT_FOUND', '해당 도서는 대여 중이 아닙니다.')
@@ -97,19 +90,11 @@ export async function POST(request: Request) {
         throwApiError(400, 'MISSING_CODE', '도서 코드를 입력해주세요.')
       }
 
-      const supabase = createRouteSupabaseClient()
-      const { data: returnedLoans, error: returnLoanError } = await supabase.rpc(
-        'return_loans_by_school_book_codes',
-        {
-          input_school_book_codes: schoolBookCodes,
-        }
+      const db = createRouteDbClient()
+      const { rows: returnedLoanList } = await db.query<ReturnedLoan>(
+        'select * from public.return_loans_by_school_book_codes($1::text[])',
+        [schoolBookCodes]
       )
-
-      if (returnLoanError) {
-        throw returnLoanError
-      }
-
-      const returnedLoanList = (returnedLoans ?? []) as ReturnedLoan[]
 
       if (returnedLoanList.length === 0) {
         throwApiError(404, 'LOAN_NOT_FOUND', '대여 중인 도서를 찾지 못해 반납 처리하지 못했습니다.')

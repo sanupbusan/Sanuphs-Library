@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     async () => {
       const session = await requireAdminSession(request)
       const today = new Date().toISOString().slice(0, 10)
-      const overdueLoans = await listAdminOverdueLoans(session.supabase, today)
+      const overdueLoans = await listAdminOverdueLoans(session.db, today)
 
       return jsonDataWithMeta(
         overdueLoans,

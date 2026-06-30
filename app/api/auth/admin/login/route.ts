@@ -1,12 +1,16 @@
 import {
   AdminAuthError,
   cacheAdminSession,
+  createAdminAccessToken,
+  createLocalAdminSession,
+  getAdminSessionMaxAgeSeconds,
   serializeAdminSession,
   setAdminSessionCookie,
 } from '@/lib/admin-auth'
-import { createRouteSupabaseClient, jsonData, readJsonBody, runApiRoute, withNoStore } from '@/lib/api-route'
+import { jsonData, readJsonBody, runApiRoute, withNoStore } from '@/lib/api-route'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 type LoginBody = {
   loginId?: unknown
@@ -14,14 +18,13 @@ type LoginBody = {
 }
 
 const DEFAULT_ADMIN_LOGIN_ID = 'SanupLib'
-const DEFAULT_ADMIN_AUTH_EMAIL = 'sanuplib-admin@sanuplib.local'
 
 function getConfiguredAdminLoginId() {
   return process.env.ADMIN_LOGIN_ID?.trim() || DEFAULT_ADMIN_LOGIN_ID
 }
 
-function getConfiguredAdminAuthEmail() {
-  return process.env.ADMIN_AUTH_EMAIL?.trim() || DEFAULT_ADMIN_AUTH_EMAIL
+function getConfiguredAdminPassword() {
+  return process.env.ADMIN_PASSWORD ?? ''
 }
 
 function getCredentials(body: LoginBody) {
@@ -29,6 +32,32 @@ function getCredentials(body: LoginBody) {
   const password = typeof body.password === 'string' ? body.password : ''
 
   return { loginId, password }
+}
+
+async function sha256(value: string) {
+  const encodedValue = new TextEncoder().encode(value)
+  const hash = await crypto.subtle.digest('SHA-256', encodedValue)
+
+  return Array.from(new Uint8Array(hash))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+async function isPasswordMatch(inputPassword: string, configuredPassword: string) {
+  if (!configuredPassword) {
+    throw new AdminAuthError(
+      503,
+      'ADMIN_PASSWORD_NOT_CONFIGURED',
+      'ADMIN_PASSWORD가 설정되지 않았습니다.'
+    )
+  }
+
+  const [inputHash, configuredHash] = await Promise.all([
+    sha256(inputPassword),
+    sha256(configuredPassword),
+  ])
+
+  return inputHash === configuredHash
 }
 
 export async function POST(request: Request) {
@@ -52,47 +81,24 @@ export async function POST(request: Request) {
         throw new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
       }
 
-      const authClient = createRouteSupabaseClient()
-      const { data, error } = await authClient.auth.signInWithPassword({
-        email: getConfiguredAdminAuthEmail(),
-        password,
-      })
-
-      if (error || !data.session || !data.user) {
+      const passwordMatches = await isPasswordMatch(password, getConfiguredAdminPassword())
+      if (!passwordMatches) {
         throw new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
       }
 
-      const { data: adminUser, error: adminUserError } = await authClient
-        .from('admin_users')
-        .select('login_id, role')
-        .eq('user_id', data.user.id)
-        .maybeSingle()
+      const adminSession = createLocalAdminSession(loginId)
+      const accessToken = createAdminAccessToken()
+      const expiresIn = getAdminSessionMaxAgeSeconds()
+      const expiresAt = Math.floor(Date.now() / 1000) + expiresIn
 
-      if (adminUserError) {
-        throw adminUserError
-      }
-
-      if (!adminUser || adminUser.login_id !== loginId) {
-        throw new AdminAuthError(403, 'FORBIDDEN', '관리자 권한이 필요합니다.')
-      }
-
-      const adminSession = {
-        role: adminUser.role,
-        supabase: authClient,
-        user: {
-          id: data.user.id,
-          loginId: adminUser.login_id,
-        },
-      }
-
-      cacheAdminSession(data.session.access_token, adminSession)
+      cacheAdminSession(accessToken, adminSession)
 
       const response = jsonData(serializeAdminSession(adminSession), withNoStore())
       await setAdminSessionCookie(
         response,
-        data.session.access_token,
-        data.session.expires_in,
-        data.session.expires_at,
+        accessToken,
+        expiresIn,
+        expiresAt,
         serializeAdminSession(adminSession)
       )
 
