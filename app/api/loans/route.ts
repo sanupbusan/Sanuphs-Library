@@ -34,17 +34,32 @@ function isLoanLimitError(error: unknown) {
   )
 }
 
-function getErrorMessage(error: unknown) {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'message' in error &&
-    typeof error.message === 'string'
-  ) {
-    return error.message
+function getStringProperty(error: unknown, property: 'code' | 'details' | 'hint' | 'message') {
+  if (typeof error !== 'object' || error === null || !(property in error)) {
+    return ''
   }
 
-  return ''
+  const value = (error as Record<typeof property, unknown>)[property]
+
+  return typeof value === 'string' ? value : ''
+}
+
+function getErrorMessage(error: unknown) {
+  return getStringProperty(error, 'message')
+}
+
+function isCreatePublicLoanSignatureCacheError(error: unknown) {
+  const errorText = [
+    getErrorMessage(error),
+    getStringProperty(error, 'details'),
+    getStringProperty(error, 'hint'),
+  ].join(' ')
+
+  return (
+    getStringProperty(error, 'code') === 'PGRST202' &&
+    errorText.includes('create_public_loan') &&
+    errorText.includes('input_school_book_code')
+  )
 }
 
 function jsonLoanError(status: number, code: string, message: string) {
