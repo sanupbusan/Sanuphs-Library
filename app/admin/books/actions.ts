@@ -54,7 +54,7 @@ function getActionError(error: unknown, fallback: ApiError, logLabel: string): A
 export async function deleteBookAction(bookId: unknown): Promise<DeleteBookActionResult> {
   try {
     const session = await requireAdminSessionFromCookies()
-    const data = await deleteAdminBook(session.supabase, getText(bookId))
+    const data = await deleteAdminBook(session.db, getText(bookId))
 
     revalidatePath('/admin/books')
     revalidatePath('/admin/add_books')
@@ -80,7 +80,7 @@ export async function updateBookAction(
 ): Promise<UpdateBookActionResult> {
   try {
     const session = await requireAdminSessionFromCookies()
-    const data = await updateAdminBook(session.supabase, getText(bookId), trimUpdateInput(getUpdateInputObject(input)))
+    const data = await updateAdminBook(session.db, getText(bookId), trimUpdateInput(getUpdateInputObject(input)))
 
     revalidatePath('/admin/books')
     revalidatePath('/admin/add_books')

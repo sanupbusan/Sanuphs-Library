@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       const session = await requireAdminSession(request)
       const body = await readJsonBody<CreateBookBody>(request)
       const input = getCreateBookInput(body)
-      const data = await createAdminBook(session.supabase, input)
+      const data = await createAdminBook(session.db, input)
 
       return jsonData(data, { status: 201 })
     }

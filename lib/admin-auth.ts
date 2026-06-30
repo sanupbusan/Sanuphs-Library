@@ -1,10 +1,5 @@
 import { NextResponse } from 'next/server'
-import {
-  createServerSupabaseClient,
-  createSupabaseClientWithAccessToken,
-  isSupabaseConfigured,
-  type TypedSupabaseClient,
-} from '@/lib/supabase'
+import { getDb, type DbClient } from '@/lib/db'
 import { ApiRouteError, jsonError } from '@/lib/api-route'
 import {
   ADMIN_ACCESS_TOKEN_COOKIE,
@@ -17,15 +12,14 @@ import {
   getAdminSessionFromSignedCookie,
   setAdminSessionSignedCookie,
 } from '@/lib/admin-session-cookie'
-import type { Database } from '@/types/supabase'
 
 export { ADMIN_ACCESS_TOKEN_COOKIE, AdminAuthError } from '@/lib/admin-auth-shared'
 
-type AdminRole = Database['public']['Enums']['admin_role']
+export type AdminRole = 'admin'
 
 export type AdminSession = {
+  db: DbClient
   role: AdminRole
-  supabase: TypedSupabaseClient
   user: {
     id: string
     loginId: string
@@ -44,6 +38,8 @@ type AdminSessionCacheEntry = {
 
 const ADMIN_SESSION_CACHE_TTL_MS = 5 * 60 * 1000
 const ADMIN_SESSION_CACHE_MAX_ENTRIES = 20
+const DEFAULT_ADMIN_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60
+const LOCAL_ADMIN_USER_ID = 'local-admin'
 const adminSessionCache = new Map<string, AdminSessionCacheEntry>()
 
 function getAccessTokenFromRequest(request: Request) {
@@ -63,6 +59,31 @@ function getCachedAdminSession(accessToken: string) {
   }
 
   return cached.session
+}
+
+export function getAdminSessionMaxAgeSeconds() {
+  const configuredValue = Number(process.env.ADMIN_SESSION_MAX_AGE_SECONDS)
+
+  if (Number.isFinite(configuredValue) && configuredValue > 0) {
+    return Math.trunc(configuredValue)
+  }
+
+  return DEFAULT_ADMIN_SESSION_MAX_AGE_SECONDS
+}
+
+export function createAdminAccessToken() {
+  return crypto.randomUUID()
+}
+
+export function createLocalAdminSession(loginId: string): AdminSession {
+  return {
+    db: getDb(),
+    role: 'admin',
+    user: {
+      id: LOCAL_ADMIN_USER_ID,
+      loginId,
+    },
+  }
 }
 
 export function cacheAdminSession(accessToken: string, session: AdminSession) {
@@ -147,14 +168,6 @@ export function serializeAdminSession(session: AdminSession): SerializedAdminSes
 }
 
 export async function createAdminSessionFromAccessToken(accessToken: string): Promise<AdminSession> {
-  if (!isSupabaseConfigured()) {
-    throw new AdminAuthError(
-      503,
-      'SUPABASE_NOT_CONFIGURED',
-      'Supabase 환경변수가 설정되지 않았습니다.'
-    )
-  }
-
   if (!accessToken) {
     throw new AdminAuthError(401, 'UNAUTHENTICATED', '로그인이 필요합니다.')
   }
@@ -164,43 +177,7 @@ export async function createAdminSessionFromAccessToken(accessToken: string): Pr
     return cachedSession
   }
 
-  const authClient = createServerSupabaseClient()
-  const {
-    data: { user },
-    error: userError,
-  } = await authClient.auth.getUser(accessToken)
-
-  if (userError || !user) {
-    throw new AdminAuthError(401, 'INVALID_SESSION', '세션이 만료되었거나 올바르지 않습니다.')
-  }
-
-  const authedClient = createSupabaseClientWithAccessToken(accessToken)
-  const { data: adminUser, error: adminUserError } = await authedClient
-    .from('admin_users')
-    .select('login_id, role')
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (adminUserError) {
-    throw adminUserError
-  }
-
-  if (!adminUser) {
-    throw new AdminAuthError(403, 'FORBIDDEN', '관리자 권한이 필요합니다.')
-  }
-
-  const session = {
-    role: adminUser.role,
-    supabase: authedClient,
-    user: {
-      id: user.id,
-      loginId: adminUser.login_id,
-    },
-  }
-
-  cacheAdminSession(accessToken, session)
-
-  return session
+  throw new AdminAuthError(401, 'INVALID_SESSION', '세션이 만료되었거나 올바르지 않습니다.')
 }
 
 async function createAdminSessionFromSignedPayload(
@@ -221,10 +198,9 @@ async function createAdminSessionFromSignedPayload(
     return cachedSession
   }
 
-  const authedClient = createSupabaseClientWithAccessToken(accessToken)
   const session: AdminSession = {
+    db: getDb(),
     role: signedSession.role as AdminRole,
-    supabase: authedClient,
     user: signedSession.user,
   }
 

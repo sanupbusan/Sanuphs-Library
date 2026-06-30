@@ -1,8 +1,5 @@
-import {
-  createRouteSupabaseClient,
-  jsonDataWithMeta,
-  runApiRoute,
-} from '@/lib/api-route'
+import { createRouteDbClient, jsonDataWithMeta, runApiRoute } from '@/lib/api-route'
+import { searchBooks } from '@/lib/library-queries'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,16 +29,9 @@ export async function GET(request: Request) {
       logLabel: 'Book search failed:',
     },
     async () => {
-      const supabase = createRouteSupabaseClient()
-      const { data, error } = await supabase
-        .rpc('search_books', { search_query: query })
-        .limit(limit)
-
-      if (error) {
-        throw error
-      }
-
-      const books = (data ?? []).map((book) => ({
+      const db = createRouteDbClient()
+      const data = await searchBooks(db, query, limit)
+      const books = data.map((book) => ({
         id: book.id,
         isbn: book.isbn,
         title: book.title,

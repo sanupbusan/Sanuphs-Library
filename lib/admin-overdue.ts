@@ -1,28 +1,29 @@
-import type { TypedSupabaseClient } from '@/lib/supabase'
-import type { OverdueLoanRow, OverdueLoanSelectRow } from '@/types/library'
+import type { DbClient } from '@/lib/db'
+import type { OverdueLoanRow } from '@/types/library'
 
 export async function listAdminOverdueLoans(
-  supabase: TypedSupabaseClient,
+  db: DbClient,
   today = new Date().toISOString().slice(0, 10)
 ): Promise<OverdueLoanRow[]> {
-  const { data, error } = await supabase
-    .from('loans')
-    .select('id, borrowed_on, due_on, books(title), students(name, student_number)')
-    .eq('status', 'rented')
-    .lt('due_on', today)
-    .order('due_on', { ascending: true })
-    .limit(100)
+  const { rows } = await db.query<OverdueLoanRow>(
+    `
+      select
+        loans.id,
+        loans.borrowed_on as "borrowedOn",
+        loans.due_on as "dueOn",
+        books.title as "bookTitle",
+        students.name as "studentName",
+        students.student_number as "studentNumber"
+      from public.loans
+      left join public.books on books.id = loans.book_id
+      left join public.students on students.id = loans.student_id
+      where loans.status = 'rented'
+        and loans.due_on < $1
+      order by loans.due_on asc
+      limit 100
+    `,
+    [today]
+  )
 
-  if (error) {
-    throw error
-  }
-
-  return ((data ?? []) as unknown as OverdueLoanSelectRow[]).map((loan) => ({
-    bookTitle: loan.books?.title ?? null,
-    borrowedOn: loan.borrowed_on,
-    dueOn: loan.due_on,
-    id: loan.id,
-    studentName: loan.students?.name ?? null,
-    studentNumber: loan.students?.student_number ?? null,
-  }))
+  return rows
 }

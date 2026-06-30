@@ -1,6 +1,6 @@
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
 import {
-  createRouteSupabaseClient,
+  createRouteDbClient,
   jsonDataWithMeta,
   readJsonBody,
   runApiRoute,
@@ -43,16 +43,12 @@ export async function POST(request: Request) {
         throwApiError(400, 'MISSING_CODE', '도서 코드를 입력해주세요.')
       }
 
-      const supabase = createRouteSupabaseClient()
-      const { data, error } = await supabase.rpc('return_loans_by_school_book_codes', {
-        input_school_book_codes: schoolBookCodes,
-      })
-
-      if (error) {
-        throw error
-      }
-
-      const returnedLoans = (data ?? []) as ReturnedLoan[]
+      const db = createRouteDbClient()
+      const { rows } = await db.query<ReturnedLoan>(
+        'select * from public.return_loans_by_school_book_codes($1::text[])',
+        [schoolBookCodes]
+      )
+      const returnedLoans = rows
 
       if (returnedLoans.length === 0) {
         throwApiError(404, 'LOAN_NOT_FOUND', '대여 중인 도서를 찾지 못해 반납 처리하지 못했습니다.')

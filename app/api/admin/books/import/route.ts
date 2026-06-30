@@ -195,7 +195,7 @@ export async function POST(request: Request) {
         }
       })
 
-      const importResult = await insertAdminBooksInBatches(session.supabase, validRows)
+      const importResult = await insertAdminBooksInBatches(session.db, validRows)
       const errors = [...validationErrors, ...importResult.errors]
 
       return jsonData({

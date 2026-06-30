@@ -40,7 +40,7 @@ export async function updateLoanAction(
 ): Promise<UpdateLoanActionResult> {
   try {
     const session = await requireAdminSessionFromCookies()
-    const data = await updateAdminLoan(session.supabase, loanId.trim(), input)
+    const data = await updateAdminLoan(session.db, loanId.trim(), input)
 
     revalidatePath('/admin/loans')
     revalidatePath('/admin/overdue')

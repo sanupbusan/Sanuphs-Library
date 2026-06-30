@@ -1,8 +1,8 @@
-import type { TypedSupabaseClient } from '@/lib/supabase'
+import 'server-only'
+
+import type { DbClient } from '@/lib/db'
 import type {
-  ActiveLoanWithStudent,
   DashboardOverdueLoan,
-  DashboardOverdueLoanWithStudent,
   DashboardSummary,
   RecentBook,
   RecentLoan,
@@ -24,75 +24,62 @@ export type DashboardData = {
   recentLoans: RecentLoan[]
 }
 
-export async function getDashboardSummary(client: TypedSupabaseClient) {
-  const { data, error } = await client
-    .from('dashboard_summary')
-    .select('*')
-    .single()
+export async function getDashboardSummary(client: DbClient): Promise<DashboardSummary> {
+  const { rows } = await client.query<DashboardSummary>(
+    'select * from public.dashboard_summary limit 1'
+  )
 
-  if (error) {
-    throw error
+  return rows[0] ?? {
+    active_loans: 0,
+    available_copies: 0,
+    overdue_loans: 0,
+    total_books: 0,
+    total_copies: 0,
   }
-
-  return data
 }
 
-export async function getRecentLoans(client: TypedSupabaseClient, limit = 5) {
-  const { data, error } = await client
-    .from('dashboard_recent_loans')
-    .select('*')
-    .order('rental_date', { ascending: false })
-    .limit(limit)
+export async function getRecentLoans(client: DbClient, limit = 5): Promise<RecentLoan[]> {
+  const { rows } = await client.query<RecentLoan>(
+    `
+      select *
+      from public.dashboard_recent_loans
+      order by rental_date desc
+      limit $1
+    `,
+    [limit]
+  )
 
-  if (error) {
-    throw error
-  }
-
-  return data ?? []
+  return rows
 }
 
-export async function getRecentBooks(client: TypedSupabaseClient, limit = 5): Promise<RecentBook[]> {
-  const { data, error } = await client
-    .from('books')
-    .select('id, title, author, category, available_copies, total_copies, created_at')
-    .order('created_at', { ascending: false })
-    .limit(limit)
+export async function getRecentBooks(client: DbClient, limit = 5): Promise<RecentBook[]> {
+  const { rows } = await client.query<RecentBook>(
+    `
+      select id, title, author, category, available_copies, total_copies, created_at
+      from public.books
+      order by created_at desc
+      limit $1
+    `,
+    [limit]
+  )
 
-  if (error) {
-    throw error
-  }
-
-  return data ?? []
+  return rows
 }
 
-export async function getStudentLoanStats(client: TypedSupabaseClient): Promise<StudentLoanStat[]> {
-  const { data, error } = await client
-    .from('loans')
-    .select('id, student_id, students(name)')
-    .returns<ActiveLoanWithStudent[]>()
+export async function getStudentLoanStats(client: DbClient): Promise<StudentLoanStat[]> {
+  const { rows } = await client.query<StudentLoanStat>(
+    `
+      select
+        loans.student_id,
+        coalesce(students.name, '-') as student_name,
+        count(loans.id)::integer as total_loans
+      from public.loans
+      left join public.students on students.id = loans.student_id
+      group by loans.student_id, students.name
+    `
+  )
 
-  if (error) {
-    throw error
-  }
-
-  const statsByStudent = new Map<string, StudentLoanStat>()
-
-  for (const loan of data ?? []) {
-    const existingStat = statsByStudent.get(loan.student_id)
-
-    if (existingStat) {
-      existingStat.total_loans += 1
-      continue
-    }
-
-    statsByStudent.set(loan.student_id, {
-      student_id: loan.student_id,
-      student_name: loan.students?.name ?? '-',
-      total_loans: 1,
-    })
-  }
-
-  return Array.from(statsByStudent.values()).sort((a, b) => {
+  return rows.sort((a, b) => {
     if (a.total_loans !== b.total_loans) {
       return b.total_loans - a.total_loans
     }
@@ -101,40 +88,40 @@ export async function getStudentLoanStats(client: TypedSupabaseClient): Promise<
   })
 }
 
-export async function getOverdueLoans(client: TypedSupabaseClient, limit = 20): Promise<DashboardOverdueLoan[]> {
-  const today = new Date().toISOString().slice(0, 10)
-  const { data, error } = await client
-    .from('loans')
-    .select('id, due_on, students(name)')
-    .eq('status', 'rented')
-    .lt('due_on', today)
-    .order('due_on', { ascending: true })
-    .limit(limit)
-    .returns<DashboardOverdueLoanWithStudent[]>()
+export async function getOverdueLoans(client: DbClient, limit = 20): Promise<DashboardOverdueLoan[]> {
+  const { rows } = await client.query<DashboardOverdueLoan>(
+    `
+      select
+        loans.id,
+        loans.due_on,
+        coalesce(students.name, '-') as student_name
+      from public.loans
+      left join public.students on students.id = loans.student_id
+      where loans.status = 'rented'
+        and loans.due_on < current_date
+      order by loans.due_on asc
+      limit $1
+    `,
+    [limit]
+  )
 
-  if (error) {
-    throw error
-  }
-
-  return (data ?? []).map((loan) => ({
-    due_on: loan.due_on,
-    id: loan.id,
-    student_name: loan.students?.name ?? '-',
-  }))
+  return rows
 }
 
-export async function searchBooks(client: TypedSupabaseClient, query: string) {
-  const { data, error } = await client
-    .rpc('search_books', { search_query: query.trim() })
+export async function searchBooks(client: DbClient, query: string, limit?: number): Promise<SearchBook[]> {
+  const { rows } = await client.query<SearchBook>(
+    `
+      select *
+      from public.search_books($1)
+      limit $2
+    `,
+    [query.trim(), limit ?? null]
+  )
 
-  if (error) {
-    throw error
-  }
-
-  return data ?? []
+  return rows
 }
 
-export async function getDashboardData(client: TypedSupabaseClient): Promise<DashboardData> {
+export async function getDashboardData(client: DbClient): Promise<DashboardData> {
   const [summary, recentLoans] = await Promise.all([
     getDashboardSummary(client),
     getRecentLoans(client),

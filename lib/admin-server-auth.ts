@@ -7,8 +7,8 @@ import {
   type AdminSession,
 } from '@/lib/admin-auth'
 import { ADMIN_SIGNED_SESSION_COOKIE } from '@/lib/admin-auth-shared'
-import { createSupabaseClientWithAccessToken } from '@/lib/supabase'
 import { getAdminSessionFromSignedCookieValue } from '@/lib/admin-session-cookie'
+import { getDb } from '@/lib/db'
 
 function getAdminAccessTokenFromCookies() {
   return cookies().get(ADMIN_ACCESS_TOKEN_COOKIE)?.value ?? ''
@@ -24,8 +24,8 @@ async function createAdminSessionFromCookies(): Promise<AdminSession | null> {
   const signedSession = await getAdminSessionFromSignedCookieValue(signedSessionValue)
   if (signedSession) {
     return {
+      db: getDb(),
       role: signedSession.role as AdminSession['role'],
-      supabase: createSupabaseClientWithAccessToken(accessToken),
       user: signedSession.user,
     }
   }
