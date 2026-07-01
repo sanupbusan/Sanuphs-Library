@@ -112,8 +112,8 @@ export async function searchBooks(client: DbClient, query: string, limit?: numbe
   const { rows } = await client.query<SearchBook>(
     `
       select *
-      from public.search_books($1)
-      limit $2
+      from public.search_books($1::text)
+      limit $2::integer
     `,
     [query.trim(), limit ?? null]
   )

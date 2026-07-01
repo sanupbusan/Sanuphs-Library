@@ -29,7 +29,7 @@ export async function GET(request: Request) {
 
       const db = createRouteDbClient()
       const { rows } = await db.query<LoanStudent>(
-        'select * from public.lookup_student_for_loan($1)',
+        'select * from public.lookup_student_for_loan($1::text)',
         [studentNumber]
       )
       const student = rows[0]

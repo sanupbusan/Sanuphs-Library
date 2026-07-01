@@ -58,7 +58,7 @@ export async function GET(request: Request) {
 
       const db = createRouteDbClient()
       const { rows: returnableLoans } = await db.query<ReturnableLoan>(
-        'select * from public.get_returnable_loan_by_school_book_code($1)',
+        'select * from public.get_returnable_loan_by_school_book_code($1::text)',
         [code]
       )
       const loan = returnableLoans[0]
