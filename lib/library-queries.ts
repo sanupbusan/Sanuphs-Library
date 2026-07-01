@@ -108,14 +108,28 @@ export async function getOverdueLoans(client: DbClient, limit = 20): Promise<Das
   return rows
 }
 
-export async function searchBooks(client: DbClient, query: string, limit?: number): Promise<SearchBook[]> {
+export async function searchBooks(client: DbClient, query: string, limit = 20): Promise<SearchBook[]> {
+  const searchQuery = query.trim()
   const { rows } = await client.query<SearchBook>(
     `
-      select *
-      from public.search_books($1::text)
+      select
+        id,
+        isbn,
+        title,
+        author,
+        publisher,
+        category,
+        available_copies,
+        total_copies,
+        null::text as location
+      from public.books
+      where nullif($1::text, '') is null
+         or title ilike '%' || $1::text || '%'
+         or author ilike '%' || $1::text || '%'
+      order by title asc
       limit $2::integer
     `,
-    [query.trim(), limit ?? null]
+    [searchQuery, limit]
   )
 
   return rows
