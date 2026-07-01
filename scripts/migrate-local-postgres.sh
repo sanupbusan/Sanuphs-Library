@@ -42,7 +42,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$database_url" ]]; then
-  database_url="postgres://postgres:postgres@localhost:5432/library"
+  database_url="postgres://sanuplib:SanupLib2026@localhost:5432/library"
 fi
 
 if ! command -v psql >/dev/null 2>&1; then
