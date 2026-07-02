@@ -127,7 +127,7 @@ export async function setAdminSessionCookie(
   })
 
   const fallbackExp = Math.floor(Date.now() / 1000) + expiresIn
-  await setAdminSessionSignedCookie(
+  const signedSessionCookieWasSet = await setAdminSessionSignedCookie(
     response,
     {
       role: serializedSession.role,
@@ -136,6 +136,19 @@ export async function setAdminSessionCookie(
     },
     { maxAge: expiresIn }
   )
+
+  if (!signedSessionCookieWasSet) {
+    response.cookies.set(ADMIN_ACCESS_TOKEN_COOKIE, '', {
+      ...cookieOptions,
+      maxAge: 0,
+    })
+
+    throw new AdminAuthError(
+      503,
+      'ADMIN_SESSION_COOKIE_NOT_SET',
+      'Admin session cookie could not be created.'
+    )
+  }
 }
 
 export function clearAdminSessionCookie(response: NextResponse) {
