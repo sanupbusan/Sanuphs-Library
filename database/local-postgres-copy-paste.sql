@@ -15,7 +15,6 @@ end
 $$;
 
 grant all privileges on database library_db to sanuplib;
-set role sanuplib;
 
 create schema if not exists extensions;
 create schema if not exists auth;
@@ -69,7 +68,7 @@ create table public.books (
   title text not null,
   author text not null,
   publisher text,
-  category text not null default '誘몃텇瑜?,
+  category text not null default U&'\BBF8\BD84\B958',
   published_year integer,
   total_copies integer not null default 1 check (total_copies >= 0),
   available_copies integer not null default 1 check (available_copies >= 0),
@@ -539,7 +538,7 @@ grant execute on function public.return_loans_by_school_book_codes(text[]) to an
 insert into public.students (student_number, name, grade, class_number, seat_number)
 select
   '3' || lpad(class_num::text, 2, '0') || lpad(seat_num::text, 2, '0'),
-  '?숈깮' || ('3' || lpad(class_num::text, 2, '0') || lpad(seat_num::text, 2, '0')),
+  U&'\D559\C0DD' || ('3' || lpad(class_num::text, 2, '0') || lpad(seat_num::text, 2, '0')),
   3,
   class_num,
   seat_num
@@ -550,7 +549,7 @@ on conflict (student_number) do nothing;
 insert into public.students (student_number, name, grade, class_number, seat_number)
 select
   'T' || lpad(num::text, 2, '0'),
-  '援먯쭅?? || lpad(num::text, 2, '0'),
+  U&'\AD50\C9C1\C6D0' || lpad(num::text, 2, '0'),
   3,
   99,
   num
@@ -561,7 +560,7 @@ on conflict (student_number) do nothing;
 insert into public.students (student_number, name, grade, class_number, seat_number)
 select
   '3' || lpad(class_num::text, 2, '0') || lpad(seat_num::text, 2, '0'),
-  '?숈깮' || ('3' || lpad(class_num::text, 2, '0') || lpad(seat_num::text, 2, '0')),
+  U&'\D559\C0DD' || ('3' || lpad(class_num::text, 2, '0') || lpad(seat_num::text, 2, '0')),
   3,
   class_num,
   seat_num
@@ -572,7 +571,7 @@ on conflict (student_number) do nothing;
 insert into public.students (student_number, name, grade, class_number, seat_number)
 select
   'T' || lpad(num::text, 2, '0'),
-  '援먯쭅?? || lpad(num::text, 2, '0'),
+  U&'\AD50\C9C1\C6D0' || lpad(num::text, 2, '0'),
   3,
   99,
   num
@@ -918,7 +917,7 @@ begin
     borrower.student_number,
     borrower.class_number
   );
-  borrower_label := case when loan_limit = 5 then '援먯쭅?? else '?숈깮' end;
+  borrower_label := case when loan_limit = 5 then U&'\AD50\C9C1\C6D0' else U&'\D559\C0DD' end;
 
   select count(*)::integer
   into active_loan_count
@@ -931,7 +930,7 @@ begin
   if active_loan_count >= loan_limit then
     raise exception using
       errcode = '23514',
-      message = borrower_label || '? 理쒕? ' || loan_limit || '沅뚭퉴吏 ??ы븷 ???덉뒿?덈떎.';
+      message = borrower_label || U&'\C740 \CD5C\B300 ' || loan_limit || U&'\AD8C\AE4C\C9C0 \B300\C5EC\D560 \C218 \C788\C2B5\B2C8\B2E4.';
   end if;
 
   return NEW;
@@ -998,7 +997,7 @@ as $$
     target_student.seat_number,
     coalesce(active_counts.active_loan_count, 0) as active_loan_count,
     case when target_student.loan_limit = 5 then 'staff' else 'student' end as borrower_type,
-    case when target_student.loan_limit = 5 then '援먯쭅?? else '?숈깮' end as borrower_label,
+    case when target_student.loan_limit = 5 then U&'\AD50\C9C1\C6D0' else U&'\D559\C0DD' end as borrower_label,
     target_student.loan_limit,
     greatest(target_student.loan_limit - coalesce(active_counts.active_loan_count, 0), 0) as remaining_loan_count
   from target_student
@@ -1079,12 +1078,12 @@ begin
 
   v_loan_limit := public.get_borrower_loan_limit(v_student.student_number, v_student.class_number);
   v_borrower_type := case when v_loan_limit = 5 then 'staff' else 'student' end;
-  v_borrower_label := case when v_loan_limit = 5 then '援먯쭅?? else '?숈깮' end;
+  v_borrower_label := case when v_loan_limit = 5 then U&'\AD50\C9C1\C6D0' else U&'\D559\C0DD' end;
 
   if v_active_loan_count >= v_loan_limit then
     raise exception using
       errcode = '23514',
-      message = v_borrower_label || '? 理쒕? ' || v_loan_limit || '沅뚭퉴吏 ??ы븷 ???덉뒿?덈떎. ?꾩옱 ' || v_active_loan_count || '沅????以묒엯?덈떎.';
+      message = v_borrower_label || U&'\C740 \CD5C\B300 ' || v_loan_limit || U&'\AD8C\AE4C\C9C0 \B300\C5EC\D560 \C218 \C788\C2B5\B2C8\B2E4. \D604\C7AC ' || v_active_loan_count || U&'\AD8C \B300\C5EC \C911\C785\B2C8\B2E4.';
   end if;
 
   insert into public.loans (book_id, student_id, notes)
@@ -1217,7 +1216,7 @@ begin
     borrower.student_number,
     borrower.class_number
   );
-  borrower_label := case when borrower_loan_limit = 5 then '援먯쭅?? else '?숈깮' end;
+  borrower_label := case when borrower_loan_limit = 5 then U&'\AD50\C9C1\C6D0' else U&'\D559\C0DD' end;
 
   select count(*)::integer
   into active_loan_count
@@ -1230,7 +1229,7 @@ begin
   if active_loan_count >= borrower_loan_limit then
     raise exception using
       errcode = '23514',
-      message = borrower_label || '? 理쒕? ' || borrower_loan_limit || '沅뚭퉴吏 ??ы븷 ???덉뒿?덈떎.';
+      message = borrower_label || U&'\C740 \CD5C\B300 ' || borrower_loan_limit || U&'\AD8C\AE4C\C9C0 \B300\C5EC\D560 \C218 \C788\C2B5\B2C8\B2E4.';
   end if;
 
   return NEW;
@@ -1339,12 +1338,12 @@ begin
 
   v_loan_limit := public.get_borrower_loan_limit(v_student.student_number, v_student.class_number);
   v_borrower_type := case when v_loan_limit = 5 then 'staff' else 'student' end;
-  v_borrower_label := case when v_loan_limit = 5 then '援먯쭅?? else '?숈깮' end;
+  v_borrower_label := case when v_loan_limit = 5 then U&'\AD50\C9C1\C6D0' else U&'\D559\C0DD' end;
 
   if v_active_loan_count >= v_loan_limit then
     raise exception using
       errcode = '23514',
-      message = v_borrower_label || '? 理쒕? ' || v_loan_limit || '沅뚭퉴吏 ??ы븷 ???덉뒿?덈떎. ?꾩옱 ' || v_active_loan_count || '沅????以묒엯?덈떎.';
+      message = v_borrower_label || U&'\C740 \CD5C\B300 ' || v_loan_limit || U&'\AD8C\AE4C\C9C0 \B300\C5EC\D560 \C218 \C788\C2B5\B2C8\B2E4. \D604\C7AC ' || v_active_loan_count || U&'\AD8C \B300\C5EC \C911\C785\B2C8\B2E4.';
   end if;
 
   insert into public.loans (book_id, student_id, notes)
@@ -1440,7 +1439,7 @@ as $$
     target_student.seat_number,
     coalesce(active_counts.active_loan_count, 0) as active_loan_count,
     case when target_student.loan_limit = 5 then 'staff' else 'student' end as borrower_type,
-    case when target_student.loan_limit = 5 then '援먯쭅?? else '?숈깮' end as borrower_label,
+    case when target_student.loan_limit = 5 then U&'\AD50\C9C1\C6D0' else U&'\D559\C0DD' end as borrower_label,
     target_student.loan_limit,
     greatest(target_student.loan_limit - coalesce(active_counts.active_loan_count, 0), 0) as remaining_loan_count,
     greatest((current_date - first_overdue.oldest_overdue_due_on)::integer, 0) as overdue_days,
@@ -1551,12 +1550,12 @@ begin
 
   v_loan_limit := public.get_borrower_loan_limit(v_student.student_number, v_student.class_number);
   v_borrower_type := case when v_loan_limit = 5 then 'staff' else 'student' end;
-  v_borrower_label := case when v_loan_limit = 5 then '援먯쭅?? else '?숈깮' end;
+  v_borrower_label := case when v_loan_limit = 5 then U&'\AD50\C9C1\C6D0' else U&'\D559\C0DD' end;
 
   if v_active_loan_count >= v_loan_limit then
     raise exception using
       errcode = '23514',
-      message = v_borrower_label || '? 理쒕? ' || v_loan_limit || '沅뚭퉴吏 ??ы븷 ???덉뒿?덈떎. ?꾩옱 ' || v_active_loan_count || '沅????以묒엯?덈떎.';
+      message = v_borrower_label || U&'\C740 \CD5C\B300 ' || v_loan_limit || U&'\AD8C\AE4C\C9C0 \B300\C5EC\D560 \C218 \C788\C2B5\B2C8\B2E4. \D604\C7AC ' || v_active_loan_count || U&'\AD8C \B300\C5EC \C911\C785\B2C8\B2E4.';
   end if;
 
   insert into public.loans (book_id, student_id, notes)
@@ -2099,5 +2098,3 @@ as $$
   order by books.title;
 $$;
 
-
-reset role;
