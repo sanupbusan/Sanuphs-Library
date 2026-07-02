@@ -77,11 +77,19 @@ async function validateAdminRequest(request: NextRequest) {
   const accessToken = request.cookies.get(ADMIN_ACCESS_TOKEN_COOKIE)?.value ?? ''
 
   if (!accessToken) {
+    console.warn('[AdminAuth] Middleware rejected request: access token cookie is missing.', {
+      path: request.nextUrl.pathname,
+    })
     throw new AdminAuthError(401, 'UNAUTHENTICATED', '로그인이 필요합니다.')
   }
 
   const signedSession = await getAdminSessionFromSignedCookie(request)
   if (!signedSession) {
+    console.warn('[AdminAuth] Middleware rejected request: signed session cookie is missing or invalid.', {
+      path: request.nextUrl.pathname,
+      hasAccessToken: Boolean(accessToken),
+      hasSignedSessionCookie: Boolean(request.cookies.get(ADMIN_SIGNED_SESSION_COOKIE)?.value),
+    })
     throw new AdminAuthError(401, 'INVALID_SESSION', '세션이 만료되었거나 올바르지 않습니다.')
   }
 }
