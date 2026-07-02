@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import {
   ADMIN_ACCESS_TOKEN_COOKIE,
   AdminAuthError,
-  createAdminSessionFromAccessToken,
   type AdminSession,
 } from '@/lib/admin-auth'
 import { ADMIN_SIGNED_SESSION_COOKIE } from '@/lib/admin-auth-shared'
@@ -44,7 +43,7 @@ export async function requireAdminSessionFromCookies(): Promise<AdminSession> {
     throw new AdminAuthError(401, 'UNAUTHENTICATED', '로그인이 필요합니다.')
   }
 
-  return createAdminSessionFromAccessToken(accessToken)
+  throw new AdminAuthError(401, 'INVALID_SESSION', '세션이 만료되었거나 올바르지 않습니다.')
 }
 
 export async function requireAdminPageSession(): Promise<AdminSession> {
