@@ -25,8 +25,18 @@ export function getAdminCookieOptions(): AdminCookieOptions {
     httpOnly: true,
     path: '/',
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: isAdminCookieSecureEnabled(),
   }
+}
+
+export function isAdminCookieSecureEnabled() {
+  const configuredValue = process.env.ADMIN_COOKIE_SECURE?.trim().toLowerCase()
+
+  if (configuredValue === '1' || configuredValue === 'true' || configuredValue === 'yes') {
+    return true
+  }
+
+  return false
 }
 
 export function parseCookieHeader(cookieHeader: string | null) {

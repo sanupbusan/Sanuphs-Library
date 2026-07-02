@@ -2098,3 +2098,19 @@ as $$
   order by books.title;
 $$;
 
+
+grant usage on schema public to sanuplib;
+grant usage on schema auth to sanuplib;
+grant usage on schema extensions to sanuplib;
+grant all privileges on all tables in schema public to sanuplib;
+grant all privileges on all tables in schema auth to sanuplib;
+grant all privileges on all sequences in schema public to sanuplib;
+grant all privileges on all sequences in schema auth to sanuplib;
+grant execute on all functions in schema public to sanuplib;
+grant execute on all functions in schema auth to sanuplib;
+alter default privileges in schema public grant all privileges on tables to sanuplib;
+alter default privileges in schema public grant all privileges on sequences to sanuplib;
+alter default privileges in schema public grant execute on functions to sanuplib;
+alter default privileges in schema auth grant all privileges on tables to sanuplib;
+alter default privileges in schema auth grant all privileges on sequences to sanuplib;
+alter default privileges in schema auth grant execute on functions to sanuplib;
