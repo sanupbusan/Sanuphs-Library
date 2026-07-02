@@ -166,7 +166,7 @@ export async function setAdminSessionSignedCookie(
 ) {
   const cookieValue = await signAdminSessionCookie(session)
   if (!cookieValue) {
-    return
+    return false
   }
 
   const cookieOptions = getAdminCookieOptions()
@@ -174,6 +174,8 @@ export async function setAdminSessionSignedCookie(
     ...cookieOptions,
     maxAge: options.maxAge,
   })
+
+  return true
 }
 
 export function clearAdminSessionSignedCookie(response: NextResponse) {

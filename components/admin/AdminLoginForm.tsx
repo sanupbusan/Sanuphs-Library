@@ -17,6 +17,14 @@ function getSafeAdminRedirect(nextPath: string | null) {
     return '/admin'
   }
 
+  if (
+    nextPath === '/admin/login' ||
+    nextPath.startsWith('/admin/login/') ||
+    nextPath.startsWith('/admin/login?')
+  ) {
+    return '/admin'
+  }
+
   if (nextPath === '/admin' || nextPath.startsWith('/admin/') || nextPath.startsWith('/admin?')) {
     return nextPath
   }
