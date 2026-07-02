@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Loader2, LogIn } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -10,6 +10,14 @@ type LoginResponse = {
     code: string
     message: string
   }
+}
+
+type SessionResponse = {
+  data?: {
+    user?: {
+      loginId?: string
+    }
+  } | null
 }
 
 function getSafeAdminRedirect(nextPath: string | null) {
@@ -39,9 +47,41 @@ export default function AdminLoginForm() {
   const [errorMessage, setErrorMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
+  useEffect(() => {
+    let didCancel = false
+
+    async function redirectIfAlreadyLoggedIn() {
+      try {
+        const response = await fetch('/api/auth/admin/session?optional=1', {
+          cache: 'no-store',
+          credentials: 'same-origin',
+        })
+        const payload = (await response.json()) as SessionResponse
+
+        if (!didCancel && response.ok && payload.data?.user?.loginId) {
+          window.location.replace('/admin')
+        }
+      } catch {
+        // Stay on the login page when the optional session check fails.
+      }
+    }
+
+    void redirectIfAlreadyLoggedIn()
+
+    return () => {
+      didCancel = true
+    }
+  }, [])
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setErrorMessage('')
+
+    if (!loginId.trim() || !password) {
+      setErrorMessage('아이디와 비밀번호를 입력해주세요.')
+      return
+    }
+
     setIsLoading(true)
     let shouldResetLoading = true
 
