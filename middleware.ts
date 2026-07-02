@@ -113,18 +113,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isAdminLoginPage(pathname)) {
-    try {
-      await validateAdminRequest(request)
-      return NextResponse.redirect(new URL('/admin', request.url))
-    } catch (error) {
-      const response = NextResponse.next()
-
-      if (shouldClearAdminCookie(error)) {
-        clearAdminCookie(response)
-      }
-
-      return response
-    }
+    return NextResponse.next()
   }
 
   try {
