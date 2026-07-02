@@ -224,10 +224,14 @@ async function createAdminSessionFromSignedPayload(
 export async function requireAdminSession(request: Request): Promise<AdminSession> {
   const accessToken = getAccessTokenFromRequest(request)
 
+  if (!accessToken) {
+    throw new AdminAuthError(401, 'UNAUTHENTICATED', '로그인이 필요합니다.')
+  }
+
   const signedSession = await createAdminSessionFromSignedPayload(accessToken, request)
   if (signedSession) {
     return signedSession
   }
 
-  return createAdminSessionFromAccessToken(accessToken)
+  throw new AdminAuthError(401, 'INVALID_SESSION', '세션이 만료되었거나 올바르지 않습니다.')
 }

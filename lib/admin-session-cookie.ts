@@ -41,6 +41,13 @@ function base64UrlToArrayBuffer(base64url: string): ArrayBuffer {
   return bytes.buffer
 }
 
+function base64UrlToString(base64url: string): string {
+  const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=')
+
+  return atob(padded)
+}
+
 async function importSigningKey(secret: string): Promise<CryptoKey> {
   const encoder = new TextEncoder()
   const keyData = encoder.encode(secret)
@@ -120,7 +127,7 @@ export async function verifyAdminSessionCookie(
   }
 
   try {
-    const payloadJson = atob(payloadBase64.replace(/-/g, '+').replace(/_/g, '/'))
+    const payloadJson = base64UrlToString(payloadBase64)
     const payload = JSON.parse(payloadJson) as SignedAdminSessionPayload
 
     if (!payload || typeof payload.exp !== 'number' || payload.exp <= Date.now() / 1000) {
