@@ -144,7 +144,7 @@ export function useRentBookForm() {
       const loanResult = await createRentLoan(
         targetBook.id,
         student.id,
-        targetBook.matched_school_book_code ?? targetBook.school_book_code
+        targetBook.matched_school_book_code
       )
 
       setSuccessMessage(

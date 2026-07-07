@@ -241,6 +241,7 @@ export type Database = {
         Args: {
           input_book_id: string
           input_notes?: string | null
+          input_school_book_code?: string | null
           input_student_id: string
         }
         Returns: {
