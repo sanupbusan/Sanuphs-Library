@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { createAdminBook, lookupAdminBookByIsbn } from '@/components/admin/adminAddBookApi'
+import { createBookAction } from '@/app/admin/books/actions'
+import { lookupAdminBookByIsbn } from '@/components/admin/adminAddBookApi'
 import {
   sanitizeAdminBookIsbn,
   useAdminAddBookDraft,
@@ -17,6 +18,7 @@ import {
 import { useInputFocus } from '@/hooks/useInputFocus'
 import { useStatusMessages } from '@/hooks/useStatusMessages'
 import type { AdminBookRow } from '@/types/library'
+import type { ApiError } from '@/types/library'
 
 type UseAdminAddBookFormOptions = {
   onBookCreated?: (book: AdminBookRow) => void
@@ -26,6 +28,10 @@ const ISBN_SCAN_LOOKUP_DELAY_MS = 80
 
 function shouldRedirectToLogin(error: unknown) {
   return error instanceof ApiClientError && (error.status === 401 || error.status === 403)
+}
+
+function shouldRedirectToLoginFromAction(error: ApiError | undefined) {
+  return error?.code === 'UNAUTHENTICATED' || error?.code === 'INVALID_SESSION'
 }
 
 function isLookupInfoComplete(book: Pick<AdminBookRow, 'title' | 'author' | 'publisher'>) {
@@ -116,7 +122,18 @@ export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOption
     clearMessages()
 
     try {
-      const createdBook = await createAdminBook(input)
+      const result = await createBookAction(input)
+
+      if (shouldRedirectToLoginFromAction(result.error)) {
+        router.replace('/admin/login')
+        return
+      }
+
+      if (result.error || !result.data) {
+        throw new Error(result.error?.message ?? '책 등록에 실패했습니다.')
+      }
+
+      const createdBook = result.data
       resetDraft()
       onBookCreated?.(createdBook)
       setSuccessMessage('책이 등록되었습니다. 다음 책을 등록해주세요.')

@@ -1,34 +1,37 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import {
-  ADMIN_ACCESS_TOKEN_COOKIE,
-  AdminAuthError,
-  type AdminSession,
-} from '@/lib/admin-auth'
+import { AdminAuthError, createAdminSession, type AdminSession } from '@/lib/admin-auth'
 import { ADMIN_SIGNED_SESSION_COOKIE } from '@/lib/admin-auth-shared'
 import { getAdminSessionFromSignedCookieValue } from '@/lib/admin-session-cookie'
-import { getDb } from '@/lib/db'
 
-function getAdminAccessTokenFromCookies() {
-  return cookies().get(ADMIN_ACCESS_TOKEN_COOKIE)?.value ?? ''
+const DEBUG_TAG = '[LOGIN_DEBUG_SSR]'
+function dbg(msg: string, data?: unknown) {
+  const ts = new Date().toISOString()
+  console.log(`${DEBUG_TAG} ${ts} ${msg}`, data !== undefined ? data : '')
 }
 
 async function createAdminSessionFromCookies(): Promise<AdminSession | null> {
-  const accessToken = getAdminAccessTokenFromCookies()
-  if (!accessToken) {
-    return null
-  }
-
   const signedSessionValue = cookies().get(ADMIN_SIGNED_SESSION_COOKIE)?.value
+
+  dbg('createAdminSessionFromCookies: checking cookies', {
+    hasSignedSessionCookie: Boolean(signedSessionValue),
+    signedSessionLength: signedSessionValue?.length ?? 0,
+  })
+
   const signedSession = await getAdminSessionFromSignedCookieValue(signedSessionValue)
   if (signedSession) {
-    return {
-      db: getDb(),
+    dbg('createAdminSessionFromCookies: session created from signed cookie', {
+      role: signedSession.role,
+      loginId: signedSession.user.loginId,
+    })
+    return createAdminSession({
+      id: signedSession.user.id,
+      loginId: signedSession.user.loginId,
       role: signedSession.role as AdminSession['role'],
-      user: signedSession.user,
-    }
+    })
   }
 
+  dbg('createAdminSessionFromCookies: signed session invalid or missing')
   return null
 }
 
@@ -38,18 +41,24 @@ export async function requireAdminSessionFromCookies(): Promise<AdminSession> {
     return session
   }
 
-  const accessToken = getAdminAccessTokenFromCookies()
-  if (!accessToken) {
-    throw new AdminAuthError(401, 'UNAUTHENTICATED', '로그인이 필요합니다.')
-  }
-
-  throw new AdminAuthError(401, 'INVALID_SESSION', '세션이 만료되었거나 올바르지 않습니다.')
+  throw new AdminAuthError(401, 'UNAUTHENTICATED', '로그인이 필요합니다.')
 }
 
 export async function requireAdminPageSession(): Promise<AdminSession> {
+  dbg('requireAdminPageSession: ENTERED')
   try {
-    return await requireAdminSessionFromCookies()
+    const session = await requireAdminSessionFromCookies()
+    dbg('requireAdminPageSession: SUCCESS — session found', {
+      role: session.role,
+      loginId: session.user.loginId,
+    })
+    return session
   } catch (error) {
+    dbg('requireAdminPageSession: FAILED', {
+      code: (error as AdminAuthError)?.code,
+      status: (error as AdminAuthError)?.status,
+      willRedirect: error instanceof AdminAuthError && (error.status === 401 || error.status === 403),
+    })
     if (error instanceof AdminAuthError && (error.status === 401 || error.status === 403)) {
       redirect('/admin/login')
     }

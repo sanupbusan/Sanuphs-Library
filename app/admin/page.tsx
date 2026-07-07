@@ -12,9 +12,23 @@ export const metadata: Metadata = {
   description: 'SanupHs Library 보호 기능 콘솔',
 }
 
-export default async function AdminPage() {
-  const session = await requireAdminPageSession()
+const DEBUG_TAG = '[LOGIN_DEBUG_PAGE]'
+function dbg(msg: string, data?: unknown) {
+  const ts = new Date().toISOString()
+  console.log(`${DEBUG_TAG} ${ts} ${msg}`, data !== undefined ? data : '')
+}
 
+export default async function AdminPage() {
+  const t0 = Date.now()
+  dbg('/admin/page.tsx — RENDER START')
+  const session = await requireAdminPageSession()
+  dbg('/admin/page.tsx — session acquired', {
+    role: session.role,
+    loginId: session.user.loginId,
+    duration_ms: Date.now() - t0,
+  })
+
+  dbg('/admin/page.tsx — RENDERING AdminDashboard')
   return (
     <main className="min-h-screen bg-gray-50">
       <Header />

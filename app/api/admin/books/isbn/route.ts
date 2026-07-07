@@ -1,7 +1,7 @@
 ﻿import { normalizeIsbnInput } from '@/lib/barcode-input'
 import { requireAdminSession } from '@/lib/admin-auth'
 import { jsonData, runApiRoute, throwApiError } from '@/lib/api-route'
-import type { DbClient } from '@/lib/db'
+import * as bookRepository from '@/repositories/book.repository'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -194,23 +194,9 @@ function normalizeStoredBookInfo(
   }
 }
 
-async function lookupStoredBookByIsbn(db: DbClient, isbn: string) {
-  const { rows } = await db.query<{
-    author: string | null
-    isbn: string | null
-    publisher: string | null
-    title: string | null
-  }>(
-    `
-      select isbn, title, author, publisher
-      from public.books
-      where isbn = $1
-      limit 1
-    `,
-    [isbn]
-  )
-
-  return rows[0] ? normalizeStoredBookInfo(rows[0], isbn) : null
+async function lookupStoredBookByIsbn(db: Parameters<typeof bookRepository.findStoredBookInfoByIsbn>[0], isbn: string) {
+  const book = await bookRepository.findStoredBookInfoByIsbn(db, isbn)
+  return book ? normalizeStoredBookInfo(book, isbn) : null
 }
 
 async function fetchWithTimeout(url: URL) {

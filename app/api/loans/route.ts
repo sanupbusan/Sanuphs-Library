@@ -3,6 +3,7 @@ import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/l
 import { createRouteDbClient } from '@/lib/api-route'
 import { listAdminLoans } from '@/lib/admin-loans'
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { createPublicLoan } from '@/services/public-loan.service'
 import type { BorrowerType, CreatedPublicLoan, LoanCreationResult } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
@@ -182,11 +183,7 @@ export async function POST(request: Request) {
 
   try {
     const db = createRouteDbClient()
-    const { rows } = await db.query<CreatedPublicLoan>(
-      'select * from public.create_public_loan($1::uuid, $2::uuid, $3::text)',
-      [bookId, studentId, getText(body.notes) || null]
-    )
-    const loan = rows[0]
+    const loan = await createPublicLoan(db, bookId, studentId, getText(body.notes) || null)
 
     if (!loan) {
       throw new Error('Loan RPC returned no result.')

@@ -1,7 +1,7 @@
 import { normalizeBarcodeInput } from '@/lib/barcode-input'
 import { normalizeBorrowerLookupCode } from '@/lib/loan-limits'
 import { createRouteDbClient, jsonData, runApiRoute, throwApiError, withNoStore } from '@/lib/api-route'
-import type { LoanStudent } from '@/types/library'
+import { lookupStudentForLoan } from '@/services/student.service'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,11 +28,7 @@ export async function GET(request: Request) {
       }
 
       const db = createRouteDbClient()
-      const { rows } = await db.query<LoanStudent>(
-        'select * from public.lookup_student_for_loan($1::text)',
-        [studentNumber]
-      )
-      const student = rows[0]
+      const student = await lookupStudentForLoan(db, studentNumber)
 
       if (!student) {
         throwApiError(404, 'STUDENT_NOT_FOUND', '해당 학번의 학생을 찾을 수 없습니다.')

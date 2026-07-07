@@ -1,2 +1,0 @@
--- Intentionally left blank.
--- Sample student data should not be created by migrations.

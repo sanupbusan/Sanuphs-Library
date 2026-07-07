@@ -17,39 +17,35 @@ GRANT ALL PRIVILEGES ON DATABASE library_db TO library_user;
 ```env
 DATABASE_URL=postgres://library_user:strong-password@localhost:5432/library_db
 ADMIN_LOGIN_ID=SanupLib
-ADMIN_PASSWORD=<admin-login-password>
 ADMIN_SESSION_SECRET=<32+ chars random secret>
 ```
 
-3. 로컬 PostgreSQL 호환 init SQL과 기존 migration을 적용합니다.
+관리자 비밀번호는 환경변수가 아니라 `public.admin_users.password_hash`에 bcrypt hash로 저장합니다. 로컬 bootstrap SQL은 기본 로그인 `SanupLib` / `SanupLib2026!`에 해당하는 첫 관리자 계정을 만들거나 누락된 hash를 채우므로, 운영 환경에서는 적용 직후 강한 비밀번호의 bcrypt hash로 교체하세요.
+
+3. 로컬 PostgreSQL 롤업 SQL을 적용합니다.
 
 Windows PowerShell:
 
 ```powershell
 $env:DATABASE_URL="postgres://library_user:strong-password@localhost:5432/library_db"
-.\scripts\migrate-local-postgres.ps1
+psql $env:DATABASE_URL -f .\database\local-postgres-copy-paste.sql
 ```
 
 Linux/macOS/server Bash:
 
 ```bash
 export DATABASE_URL="postgres://library_user:strong-password@localhost:5432/library_db"
-chmod +x ./scripts/migrate-local-postgres.sh
-./scripts/migrate-local-postgres.sh
+psql "$DATABASE_URL" -f ./database/local-postgres-copy-paste.sql
 ```
 
 원격 DB 서버에 적용할 때는 `localhost` 대신 DB 서버 IP 또는 도메인을 넣습니다.
 
 ```bash
-./scripts/migrate-local-postgres.sh \
-  --database-url "postgres://library_user:strong-password@db.example.com:5432/library_db"
+psql "postgres://library_user:strong-password@db.example.com:5432/library_db" \
+  -f ./database/local-postgres-copy-paste.sql
 ```
 
-`pg_cron`이 설치된 PostgreSQL에서 연간 대출 초기화 스케줄까지 적용하려면:
-
-```bash
-./scripts/migrate-local-postgres.sh --enable-pg-cron
-```
+`database/local-postgres-copy-paste.sql`은 로컬/신규 DB bootstrap용 단일 롤업 스크립트입니다.
 
 4. Next.js 서버를 실행합니다.
 

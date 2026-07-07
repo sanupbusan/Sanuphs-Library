@@ -1,13 +1,11 @@
 import 'server-only'
 
-import { Pool, types as pgTypes, type PoolClient, type QueryResult, type QueryResultRow } from 'pg'
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
+import { Pool, types as pgTypes } from 'pg'
+import * as schema from '@/db/schema'
 
-export type DbClient = {
-  query<T extends QueryResultRow = QueryResultRow>(
-    text: string,
-    params?: unknown[]
-  ): Promise<QueryResult<T>>
-}
+export type DbClient = NodePgDatabase<typeof schema>
+export type DbTransaction = Parameters<Parameters<DbClient['transaction']>[0]>[0]
 
 const DEFAULT_DATABASE_URL = 'postgres://postgres:postgres@localhost:5432/library'
 
@@ -69,35 +67,14 @@ export function getDbPool() {
 
 export function getDb(): DbClient {
   if (!dbClient) {
-    dbClient = {
-      query: (text, params) => getDbPool().query(text, params),
-    }
+    dbClient = drizzle(getDbPool(), { schema })
   }
 
   return dbClient
 }
 
-export async function query<T extends QueryResultRow = QueryResultRow>(
-  text: string,
-  params?: unknown[]
-) {
-  return getDbPool().query<T>(text, params)
-}
-
 export async function withTransaction<T>(
-  callback: (client: PoolClient) => Promise<T>
+  callback: (client: DbTransaction) => Promise<T>
 ): Promise<T> {
-  const client = await getDbPool().connect()
-
-  try {
-    await client.query('begin')
-    const result = await callback(client)
-    await client.query('commit')
-    return result
-  } catch (error) {
-    await client.query('rollback')
-    throw error
-  } finally {
-    client.release()
-  }
+  return getDb().transaction(callback)
 }
