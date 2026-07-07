@@ -22,6 +22,12 @@ ADMIN_SESSION_SECRET=<32+ chars random secret>
 
 관리자 비밀번호는 환경변수가 아니라 `public.admin_users.password_hash`에 bcrypt hash로 저장합니다. 로컬 bootstrap SQL은 기본 로그인 `SanupLib` / `SanupLib2026!`에 해당하는 첫 관리자 계정을 만들거나 누락된 hash를 채우므로, 운영 환경에서는 적용 직후 강한 비밀번호의 bcrypt hash로 교체하세요.
 
+기존 DB에서 기본 비밀번호가 맞지 않으면 다음 SQL로 기본 관리자 비밀번호를 다시 맞출 수 있습니다.
+
+```bash
+psql "$DATABASE_URL" -f ./database/reset-default-admin-password.sql
+```
+
 3. 로컬 PostgreSQL 롤업 SQL을 적용합니다.
 
 Windows PowerShell:
