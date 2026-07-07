@@ -329,28 +329,24 @@ where password_hash is null;
 alter table public.admin_users
   alter column password_hash set not null;
 
+create unique index if not exists admin_users_login_id_idx
+  on public.admin_users (login_id);
+
 insert into auth.users (id, email)
-select '00000000-0000-0000-0000-000000000001'::uuid, 'sanuplib-admin@sanuplib.local'
-where not exists (
-  select 1
-  from public.admin_users
-  where login_id = 'SanupLib'
-);
+values ('00000000-0000-0000-0000-000000000001'::uuid, 'sanuplib-admin@sanuplib.local')
+on conflict (id) do nothing;
 
 insert into public.admin_users (user_id, login_id, password_hash, role)
-select
+values (
   '00000000-0000-0000-0000-000000000001'::uuid,
   'SanupLib',
   '$2b$12$XGHuzcpNZqfBmvXo0ccVSuXj7R82ZCYfphW3vA1UTSyjzGRjaH8rq',
   'admin'
-where not exists (
-  select 1
-  from public.admin_users
-  where login_id = 'SanupLib'
-);
-
-create unique index if not exists admin_users_login_id_idx
-  on public.admin_users (login_id);
+)
+on conflict (login_id) do update
+set password_hash = excluded.password_hash,
+    role = excluded.role,
+    updated_at = now();
 
 drop trigger if exists set_admin_users_updated_at on public.admin_users;
 create trigger set_admin_users_updated_at
