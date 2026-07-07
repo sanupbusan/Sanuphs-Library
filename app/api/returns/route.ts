@@ -7,7 +7,7 @@ import {
   throwApiError,
   withNoStore,
 } from '@/lib/api-route'
-import type { ReturnedLoan } from '@/types/library'
+import { ReturnService } from '@/services/return.service'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,11 +44,7 @@ export async function POST(request: Request) {
       }
 
       const db = createRouteDbClient()
-      const { rows } = await db.query<ReturnedLoan>(
-        'select * from public.return_loans_by_school_book_codes($1::text[])',
-        [schoolBookCodes]
-      )
-      const returnedLoans = rows
+      const returnedLoans = await ReturnService.processReturn(db, schoolBookCodes)
 
       if (returnedLoans.length === 0) {
         throwApiError(404, 'LOAN_NOT_FOUND', '대여 중인 도서를 찾지 못해 반납 처리하지 못했습니다.')

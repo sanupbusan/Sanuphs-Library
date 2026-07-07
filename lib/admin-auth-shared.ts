@@ -5,7 +5,6 @@ export type AdminCookieOptions = {
   secure: boolean
 }
 
-export const ADMIN_ACCESS_TOKEN_COOKIE = 'bb_admin_access_token'
 export const ADMIN_SIGNED_SESSION_COOKIE = 'bb_admin_session'
 
 export class AdminAuthError extends Error {

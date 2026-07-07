@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createRouteDbClient } from '@/lib/api-route'
-import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import type { BookLookupResult, RemovableBook } from '@/types/library'
+import { lookupBookByBarcodeOrIsbn } from '@/services/book-lookup.service'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -10,58 +9,6 @@ function getCode(request: Request) {
   const url = new URL(request.url)
 
   return url.searchParams.get('code')?.trim() ?? ''
-}
-
-function normalizeCode(value: string) {
-  return normalizeBarcodeInput(value).toUpperCase()
-}
-
-function isLikelyIsbn(value: string) {
-  const digits = value.replace(/[^0-9Xx]/g, '')
-
-  return digits.length === 10 || digits.length === 13
-}
-
-async function findBook(code: string, isIsbn: boolean) {
-  const db = createRouteDbClient()
-  const sql = isIsbn
-    ? `
-        select
-          id,
-          isbn,
-          school_book_code,
-          school_book_codes,
-          title,
-          author,
-          publisher,
-          available_copies,
-          total_copies
-        from public.books
-        where isbn = $1
-        limit 1
-      `
-    : `
-        select
-          id,
-          isbn,
-          school_book_code,
-          school_book_codes,
-          title,
-          author,
-          publisher,
-          available_copies,
-          total_copies
-        from public.books
-        where coalesce(school_book_codes, '{}'::text[]) @> array[$1]::text[]
-           or school_book_code = $1
-        order by
-          case when coalesce(school_book_codes, '{}'::text[]) @> array[$1]::text[] then 0 else 1 end
-        limit 1
-      `
-
-  const { rows } = await db.query<RemovableBook>(sql, [code])
-
-  return rows[0] ?? null
 }
 
 export async function GET(request: Request) {
@@ -80,11 +27,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const normalizedCode = normalizeCode(code)
-    const isIsbn = isLikelyIsbn(normalizedCode)
-    const data = await findBook(normalizedCode, isIsbn)
+    const db = createRouteDbClient()
+    const result = await lookupBookByBarcodeOrIsbn(db, code)
 
-    if (!data) {
+    if (!result) {
       return NextResponse.json(
         {
           error: {
@@ -94,13 +40,6 @@ export async function GET(request: Request) {
         },
         { status: 404 }
       )
-    }
-
-    const matchedSchoolBookCode = isIsbn ? null : normalizedCode
-
-    const result: BookLookupResult = {
-      ...data,
-      matched_school_book_code: matchedSchoolBookCode,
     }
 
     return NextResponse.json({ data: result })

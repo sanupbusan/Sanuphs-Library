@@ -1,18 +1,5 @@
 import { readApiData } from '@/lib/api-client'
-import type { AdminBookRow, IsbnLookupResult } from '@/types/library'
-import type { AdminBookFormInput } from '@/components/admin/useAdminAddBookDraft'
-
-export async function createAdminBook(input: AdminBookFormInput) {
-  const response = await fetch('/api/admin/books', {
-    body: JSON.stringify(input),
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    method: 'POST',
-  })
-
-  return readApiData<AdminBookRow>(response, '책 등록에 실패했습니다.')
-}
+import type { IsbnLookupResult } from '@/types/library'
 
 export async function lookupAdminBookByIsbn(isbn: string) {
   const params = new URLSearchParams({ isbn })

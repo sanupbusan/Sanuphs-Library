@@ -1,19 +1,14 @@
 import { NextResponse } from 'next/server'
 import { getDb, type DbClient } from '@/lib/db'
 import { ApiRouteError, jsonError } from '@/lib/api-route'
-import {
-  ADMIN_ACCESS_TOKEN_COOKIE,
-  AdminAuthError,
-  getAdminCookieOptions,
-  parseCookieHeader,
-} from '@/lib/admin-auth-shared'
+import { AdminAuthError } from '@/lib/admin-auth-shared'
 import {
   clearAdminSessionSignedCookie,
   getAdminSessionFromSignedCookie,
   setAdminSessionSignedCookie,
 } from '@/lib/admin-session-cookie'
 
-export { ADMIN_ACCESS_TOKEN_COOKIE, AdminAuthError } from '@/lib/admin-auth-shared'
+export { AdminAuthError } from '@/lib/admin-auth-shared'
 
 export type AdminRole = 'admin'
 
@@ -31,35 +26,7 @@ export type SerializedAdminSession = {
   user: AdminSession['user']
 }
 
-type AdminSessionCacheEntry = {
-  expiresAt: number
-  session: AdminSession
-}
-
-const ADMIN_SESSION_CACHE_TTL_MS = 5 * 60 * 1000
-const ADMIN_SESSION_CACHE_MAX_ENTRIES = 20
 const DEFAULT_ADMIN_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60
-const LOCAL_ADMIN_USER_ID = 'local-admin'
-const adminSessionCache = new Map<string, AdminSessionCacheEntry>()
-
-function getAccessTokenFromRequest(request: Request) {
-  return parseCookieHeader(request.headers.get('cookie')).get(ADMIN_ACCESS_TOKEN_COOKIE) ?? ''
-}
-
-function getCachedAdminSession(accessToken: string) {
-  const cached = adminSessionCache.get(accessToken)
-
-  if (!cached) {
-    return null
-  }
-
-  if (cached.expiresAt <= Date.now()) {
-    adminSessionCache.delete(accessToken)
-    return null
-  }
-
-  return cached.session
-}
 
 export function getAdminSessionMaxAgeSeconds() {
   const configuredValue = Number(process.env.ADMIN_SESSION_MAX_AGE_SECONDS)
@@ -71,61 +38,23 @@ export function getAdminSessionMaxAgeSeconds() {
   return DEFAULT_ADMIN_SESSION_MAX_AGE_SECONDS
 }
 
-export function createAdminAccessToken() {
-  return crypto.randomUUID()
-}
-
-export function createLocalAdminSession(loginId: string): AdminSession {
+export function createAdminSession(user: AdminSession['user'] & { role?: AdminRole }): AdminSession {
   return {
     db: getDb(),
-    role: 'admin',
+    role: user.role ?? 'admin',
     user: {
-      id: LOCAL_ADMIN_USER_ID,
-      loginId,
+      id: user.id,
+      loginId: user.loginId,
     },
   }
 }
 
-export function cacheAdminSession(accessToken: string, session: AdminSession) {
-  if (!accessToken) {
-    return
-  }
-
-  adminSessionCache.set(accessToken, {
-    expiresAt: Date.now() + ADMIN_SESSION_CACHE_TTL_MS,
-    session,
-  })
-
-  if (adminSessionCache.size > ADMIN_SESSION_CACHE_MAX_ENTRIES) {
-    const oldestKey = adminSessionCache.keys().next().value
-    if (oldestKey) {
-      adminSessionCache.delete(oldestKey)
-    }
-  }
-}
-
-export function clearAdminSessionCache(accessToken?: string) {
-  if (accessToken) {
-    adminSessionCache.delete(accessToken)
-    return
-  }
-
-  adminSessionCache.clear()
-}
-
 export async function setAdminSessionCookie(
   response: NextResponse,
-  accessToken: string,
   expiresIn: number,
   expiresAt: number | undefined,
   serializedSession: SerializedAdminSession
 ) {
-  const cookieOptions = getAdminCookieOptions()
-  response.cookies.set(ADMIN_ACCESS_TOKEN_COOKIE, accessToken, {
-    ...cookieOptions,
-    maxAge: expiresIn,
-  })
-
   const fallbackExp = Math.floor(Date.now() / 1000) + expiresIn
   const signedSessionCookieWasSet = await setAdminSessionSignedCookie(
     response,
@@ -138,11 +67,6 @@ export async function setAdminSessionCookie(
   )
 
   if (!signedSessionCookieWasSet) {
-    response.cookies.set(ADMIN_ACCESS_TOKEN_COOKIE, '', {
-      ...cookieOptions,
-      maxAge: 0,
-    })
-
     throw new AdminAuthError(
       503,
       'ADMIN_SESSION_COOKIE_NOT_SET',
@@ -152,11 +76,6 @@ export async function setAdminSessionCookie(
 }
 
 export function clearAdminSessionCookie(response: NextResponse) {
-  const cookieOptions = getAdminCookieOptions()
-  response.cookies.set(ADMIN_ACCESS_TOKEN_COOKIE, '', {
-    ...cookieOptions,
-    maxAge: 0,
-  })
   clearAdminSessionSignedCookie(response)
 }
 
@@ -180,55 +99,21 @@ export function serializeAdminSession(session: AdminSession): SerializedAdminSes
   }
 }
 
-export async function createAdminSessionFromAccessToken(accessToken: string): Promise<AdminSession> {
-  if (!accessToken) {
-    throw new AdminAuthError(401, 'UNAUTHENTICATED', '로그인이 필요합니다.')
-  }
-
-  const cachedSession = getCachedAdminSession(accessToken)
-  if (cachedSession) {
-    return cachedSession
-  }
-
-  throw new AdminAuthError(401, 'INVALID_SESSION', '세션이 만료되었거나 올바르지 않습니다.')
-}
-
-async function createAdminSessionFromSignedPayload(
-  accessToken: string,
-  request: Request
-): Promise<AdminSession | null> {
-  if (!accessToken) {
-    return null
-  }
-
+async function createAdminSessionFromSignedPayload(request: Request): Promise<AdminSession | null> {
   const signedSession = await getAdminSessionFromSignedCookie(request)
   if (!signedSession) {
     return null
   }
 
-  const cachedSession = getCachedAdminSession(accessToken)
-  if (cachedSession) {
-    return cachedSession
-  }
-
-  const session: AdminSession = {
-    db: getDb(),
+  return createAdminSession({
+    id: signedSession.user.id,
+    loginId: signedSession.user.loginId,
     role: signedSession.role as AdminRole,
-    user: signedSession.user,
-  }
-
-  cacheAdminSession(accessToken, session)
-  return session
+  })
 }
 
 export async function requireAdminSession(request: Request): Promise<AdminSession> {
-  const accessToken = getAccessTokenFromRequest(request)
-
-  if (!accessToken) {
-    throw new AdminAuthError(401, 'UNAUTHENTICATED', '로그인이 필요합니다.')
-  }
-
-  const signedSession = await createAdminSessionFromSignedPayload(accessToken, request)
+  const signedSession = await createAdminSessionFromSignedPayload(request)
   if (signedSession) {
     return signedSession
   }

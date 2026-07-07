@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import {
-  ADMIN_ACCESS_TOKEN_COOKIE,
   ADMIN_SIGNED_SESSION_COOKIE,
   AdminAuthError,
   getAdminCookieOptions,
@@ -8,6 +7,12 @@ import {
 import { getAdminSessionFromSignedCookie } from '@/lib/admin-session-cookie'
 
 const ADMIN_LOGIN_PATH = '/admin/login'
+
+const DEBUG_TAG = '[LOGIN_DEBUG_MW]'
+function dbg(msg: string, data?: unknown) {
+  const ts = new Date().toISOString()
+  console.log(`${DEBUG_TAG} ${ts} ${msg}`, data !== undefined ? data : '')
+}
 
 function isAdminApi(pathname: string) {
   return pathname.startsWith('/api/admin')
@@ -33,10 +38,6 @@ function getLoginRedirect(request: NextRequest) {
 
 function clearAdminCookie(response: NextResponse) {
   const cookieOptions = getAdminCookieOptions()
-  response.cookies.set(ADMIN_ACCESS_TOKEN_COOKIE, '', {
-    ...cookieOptions,
-    maxAge: 0,
-  })
   response.cookies.set(ADMIN_SIGNED_SESSION_COOKIE, '', {
     ...cookieOptions,
     maxAge: 0,
@@ -74,34 +75,48 @@ function shouldClearAdminCookie(error: unknown) {
 }
 
 async function validateAdminRequest(request: NextRequest) {
-  const accessToken = request.cookies.get(ADMIN_ACCESS_TOKEN_COOKIE)?.value ?? ''
+  const pathname = request.nextUrl.pathname
+  const signedSessionRaw = request.cookies.get(ADMIN_SIGNED_SESSION_COOKIE)?.value ?? ''
 
-  if (!accessToken) {
-    console.warn('[AdminAuth] Middleware rejected request: access token cookie is missing.', {
-      path: request.nextUrl.pathname,
-    })
-    throw new AdminAuthError(401, 'UNAUTHENTICATED', '로그인이 필요합니다.')
-  }
+  dbg(`validateAdminRequest for ${pathname}`, {
+    hasSignedSessionCookie: Boolean(signedSessionRaw),
+    signedSessionLength: signedSessionRaw.length,
+    env_ADMIN_SESSION_SECRET_set: Boolean(process.env.ADMIN_SESSION_SECRET),
+    env_ADMIN_SESSION_SECRET_length: (process.env.ADMIN_SESSION_SECRET ?? '').length,
+    env_ADMIN_COOKIE_SECURE: process.env.ADMIN_COOKIE_SECURE,
+  })
 
+  const t0 = Date.now()
   const signedSession = await getAdminSessionFromSignedCookie(request)
+  dbg(`MW cookie verification for ${pathname}`, {
+    valid: signedSession !== null,
+    duration_ms: Date.now() - t0,
+    role: signedSession?.role,
+    loginId: signedSession?.user?.loginId,
+    exp: signedSession?.exp,
+  })
+
   if (!signedSession) {
-    console.warn('[AdminAuth] Middleware rejected request: signed session cookie is missing or invalid.', {
-      path: request.nextUrl.pathname,
-      hasAccessToken: Boolean(accessToken),
-      hasSignedSessionCookie: Boolean(request.cookies.get(ADMIN_SIGNED_SESSION_COOKIE)?.value),
-    })
+    dbg(`MW REJECT: ${pathname} — signed session cookie invalid or missing`)
     throw new AdminAuthError(401, 'INVALID_SESSION', '세션이 만료되었거나 올바르지 않습니다.')
   }
+
+  dbg(`MW PASS: ${pathname}`)
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
+  dbg(`middleware invoked for ${pathname}`)
+
   if (isAdminApi(pathname)) {
+    dbg(`MW route type: admin API (${pathname})`)
     try {
       await validateAdminRequest(request)
+      dbg(`MW: admin API pass ${pathname}`)
       return NextResponse.next()
     } catch (error) {
+      dbg(`MW: admin API reject ${pathname}`, { code: (error as AdminAuthError)?.code, status: (error as AdminAuthError)?.status })
       const response = jsonAuthError(error)
 
       if (shouldClearAdminCookie(error)) {
@@ -113,13 +128,17 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isAdminLoginPage(pathname)) {
+    dbg(`MW route type: login page (${pathname}) — pass-through`)
     return NextResponse.next()
   }
 
+  dbg(`MW route type: admin page (${pathname}) — validating`)
   try {
     await validateAdminRequest(request)
+    dbg(`MW: admin page pass ${pathname}`)
     return NextResponse.next()
   } catch (error) {
+    dbg(`MW: admin page reject ${pathname}`, { code: (error as AdminAuthError)?.code, status: (error as AdminAuthError)?.status })
     const response = NextResponse.redirect(getLoginRedirect(request))
 
     if (shouldClearAdminCookie(error)) {

@@ -5,6 +5,12 @@ import { useSearchParams } from 'next/navigation'
 import { Loader2, LogIn } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+const DEBUG_TAG = '[LOGIN_DEBUG_CLIENT]'
+function dbg(msg: string, data?: unknown) {
+  const ts = new Date().toISOString()
+  console.log(`${DEBUG_TAG} ${ts} ${msg}`, data !== undefined ? data : '')
+}
+
 type LoginResponse = {
   error?: {
     code: string
@@ -51,18 +57,30 @@ export default function AdminLoginForm() {
     let didCancel = false
 
     async function redirectIfAlreadyLoggedIn() {
+      dbg('useEffect: session check starting')
+      const t0 = performance.now()
       try {
+        dbg('useEffect: sending GET /api/auth/admin/session?optional=1')
         const response = await fetch('/api/auth/admin/session?optional=1', {
           cache: 'no-store',
           credentials: 'same-origin',
         })
+        dbg('useEffect: response received', {
+          status: response.status,
+          ok: response.ok,
+          duration_ms: Math.round(performance.now() - t0),
+        })
         const payload = (await response.json()) as SessionResponse
+        dbg('useEffect: payload parsed', payload)
 
         if (!didCancel && response.ok && payload.data?.user?.loginId) {
+          dbg('useEffect: already logged in, redirecting to /admin')
           window.location.replace('/admin')
+        } else {
+          dbg('useEffect: not logged in, staying on login page')
         }
-      } catch {
-        // Stay on the login page when the optional session check fails.
+      } catch (err) {
+        dbg('useEffect: session check threw error', err)
       }
     }
 
@@ -78,14 +96,18 @@ export default function AdminLoginForm() {
     setErrorMessage('')
 
     if (!loginId.trim() || !password) {
+      dbg('handleSubmit: missing credentials, aborting')
       setErrorMessage('아이디와 비밀번호를 입력해주세요.')
       return
     }
 
+    dbg('handleSubmit: starting login', { loginId: loginId.trim() })
     setIsLoading(true)
     let shouldResetLoading = true
 
     try {
+      dbg('handleSubmit: sending POST /api/auth/admin/login')
+      const t0 = performance.now()
       const response = await fetch('/api/auth/admin/login', {
         body: JSON.stringify({ loginId, password }),
         headers: {
@@ -94,17 +116,30 @@ export default function AdminLoginForm() {
         credentials: 'same-origin',
         method: 'POST',
       })
+      dbg('handleSubmit: response received', {
+        status: response.status,
+        ok: response.ok,
+        duration_ms: Math.round(performance.now() - t0),
+        hasSetCookie: response.headers.get('set-cookie') !== null,
+      })
+
+      dbg('handleSubmit: parsing JSON body')
       const payload = (await response.json()) as LoginResponse
+      dbg('handleSubmit: payload parsed', payload)
 
       if (!response.ok) {
+        dbg('handleSubmit: response not OK, throwing')
         throw new Error(payload.error?.message ?? '로그인에 실패했습니다.')
       }
 
+      dbg('handleSubmit: login succeeded, redirecting')
       shouldResetLoading = false
       window.location.replace(getSafeAdminRedirect(searchParams.get('next')))
     } catch (error) {
+      dbg('handleSubmit: caught error', error)
       setErrorMessage(error instanceof Error ? error.message : '로그인에 실패했습니다.')
     } finally {
+      dbg('handleSubmit: finally block', { shouldResetLoading })
       if (shouldResetLoading) {
         setIsLoading(false)
       }

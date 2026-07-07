@@ -2,11 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { AdminAuthError } from '@/lib/admin-auth'
-import { deleteAdminBook, updateAdminBook } from '@/lib/admin-books'
+import { createAdminBook, deleteAdminBook, updateAdminBook } from '@/lib/admin-books'
 import { ApiRouteError, getText } from '@/lib/api-route'
 import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
 import { requireAdminSessionFromCookies } from '@/lib/admin-server-auth'
-import type { AdminBookUpdateInput } from '@/lib/admin-book-input'
+import type { AdminBookCreateInput, AdminBookUpdateInput } from '@/lib/admin-book-input'
 import type { AdminBookRow, ApiError } from '@/types/library'
 
 type DeleteBookActionResult = {
@@ -22,10 +22,31 @@ type UpdateBookActionResult = {
   error?: ApiError
 }
 
+type CreateBookActionResult = {
+  data?: AdminBookRow
+  error?: ApiError
+}
+
+type AdminBookCreateActionInput = Partial<Record<keyof AdminBookCreateInput, unknown>>
+
 type AdminBookUpdateActionInput = Partial<Record<keyof AdminBookUpdateInput, unknown>>
+
+function getCreateInputObject(input: unknown): AdminBookCreateActionInput {
+  return input && typeof input === 'object' ? input as AdminBookCreateActionInput : {}
+}
 
 function getUpdateInputObject(input: unknown): AdminBookUpdateActionInput {
   return input && typeof input === 'object' ? input as AdminBookUpdateActionInput : {}
+}
+
+function trimCreateInput(input: AdminBookCreateActionInput): AdminBookCreateInput {
+  return {
+    author: getText(input.author),
+    isbn: normalizeIsbnInput(getText(input.isbn)),
+    publisher: getText(input.publisher),
+    schoolBookCode: normalizeBarcodeInput(getText(input.schoolBookCode)),
+    title: getText(input.title),
+  }
 }
 
 function trimUpdateInput(input: AdminBookUpdateActionInput): AdminBookUpdateInput {
@@ -49,6 +70,29 @@ function getActionError(error: unknown, fallback: ApiError, logLabel: string): A
   console.error(logLabel, error)
 
   return fallback
+}
+
+export async function createBookAction(input: unknown): Promise<CreateBookActionResult> {
+  try {
+    const session = await requireAdminSessionFromCookies()
+    const data = await createAdminBook(session.db, trimCreateInput(getCreateInputObject(input)))
+
+    revalidatePath('/admin/books')
+    revalidatePath('/admin/add_books')
+
+    return { data }
+  } catch (error) {
+    return {
+      error: getActionError(
+        error,
+        {
+          code: 'CREATE_BOOK_FAILED',
+          message: '책 등록에 실패했습니다.',
+        },
+        'Create book action failed:'
+      ),
+    }
+  }
 }
 
 export async function deleteBookAction(bookId: unknown): Promise<DeleteBookActionResult> {
