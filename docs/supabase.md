@@ -10,12 +10,14 @@
 DATABASE_URL=postgres://<user>:<password>@<host>:5432/<database>
 ADMIN_LOGIN_ID=SanupLib
 ADMIN_SESSION_SECRET=<32+ chars random secret>
+ADMIN_COOKIE_SECURE=false
 NATIONAL_LIBRARY_ISBN_API_KEY=<national-library-isbn-api-key>
 ```
 
 - `DATABASE_URL`: 앱이 연결할 PostgreSQL URL입니다.
 - `ADMIN_LOGIN_ID`: 로그인 화면에서 입력할 관리자 아이디입니다. 기본값은 `SanupLib`입니다.
 - `ADMIN_SESSION_SECRET`: 관리자 signed session cookie 서명에 사용합니다.
+- `ADMIN_COOKIE_SECURE`: HTTP IP 접속에서는 `false`, HTTPS 도메인 접속에서는 `true`로 설정합니다.
 - `NATIONAL_LIBRARY_ISBN_API_KEY`: 새 책 추가 화면에서 ISBN으로 책 정보를 조회할 때 사용하는 국립중앙도서관 ISBN API 키입니다. 서버 전용이므로 `NEXT_PUBLIC_`을 붙이지 않습니다.
 - `.env`, `.env.local`, `.env.production` 같은 실제 값 파일은 커밋하지 않습니다.
 

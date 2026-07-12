@@ -7,8 +7,13 @@ import {
   setAdminSessionCookie,
 } from '@/lib/admin-auth'
 import { isAdminCookieSecureEnabled } from '@/lib/admin-auth-shared'
-import { jsonData, readJsonBody, runApiRoute, withNoStore } from '@/lib/api-route'
-import { getDb } from '@/lib/db'
+import {
+  createRouteDbClient,
+  jsonData,
+  readJsonBody,
+  runApiRoute,
+  withNoStore,
+} from '@/lib/api-route'
 import { findAdminUserByLoginId } from '@/repositories/admin-user.repository'
 
 export const dynamic = 'force-dynamic'
@@ -34,6 +39,54 @@ function getCredentials(body: LoginBody) {
   const password = typeof body.password === 'string' ? body.password : ''
 
   return { loginId, password }
+}
+
+function getErrorCode(error: unknown, depth = 0): string {
+  if (depth > 3) {
+    return ''
+  }
+
+  if (typeof error !== 'object' || error === null || !('code' in error)) {
+    if (typeof error === 'object' && error !== null && 'cause' in error) {
+      return getErrorCode(error.cause, depth + 1)
+    }
+
+    return ''
+  }
+
+  if (typeof error.code === 'string') {
+    return error.code
+  }
+
+  return 'cause' in error ? getErrorCode(error.cause, depth + 1) : ''
+}
+
+function getAdminDatabaseError(error: unknown) {
+  const code = getErrorCode(error)
+
+  if (code === '42P01' || code === '42703') {
+    return new AdminAuthError(
+      503,
+      'ADMIN_DATABASE_SCHEMA_OUTDATED',
+      '관리자 로그인 DB 스키마가 최신 상태가 아닙니다. 서버에서 관리자 로그인 DB 보정 SQL을 실행해주세요.'
+    )
+  }
+
+  if (
+    code === '28P01' ||
+    code === '3D000' ||
+    code === 'ECONNREFUSED' ||
+    code === 'ENOTFOUND' ||
+    code === 'ETIMEDOUT'
+  ) {
+    return new AdminAuthError(
+      503,
+      'ADMIN_DATABASE_UNAVAILABLE',
+      'PostgreSQL에 연결할 수 없습니다. 서버의 DATABASE_URL과 PostgreSQL 실행 상태를 확인해주세요.'
+    )
+  }
+
+  return error
 }
 
 export async function POST(request: Request) {
@@ -70,7 +123,6 @@ export async function POST(request: Request) {
           env_ADMIN_SESSION_SECRET_length: (process.env.ADMIN_SESSION_SECRET ?? '').length,
           env_ADMIN_COOKIE_SECURE: process.env.ADMIN_COOKIE_SECURE,
           env_DATABASE_URL_set: Boolean(process.env.DATABASE_URL),
-          env_DATABASE_URL_prefix: (process.env.DATABASE_URL ?? '').slice(0, 25),
           cookieSecureEnabled: isAdminCookieSecureEnabled(),
           nodeEnv: process.env.NODE_ENV,
           platform: process.platform,
@@ -90,10 +142,16 @@ export async function POST(request: Request) {
           )
         }
 
-        const db = getDb()
+        const db = createRouteDbClient()
         dbg('POST: loading admin user from DB')
         const tUser = Date.now()
-        const adminUser = await findAdminUserByLoginId(db, loginId)
+        let adminUser
+
+        try {
+          adminUser = await findAdminUserByLoginId(db, loginId)
+        } catch (error) {
+          throw getAdminDatabaseError(error)
+        }
         dbg('POST: admin user lookup done', {
           found: Boolean(adminUser),
           duration_ms: Date.now() - tUser,

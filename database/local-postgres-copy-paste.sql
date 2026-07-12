@@ -332,19 +332,50 @@ alter table public.admin_users
 create unique index if not exists admin_users_login_id_idx
   on public.admin_users (login_id);
 
+update public.admin_users
+set password_hash = '$2b$12$XGHuzcpNZqfBmvXo0ccVSuXj7R82ZCYfphW3vA1UTSyjzGRjaH8rq',
+    role = 'admin',
+    updated_at = now()
+where login_id = 'SanupLib';
+
 insert into auth.users (id, email)
-values ('00000000-0000-0000-0000-000000000001'::uuid, 'sanuplib-admin@sanuplib.local')
+select
+  '00000000-0000-0000-0000-000000000001'::uuid,
+  'sanuplib-admin@sanuplib.local'
+where not exists (
+  select 1
+  from public.admin_users
+  where login_id = 'SanupLib'
+)
+and not exists (
+  select 1
+  from auth.users
+  where email = 'sanuplib-admin@sanuplib.local'
+)
 on conflict (id) do nothing;
 
 insert into public.admin_users (user_id, login_id, password_hash, role)
-values (
-  '00000000-0000-0000-0000-000000000001'::uuid,
+select
+  coalesce(
+    (
+      select id
+      from auth.users
+      where email = 'sanuplib-admin@sanuplib.local'
+      limit 1
+    ),
+    '00000000-0000-0000-0000-000000000001'::uuid
+  ),
   'SanupLib',
   '$2b$12$XGHuzcpNZqfBmvXo0ccVSuXj7R82ZCYfphW3vA1UTSyjzGRjaH8rq',
   'admin'
+where not exists (
+  select 1
+  from public.admin_users
+  where login_id = 'SanupLib'
 )
-on conflict (login_id) do update
-set password_hash = excluded.password_hash,
+on conflict (user_id) do update
+set login_id = excluded.login_id,
+    password_hash = excluded.password_hash,
     role = excluded.role,
     updated_at = now();
 
