@@ -7,8 +7,6 @@ import * as schema from '@/db/schema'
 export type DbClient = NodePgDatabase<typeof schema>
 export type DbTransaction = Parameters<Parameters<DbClient['transaction']>[0]>[0]
 
-const DEFAULT_DATABASE_URL = 'postgres://postgres:postgres@localhost:5432/library'
-
 let pool: Pool | null = null
 let dbClient: DbClient | null = null
 
@@ -21,7 +19,7 @@ function cleanEnvValue(value: string | undefined) {
 }
 
 export function getDatabaseUrl() {
-  return cleanEnvValue(process.env.DATABASE_URL || DEFAULT_DATABASE_URL)
+  return cleanEnvValue(process.env.DATABASE_URL)
 }
 
 export function isPostgresConfigured() {
