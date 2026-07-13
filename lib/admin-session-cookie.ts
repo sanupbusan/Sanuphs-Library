@@ -36,7 +36,7 @@ function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-function base64UrlToArrayBuffer(base64url: string): ArrayBuffer {
+function base64UrlToBytes(base64url: string): Uint8Array {
   const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/')
   const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=')
   const binary = atob(padded)
@@ -44,7 +44,7 @@ function base64UrlToArrayBuffer(base64url: string): ArrayBuffer {
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i)
   }
-  return bytes.buffer
+  return bytes
 }
 
 function base64UrlToString(base64url: string): string {
@@ -81,9 +81,10 @@ async function verifyPayload(payload: string, signature: string, secret: string)
   try {
     const key = await importSigningKey(secret)
     const encoder = new TextEncoder()
-    const signatureBuffer = base64UrlToArrayBuffer(signature)
-    return crypto.subtle.verify('HMAC', key, signatureBuffer, encoder.encode(payload))
-  } catch {
+    const signatureBytes = base64UrlToBytes(signature)
+    return await crypto.subtle.verify('HMAC', key, signatureBytes, encoder.encode(payload))
+  } catch (error) {
+    dbg('verifyPayload: Web Crypto verification failed', { error: String(error) })
     return false
   }
 }
