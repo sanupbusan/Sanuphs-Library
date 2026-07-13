@@ -59,6 +59,18 @@ alter table public.admin_users
 create unique index if not exists admin_users_login_id_idx
   on public.admin_users (login_id);
 
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'sanuplib') then
+    grant select on public.admin_users to sanuplib;
+    drop policy if exists app_login on public.admin_users;
+    create policy app_login
+      on public.admin_users for select
+      to sanuplib
+      using (true);
+  end if;
+end $$;
+
 update public.admin_users
 set password_hash = '$2b$12$XGHuzcpNZqfBmvXo0ccVSuXj7R82ZCYfphW3vA1UTSyjzGRjaH8rq',
     role = 'admin',

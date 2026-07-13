@@ -415,6 +415,13 @@ create policy "Admins manage admin users"
   using (public.is_admin(auth.uid()))
   with check (public.is_admin(auth.uid()));
 
+drop policy if exists app_login on public.admin_users;
+
+create policy app_login
+  on public.admin_users for select
+  to sanuplib
+  using (true);
+
 drop policy if exists "Authenticated users manage books" on public.books;
 drop policy if exists "Authenticated users manage students" on public.students;
 drop policy if exists "Authenticated users manage loans" on public.loans;
