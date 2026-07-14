@@ -422,6 +422,14 @@ create policy app_login
   to sanuplib
   using (true);
 
+drop policy if exists app_books on public.books;
+
+create policy app_books
+  on public.books for all
+  to sanuplib
+  using (true)
+  with check (true);
+
 drop policy if exists "Authenticated users manage books" on public.books;
 drop policy if exists "Authenticated users manage students" on public.students;
 drop policy if exists "Authenticated users manage loans" on public.loans;
