@@ -81,8 +81,58 @@ function getDbErrorCode(error: unknown, depth = 0): string {
   return 'cause' in error ? getDbErrorCode(error.cause, depth + 1) : ''
 }
 
+type DbErrorDetails = {
+  code: string
+  column: string
+  detail: string
+  message: string
+  table: string
+}
+
+function getDbErrorDetails(error: unknown, depth = 0): DbErrorDetails {
+  const emptyDetails: DbErrorDetails = {
+    code: '',
+    column: '',
+    detail: '',
+    message: '',
+    table: '',
+  }
+
+  if (depth > 5 || typeof error !== 'object' || error === null) {
+    return emptyDetails
+  }
+
+  const errorRecord = error as Record<string, unknown>
+  const getString = (key: keyof DbErrorDetails) =>
+    typeof errorRecord[key] === 'string' ? String(errorRecord[key]) : ''
+  const currentDetails: DbErrorDetails = {
+    code: getString('code'),
+    column: getString('column'),
+    detail: getString('detail'),
+    message: error instanceof Error ? error.message : getString('message'),
+    table: getString('table'),
+  }
+  const causeDetails =
+    'cause' in error ? getDbErrorDetails(error.cause, depth + 1) : emptyDetails
+
+  // The PostgreSQL error is normally the deepest error carrying a SQLSTATE code.
+  return causeDetails.code ? causeDetails : currentDetails
+}
+
+function getDbErrorSummary(details: DbErrorDetails) {
+  const location = [details.table, details.column].filter(Boolean).join('.')
+  const message = (details.message || details.detail || '알 수 없는 DB 오류')
+    .replace(/\s+/g, ' ')
+    .slice(0, 240)
+
+  return [details.code && `코드 ${details.code}`, location && `대상 ${location}`, message]
+    .filter(Boolean)
+    .join(' / ')
+}
+
 function getAdminBookDatabaseError(error: unknown) {
-  const code = getDbErrorCode(error)
+  const details = getDbErrorDetails(error)
+  const { code } = details
 
   if (code === '42501') {
     return new ApiRouteError(
@@ -96,7 +146,7 @@ function getAdminBookDatabaseError(error: unknown) {
     return new ApiRouteError(
       503,
       'ADMIN_BOOK_DATABASE_SCHEMA_OUTDATED',
-      '도서 DB 스키마가 최신 상태가 아닙니다. 서버 DB 초기화 SQL을 다시 적용해주세요.'
+      `도서 DB 쿼리 오류: ${getDbErrorSummary(details)}`
     )
   }
 
@@ -278,14 +328,25 @@ function getImportLookupValues(rows: ImportAdminBookRow[]) {
 
 async function insertAdminBookImportBatch(
   db: DbClient,
-  rows: ImportAdminBookRow[]
+  rows: ImportAdminBookRow[],
+  batchNumber: number
 ): Promise<ImportAdminBooksResult> {
+  let phase = 'transaction'
+
   try {
     return await db.transaction(async (transaction) => {
+      phase = 'lookup'
+      console.log('[BOOK_IMPORT] batch lookup started', { batch: batchNumber })
       const existingBooks = await bookRepository.findBooksForImport(
         transaction,
         getImportLookupValues(rows)
       )
+      console.log('[BOOK_IMPORT] batch lookup completed', {
+        batch: batchNumber,
+        existing_books: existingBooks.length,
+      })
+
+      phase = 'planning'
       const usedSchoolBookCodes = new Set<string>()
       const targetsByIsbn = new Map<string, ImportTarget>()
       const existingUpdates = new Map<string, ExistingImportTarget>()
@@ -345,10 +406,29 @@ async function insertAdminBookImportBatch(
         inserted += 1
       }
 
+      console.log('[BOOK_IMPORT] batch planning completed', {
+        batch: batchNumber,
+        inserts: newTargets.length,
+        skipped,
+        updates: existingUpdates.size,
+      })
+
+      phase = 'bulk insert'
+      console.log('[BOOK_IMPORT] batch insert started', {
+        batch: batchNumber,
+        rows: newTargets.length,
+      })
       await bookRepository.insertAdminBooks(
         transaction,
         newTargets.map((target) => target.book)
       )
+      console.log('[BOOK_IMPORT] batch insert completed', { batch: batchNumber })
+
+      phase = 'bulk update'
+      console.log('[BOOK_IMPORT] batch update started', {
+        batch: batchNumber,
+        rows: existingUpdates.size,
+      })
       await bookRepository.updateBookCopiesAndCodesInBulk(
         transaction,
         Array.from(existingUpdates.values(), (target) => ({
@@ -359,10 +439,16 @@ async function insertAdminBookImportBatch(
           total_copies: target.book.total_copies,
         }))
       )
+      console.log('[BOOK_IMPORT] batch update completed', { batch: batchNumber })
 
       return { errors: [], inserted, skipped }
     })
   } catch (error) {
+    console.error('[BOOK_IMPORT] batch failed', {
+      batch: batchNumber,
+      phase,
+      ...getDbErrorDetails(error),
+    })
     if (getDbErrorCode(error) === '23505') {
       throw duplicateBookCodeError()
     }
@@ -386,7 +472,7 @@ export async function insertAdminBooksInBatches(
       batch: batchNumber,
       rows: batch.length,
     })
-    const result = await insertAdminBookImportBatch(db, batch)
+    const result = await insertAdminBookImportBatch(db, batch, batchNumber)
     console.log('[BOOK_IMPORT] batch completed', {
       batch: batchNumber,
       duration_ms: Date.now() - batchStartedAt,
