@@ -140,7 +140,7 @@ export default function RentBookForm() {
             <div className="mt-4 rounded-lg border border-gray-100 p-4">
               <div className="mb-2 text-sm font-semibold text-gray-900">{book.title}</div>
               <div className="text-xs text-gray-500">
-                저자: {book.author} | 출판사: {book.publisher ?? '-'} | 남은 권수: {book.available_copies}/{book.total_copies}
+                저자: {book.author ?? '-'} | 출판사: {book.publisher ?? '-'} | 남은 권수: {book.available_copies}/{book.total_copies}
               </div>
               {isSubmitting ? (
                 <div className="mt-2 flex items-center gap-2 text-xs text-primary-600">

@@ -66,7 +66,7 @@ create table public.books (
   id uuid primary key default gen_random_uuid(),
   isbn text unique,
   title text not null,
-  author text not null,
+  author text,
   publisher text,
   category text not null default U&'\BBF8\BD84\B958',
   published_year integer,

@@ -145,7 +145,7 @@ export function mapRecentBooks(books: RecentBookRow[]): RecentBook[] {
   return books.map((book) => ({
     id: book.id,
     title: book.title,
-    author: book.author,
+    author: book.author ?? '-',
     category: book.category,
     createdAt: formatDate(book.created_at),
     availableCopies: book.available_copies,

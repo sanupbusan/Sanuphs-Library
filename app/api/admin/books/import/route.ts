@@ -75,14 +75,12 @@ function buildImportRow(row: SheetRow, index: number): ImportAdminBookRow {
   const rowNumber = index + 2
   const mappedRow = mapSheetRow(row)
   const title = getCellText(mappedRow.title)
-  const author = getCellText(mappedRow.author)
 
-  if (!title || !author) {
-    const missingFields = [!title && '도서명', !author && '저자'].filter(Boolean).join(', ')
+  if (!title) {
     throw new ApiRouteError(
       400,
       'INVALID_EXCEL_ROW',
-      `${rowNumber}행의 ${missingFields}을(를) 입력해주세요.`
+      `${rowNumber}행의 도서명을 입력해주세요.`
     )
   }
 
@@ -116,7 +114,7 @@ function buildImportRow(row: SheetRow, index: number): ImportAdminBookRow {
 
   return {
     book: {
-      author,
+      author: getOptionalText(mappedRow.author),
       available_copies: availableCopies,
       category: getCellText(mappedRow.category) || '미분류',
       isbn: normalizeIsbnInput(getOptionalText(mappedRow.isbn) ?? '') || null,

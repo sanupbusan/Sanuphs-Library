@@ -73,7 +73,7 @@ export type Database = {
       }
       books: {
         Row: {
-          author: string
+          author: string | null
           available_copies: number
           category: string
           created_at: string
@@ -87,7 +87,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          author: string
+          author?: string | null
           available_copies?: number
           category?: string
           created_at?: string
@@ -101,7 +101,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          author?: string
+          author?: string | null
           available_copies?: number
           category?: string
           created_at?: string
@@ -305,7 +305,7 @@ export type Database = {
       search_books: {
         Args: { search_query?: string | null }
         Returns: {
-          author: string
+          author: string | null
           available_copies: number
           category: string
           id: string
