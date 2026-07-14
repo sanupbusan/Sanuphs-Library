@@ -5,7 +5,7 @@ import {
   type AdminBookCreateInput,
   type AdminBookUpdateInput,
 } from '@/lib/admin-book-input'
-import { addSchoolBookCode } from '@/lib/school-book-codes'
+import { addSchoolBookCode, getSchoolBookCodes } from '@/lib/school-book-codes'
 import type { DbClient } from '@/lib/db'
 import type { AdminBookRow, BookRow } from '@/types/library'
 import * as bookRepository from '@/repositories/book.repository'
@@ -69,10 +69,38 @@ function duplicateBookCodeError() {
   return new ApiRouteError(409, 'DUPLICATE_BOOK_CODE', '이미 등록된 ISBN 또는 학교 도서 코드입니다.')
 }
 
-function getDbErrorCode(error: unknown) {
-  return typeof error === 'object' && error !== null && 'code' in error
-    ? String(error.code)
-    : ''
+function getDbErrorCode(error: unknown, depth = 0): string {
+  if (depth > 3 || typeof error !== 'object' || error === null) {
+    return ''
+  }
+
+  if ('code' in error && typeof error.code === 'string') {
+    return error.code
+  }
+
+  return 'cause' in error ? getDbErrorCode(error.cause, depth + 1) : ''
+}
+
+function getAdminBookDatabaseError(error: unknown) {
+  const code = getDbErrorCode(error)
+
+  if (code === '42501') {
+    return new ApiRouteError(
+      503,
+      'ADMIN_BOOK_DATABASE_ACCESS_DENIED',
+      '서버 DB 계정에 도서 관리 권한이 없습니다. books 테이블의 RLS 정책을 확인해주세요.'
+    )
+  }
+
+  if (code === '42P01' || code === '42703') {
+    return new ApiRouteError(
+      503,
+      'ADMIN_BOOK_DATABASE_SCHEMA_OUTDATED',
+      '도서 DB 스키마가 최신 상태가 아닙니다. 서버 DB 초기화 SQL을 다시 적용해주세요.'
+    )
+  }
+
+  return error
 }
 
 type AdminBookListCacheEntry = {
@@ -148,7 +176,7 @@ export async function insertAdminBook(db: DbClient, input: CreateAdminBookInput)
     if (getDbErrorCode(error) === '23505') {
       throw duplicateBookCodeError()
     }
-    throw error
+    throw getAdminBookDatabaseError(error)
   }
 }
 
@@ -181,105 +209,165 @@ export async function listAdminBooksForExport(db: DbClient): Promise<BookRow[]> 
   return bookRepository.listAdminBooksForExport(db)
 }
 
-async function addImportedCopiesToExistingBook(
-  db: DbClient,
-  existingBook: AdminBookRow,
+function createImportedBookValues(
   book: ImportAdminBookInput
-) {
+): bookRepository.AdminBookInsertValues {
   const schoolBookCode = book.school_book_code?.trim() || null
   const totalCopies = book.total_copies ?? 1
   const availableCopies = book.available_copies ?? totalCopies
 
-  try {
-    await bookRepository.updateBookCopiesAndCodes(db, {
-      available_copies: existingBook.available_copies + availableCopies,
-      id: existingBook.id,
-      school_book_code: existingBook.school_book_code || schoolBookCode,
-      school_book_codes: schoolBookCode ? addSchoolBookCode(existingBook, schoolBookCode) : existingBook.school_book_codes,
-      total_copies: existingBook.total_copies + totalCopies,
-    })
-  } catch (error) {
-    if (getDbErrorCode(error) === '23505') {
-      throw duplicateBookCodeError()
-    }
-    throw error
+  return {
+    author: book.author,
+    available_copies: availableCopies,
+    category: book.category || DEFAULT_BOOK_CATEGORY,
+    isbn: book.isbn ?? null,
+    publisher: book.publisher ?? null,
+    school_book_code: schoolBookCode,
+    school_book_codes: schoolBookCode ? [schoolBookCode] : [],
+    title: book.title,
+    total_copies: totalCopies,
   }
 }
 
-async function insertImportedBook(db: DbClient, book: ImportAdminBookInput) {
+type ExistingImportTarget = {
+  book: AdminBookRow
+  kind: 'existing'
+}
+
+type NewImportTarget = {
+  book: bookRepository.AdminBookInsertValues
+  kind: 'new'
+}
+
+type ImportTarget = ExistingImportTarget | NewImportTarget
+
+function addImportedCopies(target: ImportTarget, book: ImportAdminBookInput) {
   const schoolBookCode = book.school_book_code?.trim() || null
   const totalCopies = book.total_copies ?? 1
   const availableCopies = book.available_copies ?? totalCopies
 
-  try {
-    await bookRepository.insertAdminBook(db, {
-      author: book.author,
-      available_copies: availableCopies,
-      category: book.category || DEFAULT_BOOK_CATEGORY,
-      isbn: book.isbn ?? null,
-      publisher: book.publisher ?? null,
-      school_book_code: schoolBookCode,
-      school_book_codes: schoolBookCode ? [schoolBookCode] : [],
-      title: book.title,
-      total_copies: totalCopies,
-    })
-  } catch (error) {
-    if (getDbErrorCode(error) === '23505') {
-      throw duplicateBookCodeError()
-    }
-    throw error
-  }
-}
-
-async function importAdminBookRow(db: DbClient, row: ImportAdminBookRow) {
-  const schoolBookCode = row.book.school_book_code?.trim() || null
+  target.book.available_copies += availableCopies
+  target.book.total_copies += totalCopies
 
   if (schoolBookCode) {
-    const existingBookWithSchoolBookCode = await bookRepository.findBookBySchoolBookCode(db, schoolBookCode)
+    target.book.school_book_code ||= schoolBookCode
+    target.book.school_book_codes = addSchoolBookCode(target.book, schoolBookCode)
+  }
+}
 
-    if (existingBookWithSchoolBookCode) {
-      return 'skipped' as const
+function getImportLookupValues(rows: ImportAdminBookRow[]) {
+  const isbns = new Set<string>()
+  const schoolBookCodes = new Set<string>()
+
+  for (const row of rows) {
+    if (row.book.isbn) {
+      isbns.add(row.book.isbn)
+    }
+
+    const schoolBookCode = row.book.school_book_code?.trim()
+    if (schoolBookCode) {
+      schoolBookCodes.add(schoolBookCode)
     }
   }
 
-  if (row.book.isbn) {
-    const existingBookWithIsbn = await bookRepository.findBookByIsbn(db, row.book.isbn)
-
-    if (existingBookWithIsbn) {
-      await addImportedCopiesToExistingBook(db, existingBookWithIsbn, row.book)
-      return 'inserted' as const
-    }
+  return {
+    isbns: Array.from(isbns),
+    schoolBookCodes: Array.from(schoolBookCodes),
   }
-
-  await insertImportedBook(db, row.book)
-  return 'inserted' as const
 }
 
 async function insertAdminBookImportBatch(
   db: DbClient,
   rows: ImportAdminBookRow[]
 ): Promise<ImportAdminBooksResult> {
-  let inserted = 0
-  let skipped = 0
-  const errors: ImportAdminBookError[] = []
+  try {
+    return await db.transaction(async (transaction) => {
+      const existingBooks = await bookRepository.findBooksForImport(
+        transaction,
+        getImportLookupValues(rows)
+      )
+      const usedSchoolBookCodes = new Set<string>()
+      const targetsByIsbn = new Map<string, ImportTarget>()
+      const existingUpdates = new Map<string, ExistingImportTarget>()
+      const newTargets: NewImportTarget[] = []
+      let inserted = 0
+      let skipped = 0
 
-  for (const row of rows) {
-    try {
-      const result = await importAdminBookRow(db, row)
-      if (result === 'skipped') {
-        skipped += 1
-      } else {
+      for (const existingBook of existingBooks) {
+        const target: ExistingImportTarget = {
+          book: {
+            ...existingBook,
+            school_book_codes: [...existingBook.school_book_codes],
+          },
+          kind: 'existing',
+        }
+
+        for (const schoolBookCode of getSchoolBookCodes(existingBook)) {
+          usedSchoolBookCodes.add(schoolBookCode)
+        }
+
+        if (existingBook.isbn) {
+          targetsByIsbn.set(existingBook.isbn, target)
+        }
+      }
+
+      // Preserve the previous row-by-row duplicate semantics while planning one bulk write.
+      for (const row of rows) {
+        const schoolBookCode = row.book.school_book_code?.trim() || null
+
+        if (schoolBookCode && usedSchoolBookCodes.has(schoolBookCode)) {
+          skipped += 1
+          continue
+        }
+
+        const isbnTarget = row.book.isbn ? targetsByIsbn.get(row.book.isbn) : undefined
+
+        if (isbnTarget) {
+          addImportedCopies(isbnTarget, row.book)
+          if (isbnTarget.kind === 'existing') {
+            existingUpdates.set(isbnTarget.book.id, isbnTarget)
+          }
+        } else {
+          const newTarget: NewImportTarget = {
+            book: createImportedBookValues(row.book),
+            kind: 'new',
+          }
+          newTargets.push(newTarget)
+
+          if (newTarget.book.isbn) {
+            targetsByIsbn.set(newTarget.book.isbn, newTarget)
+          }
+        }
+
+        if (schoolBookCode) {
+          usedSchoolBookCodes.add(schoolBookCode)
+        }
         inserted += 1
       }
-    } catch (error) {
-      errors.push({
-        message: error instanceof Error ? error.message : '도서 추가 중 오류가 발생했습니다.',
-        row: row.rowNumber,
-      })
-    }
-  }
 
-  return { errors, inserted, skipped }
+      await bookRepository.insertAdminBooks(
+        transaction,
+        newTargets.map((target) => target.book)
+      )
+      await bookRepository.updateBookCopiesAndCodesInBulk(
+        transaction,
+        Array.from(existingUpdates.values(), (target) => ({
+          available_copies: target.book.available_copies,
+          id: target.book.id,
+          school_book_code: target.book.school_book_code,
+          school_book_codes: target.book.school_book_codes,
+          total_copies: target.book.total_copies,
+        }))
+      )
+
+      return { errors: [], inserted, skipped }
+    })
+  } catch (error) {
+    if (getDbErrorCode(error) === '23505') {
+      throw duplicateBookCodeError()
+    }
+    throw getAdminBookDatabaseError(error)
+  }
 }
 
 export async function insertAdminBooksInBatches(
@@ -322,7 +410,7 @@ export async function deleteAdminBook(db: DbClient, bookId: string) {
     if (getDbErrorCode(error) === '23503') {
       throw new ApiRouteError(409, 'BOOK_HAS_LOANS', '대출 기록이 있는 도서는 바로 제거할 수 없습니다.')
     }
-    throw error
+    throw getAdminBookDatabaseError(error)
   }
 }
 
@@ -360,7 +448,7 @@ export async function createAdminBook(db: DbClient, input: AdminBookCreateInput)
         if (getDbErrorCode(error) === '23505') {
           throw duplicateBookCodeError()
         }
-        throw error
+        throw getAdminBookDatabaseError(error)
       }
     }
   }
@@ -407,6 +495,6 @@ export async function updateAdminBook(
     if (getDbErrorCode(error) === '23505') {
       throw duplicateBookCodeError()
     }
-    throw error
+    throw getAdminBookDatabaseError(error)
   }
 }
