@@ -30,7 +30,7 @@ export const bookExportSelect = {
 }
 
 export type AdminBookInsertValues = {
-  author: string
+  author: string | null
   available_copies: number
   category: string
   isbn: string | null
@@ -247,9 +247,9 @@ export async function deleteAdminBook(db: DbClient, bookId: string) {
 }
 
 export async function updateAdminBook(db: DbClient, bookId: string, input: {
-  author: string
+  author: string | null
   isbn: string | null
-  publisher: string
+  publisher: string | null
   schoolBookCode: string
   title: string
 }): Promise<AdminBookRow | null> {

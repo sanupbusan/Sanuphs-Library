@@ -31,7 +31,7 @@ export const books = pgTable('books', {
   id: uuid('id').primaryKey().defaultRandom(),
   isbn: text('isbn').unique(),
   title: text('title').notNull(),
-  author: text('author').notNull(),
+  author: text('author'),
   publisher: text('publisher'),
   category: text('category').notNull().default('미분류'),
   total_copies: integer('total_copies').notNull().default(1),

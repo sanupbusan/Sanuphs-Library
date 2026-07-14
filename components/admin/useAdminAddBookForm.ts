@@ -34,8 +34,8 @@ function shouldRedirectToLoginFromAction(error: ApiError | undefined) {
   return error?.code === 'UNAUTHENTICATED' || error?.code === 'INVALID_SESSION'
 }
 
-function isLookupInfoComplete(book: Pick<AdminBookRow, 'title' | 'author' | 'publisher'>) {
-  return Boolean(book.title?.trim() && book.author?.trim() && book.publisher?.trim())
+function isLookupInfoComplete(book: Pick<AdminBookRow, 'title'>) {
+  return Boolean(book.title?.trim())
 }
 
 export function useAdminAddBookForm({ onBookCreated }: UseAdminAddBookFormOptions = {}) {

@@ -8,8 +8,8 @@ export type AdminBookCreateInput = {
 
 export type AdminBookUpdateInput = AdminBookCreateInput
 
-type RequiredAdminBookField = Exclude<keyof AdminBookCreateInput, 'isbn'>
-type AdminBookInfoInput = Pick<AdminBookCreateInput, 'author' | 'publisher' | 'title'>
+type RequiredAdminBookField = 'schoolBookCode' | 'title'
+type AdminBookInfoInput = Pick<AdminBookCreateInput, 'title'>
 
 export type AdminBookLookupSuccessStep = 'code' | 'info'
 
@@ -22,8 +22,6 @@ type AdminBookIsbnAutoLookupState = {
 
 const requiredAdminBookFields: { field: RequiredAdminBookField; label: string }[] = [
   { field: 'title', label: '책 이름' },
-  { field: 'author', label: '저자' },
-  { field: 'publisher', label: '출판사' },
   { field: 'schoolBookCode', label: '학교 내 도서 코드' },
 ]
 
@@ -40,7 +38,7 @@ export function getMissingAdminBookRequiredFieldsMessage(input: AdminBookCreateI
 }
 
 export function isAdminBookInfoComplete(input: AdminBookInfoInput) {
-  return Boolean(input.title.trim() && input.author.trim() && input.publisher.trim())
+  return Boolean(input.title.trim())
 }
 
 export function isAdminBookIsbnScanComplete(isbn: string) {

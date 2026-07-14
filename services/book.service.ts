@@ -180,7 +180,7 @@ export type CreateAdminBookInput = {
 }
 
 export type ImportAdminBookInput = {
-  author: string
+  author?: string | null
   available_copies?: number
   category?: string
   isbn?: string | null
@@ -209,11 +209,11 @@ export type ImportAdminBooksResult = {
 export async function insertAdminBook(db: DbClient, input: CreateAdminBookInput): Promise<AdminBookRow> {
   try {
     const book = await bookRepository.insertAdminBook(db, {
-      author: input.author,
+      author: input.author.trim() || null,
       available_copies: 1,
       category: DEFAULT_BOOK_CATEGORY,
       isbn: input.isbn,
-      publisher: input.publisher,
+      publisher: input.publisher.trim() || null,
       school_book_code: input.schoolBookCode,
       school_book_codes: [input.schoolBookCode],
       title: input.title,
@@ -267,7 +267,7 @@ function createImportedBookValues(
   const availableCopies = book.available_copies ?? totalCopies
 
   return {
-    author: book.author,
+    author: book.author?.trim() || null,
     available_copies: availableCopies,
     category: book.category || DEFAULT_BOOK_CATEGORY,
     isbn: book.isbn ?? null,
@@ -576,9 +576,9 @@ export async function updateAdminBook(
 
   try {
     const updatedBook = await bookRepository.updateAdminBook(db, bookId, {
-      author: input.author,
+      author: input.author.trim() || null,
       isbn: getNullableAdminBookIsbn(input),
-      publisher: input.publisher,
+      publisher: input.publisher.trim() || null,
       schoolBookCode: input.schoolBookCode,
       title: input.title,
     })
