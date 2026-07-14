@@ -49,6 +49,10 @@ export type AdminBookCopiesUpdate = {
   total_copies: number
 }
 
+function textArraySql(values: string[]) {
+  return sql`array[${sql.join(values.map((value) => sql`${value}`), sql`, `)}]::text[]`
+}
+
 export async function listAdminBooks(db: DbClient): Promise<AdminBookRow[]> {
   return db.select(adminBookSelect).from(books).orderBy(desc(books.created_at)).limit(100)
 }
@@ -129,7 +133,7 @@ export async function findBooksForImport(
   const schoolBookCodeCondition = input.schoolBookCodes.length > 0
     ? or(
         inArray(books.school_book_code, input.schoolBookCodes),
-        sql<boolean>`coalesce(${books.school_book_codes}, '{}'::text[]) && ${input.schoolBookCodes}::text[]`
+        sql<boolean>`coalesce(${books.school_book_codes}, '{}'::text[]) && ${textArraySql(input.schoolBookCodes)}`
       )
     : undefined
   const condition = isbnCondition && schoolBookCodeCondition
@@ -214,7 +218,7 @@ export async function updateBookCopiesAndCodesInBulk(
       ${input.available_copies}::integer,
       ${input.total_copies}::integer,
       ${input.school_book_code}::text,
-      ${input.school_book_codes}::text[]
+      ${textArraySql(input.school_book_codes)}
     )`),
     sql`, `
   )
