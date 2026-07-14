@@ -12,6 +12,12 @@ import type { BookRow } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
 
+const IMPORT_LOG_TAG = '[BOOK_IMPORT]'
+
+function logImport(message: string, data?: Record<string, unknown>) {
+  console.log(`${IMPORT_LOG_TAG} ${message}`, data ?? '')
+}
+
 type SheetRow = Record<string, string | number | boolean | null | undefined>
 
 function getCellText(value: unknown) {
@@ -164,7 +170,10 @@ export async function POST(request: Request) {
       logLabel: 'Admin book import error:',
     },
     async () => {
+      const importStartedAt = Date.now()
+      logImport('request started')
       const session = await requireAdminSession(request)
+      logImport('admin session verified', { duration_ms: Date.now() - importStartedAt })
 
       let formData: FormData
 
@@ -175,7 +184,13 @@ export async function POST(request: Request) {
       }
 
       const file = getImportFile(formData)
+      logImport('file received', { name: file.name, size_bytes: file.size })
+      const workbookStartedAt = Date.now()
       const sheetRows = await readWorkbookRows(file)
+      logImport('workbook parsed', {
+        duration_ms: Date.now() - workbookStartedAt,
+        rows: sheetRows.length,
+      })
       const validRows: ImportAdminBookRow[] = []
       const validationErrors: ImportAdminBookError[] = []
 
@@ -195,8 +210,24 @@ export async function POST(request: Request) {
         }
       })
 
+      logImport('rows validated', {
+        invalid_rows: validationErrors.length,
+        valid_rows: validRows.length,
+      })
+
+      const databaseStartedAt = Date.now()
       const importResult = await insertAdminBooksInBatches(session.db, validRows)
+      logImport('database import completed', {
+        duration_ms: Date.now() - databaseStartedAt,
+        inserted: importResult.inserted,
+        skipped: importResult.skipped,
+      })
       const errors = [...validationErrors, ...importResult.errors]
+
+      logImport('request completed', {
+        duration_ms: Date.now() - importStartedAt,
+        failed: errors.length,
+      })
 
       return jsonData({
         errors,
