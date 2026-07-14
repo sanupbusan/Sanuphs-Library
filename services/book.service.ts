@@ -380,7 +380,19 @@ export async function insertAdminBooksInBatches(
 
   for (let index = 0; index < rows.length; index += ADMIN_BOOK_IMPORT_BATCH_SIZE) {
     const batch = rows.slice(index, index + ADMIN_BOOK_IMPORT_BATCH_SIZE)
+    const batchNumber = Math.floor(index / ADMIN_BOOK_IMPORT_BATCH_SIZE) + 1
+    const batchStartedAt = Date.now()
+    console.log('[BOOK_IMPORT] batch started', {
+      batch: batchNumber,
+      rows: batch.length,
+    })
     const result = await insertAdminBookImportBatch(db, batch)
+    console.log('[BOOK_IMPORT] batch completed', {
+      batch: batchNumber,
+      duration_ms: Date.now() - batchStartedAt,
+      inserted: result.inserted,
+      skipped: result.skipped,
+    })
     inserted += result.inserted
     skipped += result.skipped
     errors.push(...result.errors)
