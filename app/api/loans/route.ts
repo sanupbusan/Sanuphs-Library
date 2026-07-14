@@ -23,18 +23,6 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
-function isLoanLimitError(error: unknown) {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    error.code === '23514' &&
-    'message' in error &&
-    typeof error.message === 'string' &&
-    error.message.includes('최대')
-  )
-}
-
 function getStringProperty(error: unknown, property: 'code' | 'details' | 'hint' | 'message') {
   if (typeof error !== 'object' || error === null || !(property in error)) {
     return ''
@@ -45,21 +33,25 @@ function getStringProperty(error: unknown, property: 'code' | 'details' | 'hint'
   return typeof value === 'string' ? value : ''
 }
 
-function getErrorMessage(error: unknown) {
-  return getStringProperty(error, 'message')
+function getDatabaseError(error: unknown, depth = 0): unknown {
+  if (depth >= 5 || typeof error !== 'object' || error === null || !('cause' in error)) {
+    return error
+  }
+
+  const nestedError = getDatabaseError(error.cause, depth + 1)
+
+  return getStringProperty(nestedError, 'code') ? nestedError : error
 }
 
-function isCreatePublicLoanSignatureCacheError(error: unknown) {
-  const errorText = [
-    getErrorMessage(error),
-    getStringProperty(error, 'details'),
-    getStringProperty(error, 'hint'),
-  ].join(' ')
+function getErrorMessage(error: unknown) {
+  return getStringProperty(getDatabaseError(error), 'message')
+}
 
+function isLoanLimitError(error: unknown) {
+  const databaseError = getDatabaseError(error)
   return (
-    getStringProperty(error, 'code') === 'PGRST202' &&
-    errorText.includes('create_public_loan') &&
-    errorText.includes('input_school_book_code')
+    getStringProperty(databaseError, 'code') === '23514' &&
+    getStringProperty(databaseError, 'message').includes('최대')
   )
 }
 
@@ -198,7 +190,13 @@ export async function POST(request: Request) {
 
   try {
     const db = createRouteDbClient()
-    const loan = await createPublicLoan(db, bookId, studentId, getText(body.notes) || null)
+    const loan = await createPublicLoan(
+      db,
+      bookId,
+      studentId,
+      getText(body.notes) || null,
+      schoolBookCode || null
+    )
 
     if (!loan) {
       throw new Error('Loan RPC returned no result.')
@@ -224,12 +222,13 @@ export async function POST(request: Request) {
       )
     }
 
-    console.error('Loan creation error:', error)
+    const databaseError = getDatabaseError(error)
+    console.error('Loan creation error:', databaseError)
     return NextResponse.json(
       {
         error: {
           code: 'CREATE_LOAN_FAILED',
-          message: error instanceof Error ? error.message : '대여 처리 중 오류가 발생했습니다.',
+          message: getErrorMessage(error) || '대여 처리 중 오류가 발생했습니다.',
         },
       },
       { status: 500 }

@@ -1077,10 +1077,17 @@ as $$
   left join active_counts on active_counts.id = target_student.id;
 $$;
 
+alter table public.books
+  add column if not exists school_book_codes text[] not null default '{}';
+
+alter table public.loans
+  add column if not exists school_book_code text;
+
 create or replace function public.create_public_loan(
   input_book_id uuid,
   input_student_id uuid,
-  input_notes text default null
+  input_notes text default null,
+  input_school_book_code text default null
 )
 returns table (
   book_title text,
@@ -1553,19 +1560,49 @@ declare
   v_book record;
   v_borrower_label text;
   v_borrower_type text;
-  v_loan record;
+  v_due_on date;
+  v_loan_id uuid;
   v_loan_limit integer;
-  v_student record;
   v_oldest_overdue_due_on date;
+  v_school_book_code text := nullif(trim(input_school_book_code), '');
+  v_student record;
   v_today date := current_date;
 begin
-  select books.id, books.title, books.available_copies
+  select books.id, books.title, books.available_copies, books.school_book_code, books.school_book_codes
   into v_book
   from public.books
   where books.id = input_book_id
   for update;
 
   if not found then
+    raise exception using errcode = 'P0001', message = 'BOOK_NOT_FOUND';
+  end if;
+
+  if v_school_book_code is null then
+    select nullif(trim(candidate.school_book_code), '')
+    into v_school_book_code
+    from unnest(
+      case
+        when cardinality(coalesce(v_book.school_book_codes, '{}'::text[])) > 0
+          then v_book.school_book_codes
+        else array_remove(array[v_book.school_book_code], null)
+      end
+    ) with ordinality as candidate(school_book_code, position)
+    where nullif(trim(candidate.school_book_code), '') is not null
+      and not exists (
+        select 1
+        from public.loans
+        where loans.status = 'rented'
+          and loans.returned_on is null
+          and loans.school_book_code = nullif(trim(candidate.school_book_code), '')
+      )
+    order by candidate.position
+    limit 1;
+  end if;
+
+  if v_school_book_code is not null
+    and v_school_book_code is distinct from v_book.school_book_code
+    and not (v_school_book_code = any(coalesce(v_book.school_book_codes, '{}'::text[]))) then
     raise exception using errcode = 'P0001', message = 'BOOK_NOT_FOUND';
   end if;
 
@@ -1614,6 +1651,16 @@ begin
     raise exception using errcode = 'P0001', message = 'ALREADY_RENTED';
   end if;
 
+  if v_school_book_code is not null and exists (
+    select 1
+    from public.loans
+    where loans.school_book_code = v_school_book_code
+      and loans.status = 'rented'
+      and loans.returned_on is null
+  ) then
+    raise exception using errcode = 'P0001', message = 'ALREADY_RENTED';
+  end if;
+
   select count(*)::integer
   into v_active_loan_count
   from public.loans
@@ -1631,10 +1678,10 @@ begin
       message = v_borrower_label || U&'\C740 \CD5C\B300 ' || v_loan_limit || U&'\AD8C\AE4C\C9C0 \B300\C5EC\D560 \C218 \C788\C2B5\B2C8\B2E4. \D604\C7AC ' || v_active_loan_count || U&'\AD8C \B300\C5EC \C911\C785\B2C8\B2E4.';
   end if;
 
-  insert into public.loans (book_id, student_id, notes)
-  values (input_book_id, input_student_id, nullif(trim(input_notes), ''))
-  returning id, due_on
-  into v_loan;
+  insert into public.loans as new_loan (book_id, student_id, school_book_code, notes)
+  values (input_book_id, input_student_id, v_school_book_code, nullif(trim(input_notes), ''))
+  returning new_loan.id, new_loan.due_on
+  into v_loan_id, v_due_on;
 
   return query
   select
@@ -1642,8 +1689,8 @@ begin
     (v_active_loan_count + 1)::integer as active_loan_count,
     v_borrower_label::text as borrower_label,
     v_borrower_type::text as borrower_type,
-    v_loan.due_on::date as due_on,
-    v_loan.id::uuid as loan_id,
+    v_due_on::date as due_on,
+    v_loan_id::uuid as loan_id,
     v_loan_limit::integer as loan_limit,
     greatest(v_loan_limit - v_active_loan_count - 1, 0)::integer as remaining_loan_count,
     v_student.name::text as student_name;
@@ -1654,7 +1701,7 @@ end;
 $$;
 
 grant execute on function public.lookup_student_for_loan(text) to anon, authenticated;
-grant execute on function public.create_public_loan(uuid, uuid, text) to anon, authenticated;
+grant execute on function public.create_public_loan(uuid, uuid, text, text) to anon, authenticated, sanuplib;
 
 
 alter table public.books

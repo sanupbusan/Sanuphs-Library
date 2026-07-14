@@ -6,8 +6,15 @@ export async function createPublicLoan(
   db: DbClient,
   bookId: string,
   studentId: string,
-  notes: string | null
+  notes: string | null,
+  schoolBookCode: string | null
 ): Promise<CreatedPublicLoan | null> {
-  const rows = await loanRepository.createPublicLoanViaRpc(db, bookId, studentId, notes)
+  const rows = await loanRepository.createPublicLoanViaRpc(
+    db,
+    bookId,
+    studentId,
+    notes,
+    schoolBookCode
+  )
   return rows[0] ?? null
 }
