@@ -1,6 +1,6 @@
-import { and, desc, eq, ilike, or, sql } from 'drizzle-orm'
+import { desc, eq, ilike, inArray, or, sql } from 'drizzle-orm'
 import { books } from '@/db/schema'
-import type { DbClient } from '@/lib/db'
+import type { DbClient, DbTransaction } from '@/lib/db'
 import type { AdminBookRow, BookRow, RecentBook, RemovableBook, SearchBook } from '@/types/library'
 
 export const adminBookSelect = {
@@ -27,6 +27,26 @@ export const bookExportSelect = {
   category: books.category,
   total_copies: books.total_copies,
   available_copies: books.available_copies,
+}
+
+export type AdminBookInsertValues = {
+  author: string
+  available_copies: number
+  category: string
+  isbn: string | null
+  publisher: string | null
+  school_book_code: string | null
+  school_book_codes: string[]
+  title: string
+  total_copies: number
+}
+
+export type AdminBookCopiesUpdate = {
+  available_copies: number
+  id: string
+  school_book_code: string | null
+  school_book_codes: string[]
+  total_copies: number
 }
 
 export async function listAdminBooks(db: DbClient): Promise<AdminBookRow[]> {
@@ -99,6 +119,30 @@ export async function findBookBySchoolBookCode(db: DbClient, schoolBookCode: str
   return rows[0] ?? null
 }
 
+export async function findBooksForImport(
+  db: DbTransaction,
+  input: { isbns: string[]; schoolBookCodes: string[] }
+): Promise<AdminBookRow[]> {
+  const isbnCondition = input.isbns.length > 0
+    ? inArray(books.isbn, input.isbns)
+    : undefined
+  const schoolBookCodeCondition = input.schoolBookCodes.length > 0
+    ? or(
+        inArray(books.school_book_code, input.schoolBookCodes),
+        sql<boolean>`coalesce(${books.school_book_codes}, '{}'::text[]) && ${input.schoolBookCodes}::text[]`
+      )
+    : undefined
+  const condition = isbnCondition && schoolBookCodeCondition
+    ? or(isbnCondition, schoolBookCodeCondition)
+    : isbnCondition ?? schoolBookCodeCondition
+
+  if (!condition) {
+    return []
+  }
+
+  return db.select(adminBookSelect).from(books).where(condition)
+}
+
 export async function findRemovableBookByCode(
   db: DbClient,
   code: string,
@@ -125,28 +169,23 @@ export async function findRemovableBookByCode(
   return rows[0] ?? null
 }
 
-export async function insertAdminBook(db: DbClient, input: {
-  author: string
-  available_copies: number
-  category: string
-  isbn: string | null
-  publisher: string | null
-  school_book_code: string | null
-  school_book_codes: string[]
-  title: string
-  total_copies: number
-}): Promise<AdminBookRow> {
+export async function insertAdminBook(db: DbClient, input: AdminBookInsertValues): Promise<AdminBookRow> {
   const rows = await db.insert(books).values(input).returning(adminBookSelect)
   return rows[0]
 }
 
-export async function updateBookCopiesAndCodes(db: DbClient, input: {
-  available_copies: number
-  id: string
-  school_book_code: string | null
-  school_book_codes: string[]
-  total_copies: number
-}): Promise<AdminBookRow | null> {
+export async function insertAdminBooks(db: DbTransaction, inputs: AdminBookInsertValues[]) {
+  if (inputs.length === 0) {
+    return
+  }
+
+  await db.insert(books).values(inputs)
+}
+
+export async function updateBookCopiesAndCodes(
+  db: DbClient,
+  input: AdminBookCopiesUpdate
+): Promise<AdminBookRow | null> {
   const rows = await db
     .update(books)
     .set({
@@ -159,6 +198,43 @@ export async function updateBookCopiesAndCodes(db: DbClient, input: {
     .returning(adminBookSelect)
 
   return rows[0] ?? null
+}
+
+export async function updateBookCopiesAndCodesInBulk(
+  db: DbTransaction,
+  inputs: AdminBookCopiesUpdate[]
+) {
+  if (inputs.length === 0) {
+    return
+  }
+
+  const updateValues = sql.join(
+    inputs.map((input) => sql`(
+      ${input.id}::uuid,
+      ${input.available_copies}::integer,
+      ${input.total_copies}::integer,
+      ${input.school_book_code}::text,
+      ${input.school_book_codes}::text[]
+    )`),
+    sql`, `
+  )
+
+  await db.execute(sql`
+    update ${books}
+    set
+      available_copies = updates.available_copies,
+      total_copies = updates.total_copies,
+      school_book_code = updates.school_book_code,
+      school_book_codes = updates.school_book_codes
+    from (values ${updateValues}) as updates(
+      id,
+      available_copies,
+      total_copies,
+      school_book_code,
+      school_book_codes
+    )
+    where ${books.id} = updates.id
+  `)
 }
 
 export async function deleteAdminBook(db: DbClient, bookId: string) {
