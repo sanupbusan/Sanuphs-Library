@@ -119,10 +119,11 @@ export async function createPublicLoanViaRpc(
   db: DbClient,
   bookId: string,
   studentId: string,
-  notes: string | null
+  notes: string | null,
+  schoolBookCode: string | null
 ): Promise<CreatedPublicLoan[]> {
   const result = await db.execute<CreatedPublicLoan>(
-    sql`select * from public.create_public_loan(${bookId}::uuid, ${studentId}::uuid, ${notes}::text)`
+    sql`select * from public.create_public_loan(${bookId}::uuid, ${studentId}::uuid, ${notes}::text, ${schoolBookCode}::text)`
   )
   return result.rows
 }

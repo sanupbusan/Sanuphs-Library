@@ -235,6 +235,6 @@ exception
 end;
 $$;
 
-grant execute on function public.create_public_loan(uuid, uuid, text, text) to anon, authenticated;
+grant execute on function public.create_public_loan(uuid, uuid, text, text) to anon, authenticated, sanuplib;
 
 notify pgrst, 'reload schema';
