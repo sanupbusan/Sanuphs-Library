@@ -20,7 +20,13 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 const DEBUG_TAG = '[LOGIN_DEBUG_SERVER]'
+const LOGIN_DEBUG_ENABLED = process.env.LOGIN_DEBUG === 'true'
+
 function dbg(msg: string, data?: unknown) {
+  if (!LOGIN_DEBUG_ENABLED) {
+    return
+  }
+
   const ts = new Date().toISOString()
   console.log(`${DEBUG_TAG} ${ts} ${msg}`, data !== undefined ? data : '')
 }

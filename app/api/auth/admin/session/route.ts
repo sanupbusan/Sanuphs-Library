@@ -8,7 +8,13 @@ import { jsonData, runApiRoute, withNoStore } from '@/lib/api-route'
 export const dynamic = 'force-dynamic'
 
 const DEBUG_TAG = '[LOGIN_DEBUG_SESSION_API]'
+const LOGIN_DEBUG_ENABLED = process.env.LOGIN_DEBUG === 'true'
+
 function dbg(msg: string, data?: unknown) {
+  if (!LOGIN_DEBUG_ENABLED) {
+    return
+  }
+
   const ts = new Date().toISOString()
   console.log(`${DEBUG_TAG} ${ts} ${msg}`, data !== undefined ? data : '')
 }
