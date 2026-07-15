@@ -1,4 +1,4 @@
-import { asc, desc, eq, lt, sql } from 'drizzle-orm'
+import { asc, eq, lt, sql } from 'drizzle-orm'
 import { books, loans, students } from '@/db/schema'
 import type { DbClient } from '@/lib/db'
 import type {
@@ -33,14 +33,46 @@ const loanWithRelationsSelect = {
   },
 }
 
+type BackendActiveLoanRow = {
+  id: string
+  book_id: string
+  student_id: string
+  borrowed_on: string
+  due_on: string
+  returned_on: string | null
+  status: LoanStatus
+  book_title: string | null
+  book_school_book_code: string | null
+  student_name: string | null
+  student_number: string | null
+}
+
 export async function listAdminLoans(db: DbClient): Promise<LoanWithBookAndStudent[]> {
-  return db
-    .select(loanWithRelationsSelect)
-    .from(loans)
-    .innerJoin(books, eq(books.id, loans.book_id))
-    .innerJoin(students, eq(students.id, loans.student_id))
-    .where(eq(loans.status, 'rented'))
-    .orderBy(desc(loans.borrowed_on))
+  const result = await db.execute<BackendActiveLoanRow>(
+    sql`select * from public.list_backend_active_loans()`
+  )
+
+  return result.rows.map((loan) => ({
+    id: loan.id,
+    book_id: loan.book_id,
+    student_id: loan.student_id,
+    borrowed_on: loan.borrowed_on,
+    due_on: loan.due_on,
+    returned_on: loan.returned_on,
+    status: loan.status,
+    books: loan.book_title === null && loan.book_school_book_code === null
+      ? null
+      : {
+          title: loan.book_title ?? '-',
+          school_book_code: loan.book_school_book_code,
+        },
+    students: loan.student_name === null && loan.student_number === null
+      ? null
+      : {
+          name: loan.student_name ?? '-',
+          student_number: loan.student_number ?? '-',
+        },
+  }))
 }
 
 export async function getAdminLoanById(db: DbClient, loanId: string): Promise<LoanWithBookAndStudent | null> {
@@ -94,29 +126,19 @@ export async function listAdminOverdueLoans(db: DbClient, today: string) {
 }
 
 export async function getDashboardOverdueLoans(db: DbClient, limit: number): Promise<DashboardOverdueLoan[]> {
-  return db
-    .select({
-      id: loans.id,
-      due_on: loans.due_on,
-      student_name: sql<string>`coalesce(${students.name}, '-')`,
-    })
-    .from(loans)
-    .leftJoin(students, eq(students.id, loans.student_id))
-    .where(sql`${loans.status} = 'rented' and ${loans.due_on} < current_date`)
-    .orderBy(asc(loans.due_on))
-    .limit(limit)
+  const result = await db.execute<DashboardOverdueLoan>(
+    sql`select * from public.list_backend_dashboard_overdue_loans(${limit}::integer)`
+  )
+
+  return result.rows
 }
 
 export async function getStudentLoanStats(db: DbClient): Promise<StudentLoanStat[]> {
-  return db
-    .select({
-      student_id: loans.student_id,
-      student_name: sql<string>`coalesce(${students.name}, '-')`,
-      total_loans: sql<number>`count(${loans.id})::integer`,
-    })
-    .from(loans)
-    .leftJoin(students, eq(students.id, loans.student_id))
-    .groupBy(loans.student_id, students.name)
+  const result = await db.execute<StudentLoanStat>(
+    sql`select * from public.list_backend_student_loan_stats()`
+  )
+
+  return result.rows
 }
 
 export async function createPublicLoanViaRpc(
