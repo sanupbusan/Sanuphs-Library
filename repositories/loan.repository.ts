@@ -11,6 +11,10 @@ import type {
   StudentLoanStat,
 } from '@/types/library'
 
+function textArraySql(values: string[]) {
+  return sql`array[${sql.join(values.map((value) => sql`${value}`), sql`, `)}]::text[]`
+}
+
 const loanWithRelationsSelect = {
   id: loans.id,
   book_id: loans.book_id,
@@ -143,7 +147,7 @@ export async function returnLoansBySchoolBookCodes(
   codes: string[]
 ): Promise<ReturnedLoan[]> {
   const result = await db.execute<ReturnedLoan>(
-    sql`select * from public.return_loans_by_school_book_codes(${codes}::text[])`
+    sql`select * from public.return_loans_by_school_book_codes(${textArraySql(codes)})`
   )
   return result.rows
 }

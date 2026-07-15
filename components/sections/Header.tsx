@@ -24,6 +24,7 @@ const publicNavigationItems = [
 
 const protectedNavigationItems = [
   { label: '도서관리', href: '/admin/books' },
+  { label: '바코드출력', href: '/admin/barcodes' },
   { label: '연체관리', href: '/admin/overdue' },
 ]
 

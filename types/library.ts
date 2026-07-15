@@ -62,6 +62,11 @@ export type BookLookupResult = RemovableBook & {
 export type IsbnLookupResult = Pick<BookRow, IsbnLookupFields>
 export type RecentBook = Pick<BookRow, RecentBookFields>
 
+export type BorrowerBarcodeRow = Pick<
+  StudentRow,
+  'class_number' | 'grade' | 'id' | 'name' | 'seat_number' | 'student_number'
+>
+
 export type BorrowerType = 'staff' | 'student'
 
 export type LoanStudent = Omit<
