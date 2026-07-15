@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { AlertTriangle, BookOpen, Loader2, LogOut, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Barcode, BookOpen, Loader2, LogOut, ShieldCheck } from 'lucide-react'
 import type { SerializedAdminSession } from '@/lib/admin-auth'
 
 type AdminDashboardProps = {
@@ -17,6 +17,7 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
   useEffect(() => {
     router.prefetch('/admin/books')
     router.prefetch('/admin/add_books')
+    router.prefetch('/admin/barcodes')
   }, [router])
 
   async function handleLogout() {
@@ -94,6 +95,14 @@ export default function AdminDashboard({ session }: AdminDashboardProps) {
             >
               <AlertTriangle className="h-4 w-4" />
               연체관리
+            </Link>
+
+            <Link
+              href="/admin/barcodes"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+            >
+              <Barcode className="h-4 w-4" />
+              바코드출력
             </Link>
           </div>
         </div>

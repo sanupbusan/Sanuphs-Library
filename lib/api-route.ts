@@ -46,6 +46,16 @@ function getStructuredApiError(error: unknown) {
   return null
 }
 
+function getDatabaseError(error: unknown, depth = 0): unknown {
+  if (depth >= 5 || typeof error !== 'object' || error === null || !('cause' in error)) {
+    return error
+  }
+
+  const nestedError = getDatabaseError(error.cause, depth + 1)
+
+  return nestedError instanceof Error ? nestedError : error
+}
+
 export function jsonData<T>(data: T, init?: ResponseInit) {
   return NextResponse.json({ data }, init)
 }
@@ -115,11 +125,14 @@ export function handleApiRouteError(error: unknown, options: ApiRouteOptions) {
     return jsonError(structuredError.code, structuredError.message, structuredError.status)
   }
 
-  console.error(options.logLabel, error)
+  const databaseError = getDatabaseError(error)
+  console.error(options.logLabel, databaseError)
 
   return jsonError(
     options.fallback.code,
-    options.exposeErrorMessage && error instanceof Error ? error.message : options.fallback.message,
+    options.exposeErrorMessage && databaseError instanceof Error
+      ? databaseError.message
+      : options.fallback.message,
     options.fallback.status ?? 500
   )
 }
