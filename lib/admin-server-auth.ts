@@ -5,7 +5,13 @@ import { ADMIN_SIGNED_SESSION_COOKIE } from '@/lib/admin-auth-shared'
 import { getAdminSessionFromSignedCookieValue } from '@/lib/admin-session-cookie'
 
 const DEBUG_TAG = '[LOGIN_DEBUG_SSR]'
+const LOGIN_DEBUG_ENABLED = process.env.LOGIN_DEBUG === 'true'
+
 function dbg(msg: string, data?: unknown) {
+  if (!LOGIN_DEBUG_ENABLED) {
+    return
+  }
+
   const ts = new Date().toISOString()
   console.log(`${DEBUG_TAG} ${ts} ${msg}`, data !== undefined ? data : '')
 }

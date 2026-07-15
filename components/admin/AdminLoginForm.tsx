@@ -6,7 +6,13 @@ import { Loader2, LogIn } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const DEBUG_TAG = '[LOGIN_DEBUG_CLIENT]'
+const LOGIN_DEBUG_ENABLED = process.env.NEXT_PUBLIC_LOGIN_DEBUG === 'true'
+
 function dbg(msg: string, data?: unknown) {
+  if (!LOGIN_DEBUG_ENABLED) {
+    return
+  }
+
   const ts = new Date().toISOString()
   console.log(`${DEBUG_TAG} ${ts} ${msg}`, data !== undefined ? data : '')
 }
