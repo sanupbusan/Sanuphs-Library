@@ -77,10 +77,10 @@ declare
   v_book record;
   v_borrower_label text;
   v_borrower_type text;
-  v_due_on date;
+  v_due_date date := current_date + 14;
   v_loan_id uuid;
   v_loan_limit integer;
-  v_oldest_overdue_due_on date;
+  v_oldest_overdue_due_date date;
   v_school_book_code text := nullif(trim(input_school_book_code), '');
   v_student record;
   v_today date := current_date;
@@ -154,18 +154,18 @@ begin
       message = 'STUDENT_LOAN_BANNED|' || v_student.loan_banned_until::text;
   end if;
 
-  select min(loans.due_on)
-  into v_oldest_overdue_due_on
-  from public.loans
-  where loans.student_id = input_student_id
-    and loans.status = 'rented'
-    and loans.returned_on is null
-    and loans.due_on < v_today;
+  select min(existing_loan.due_on)
+  into v_oldest_overdue_due_date
+  from public.loans as existing_loan
+  where existing_loan.student_id = input_student_id
+    and existing_loan.status = 'rented'
+    and existing_loan.returned_on is null
+    and existing_loan.due_on < v_today;
 
-  if v_oldest_overdue_due_on is not null then
+  if v_oldest_overdue_due_date is not null then
     raise exception using
       errcode = 'P0001',
-      message = 'STUDENT_HAS_OVERDUE_LOAN|' || v_oldest_overdue_due_on::text;
+      message = 'STUDENT_HAS_OVERDUE_LOAN|' || v_oldest_overdue_due_date::text;
   end if;
 
   if exists (
@@ -213,10 +213,24 @@ begin
       message = v_borrower_label || '은 최대 ' || v_loan_limit || '권까지 대여할 수 있습니다. 현재 ' || v_active_loan_count || '권 대여 중입니다.';
   end if;
 
-  insert into public.loans as new_loan (book_id, student_id, school_book_code, notes)
-  values (input_book_id, input_student_id, v_school_book_code, nullif(trim(input_notes), ''))
-  returning new_loan.id, new_loan.due_on
-  into v_loan_id, v_due_on;
+  insert into public.loans as new_loan (
+    book_id,
+    student_id,
+    borrowed_on,
+    due_on,
+    school_book_code,
+    notes
+  )
+  values (
+    input_book_id,
+    input_student_id,
+    v_today,
+    v_due_date,
+    v_school_book_code,
+    nullif(trim(input_notes), '')
+  )
+  returning new_loan.id
+  into v_loan_id;
 
   return query
   select
@@ -224,7 +238,7 @@ begin
     (v_active_loan_count + 1)::integer as active_loan_count,
     v_borrower_label::text as borrower_label,
     v_borrower_type::text as borrower_type,
-    v_due_on::date as due_on,
+    v_due_date::date as due_on,
     v_loan_id::uuid as loan_id,
     v_loan_limit::integer as loan_limit,
     greatest(v_loan_limit - v_active_loan_count - 1, 0)::integer as remaining_loan_count,
