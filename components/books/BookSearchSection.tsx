@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react'
 import { BookOpen, Loader2, Search } from 'lucide-react'
-import { displayValue } from '@/lib/display'
+import { displayValue } from '@/lib/shared/display'
 import type { ApiResponseWithMeta, BookSearchResult } from '@/types/library'
 
 type BookSearchResponse = ApiResponseWithMeta<

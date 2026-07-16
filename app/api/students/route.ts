@@ -1,5 +1,5 @@
-import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import { normalizeBorrowerLookupCode } from '@/lib/loan-limits'
+import { normalizeBarcodeInput } from '@/lib/shared/barcode'
+import { normalizeBorrowerLookupCode } from '@/services/borrower-policy.service'
 import { createRouteDbClient, jsonData, runApiRoute, throwApiError, withNoStore } from '@/lib/api-route'
 import { lookupStudentForLoan } from '@/services/student.service'
 

@@ -1,5 +1,5 @@
 import { requireAdminSession } from '@/lib/admin-auth'
-import { updateAdminLoan } from '@/lib/admin-loans'
+import { updateAdminLoan } from '@/services/loan.service'
 import { getText, jsonData, readJsonBody, runApiRoute, withNoStore } from '@/lib/api-route'
 
 export const dynamic = 'force-dynamic'

@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/shared/class-names'
 import type { DashboardStat } from '@/lib/dashboard-data'
 
 export function StatCard({ icon: Icon, label, value, color }: DashboardStat) {

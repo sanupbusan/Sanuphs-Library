@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import AdminOverdueManager from '@/components/admin/AdminOverdueManager'
 import Footer from '@/components/sections/Footer'
 import Header from '@/components/sections/Header'
-import { listAdminOverdueLoans } from '@/lib/admin-overdue'
+import { listAdminOverdueLoans } from '@/services/loan.service'
 import { requireAdminPageSession } from '@/lib/admin-server-auth'
 
 export const dynamic = 'force-dynamic'

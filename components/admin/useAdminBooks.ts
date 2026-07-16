@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { deleteBookAction, updateBookAction } from '@/app/admin/books/actions'
 import { removeAdminBookById, replaceUpdatedAdminBook } from '@/components/admin/adminBookListState'
 import { useToast } from '@/components/ui/ToastProvider'
-import type { AdminBookUpdateInput } from '@/lib/admin-book-input'
-import { displaySchoolBookCodes } from '@/lib/school-book-codes'
+import { displaySchoolBookCodes } from '@/services/book-code.service'
+import type { AdminBookUpdateInput } from '@/services/book-input.service'
 import type { AdminBookRow } from '@/types/library'
 
 export type AdminBookEditField = keyof AdminBookUpdateInput

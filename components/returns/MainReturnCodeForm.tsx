@@ -3,7 +3,7 @@
 import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, RotateCcw } from 'lucide-react'
-import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { normalizeBarcodeInput } from '@/lib/shared/barcode'
 import type { ApiResponse, ReturnableLoan } from '@/types/library'
 
 type ReturnableLoanResponse = ApiResponse<Pick<ReturnableLoan, 'loan_id'> | null>

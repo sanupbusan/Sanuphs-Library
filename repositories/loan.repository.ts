@@ -1,7 +1,7 @@
-import { sql } from 'drizzle-orm'
-import type { DbClient } from '@/lib/db'
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
+import { books, loans, students } from '@/db/schema'
+import type { DbClient, DbTransaction } from '@/lib/db'
 import type {
-  CreatedPublicLoan,
   DashboardOverdueLoan,
   LoanStatus,
   LoanWithBookAndStudent,
@@ -35,6 +35,38 @@ type BackendAdminOverdueLoanRow = {
   book_title: string | null
   student_name: string | null
   student_number: string | null
+}
+
+export type LoanCreationBook = {
+  available_copies: number
+  id: string
+  school_book_code: string | null
+  school_book_codes: string[]
+  title: string
+}
+
+export type LoanCreationStudent = {
+  class_number: number
+  id: string
+  loan_banned_until: string | null
+  name: string
+  student_number: string
+}
+
+export type ActiveLoanForCreation = {
+  book_id: string
+  due_on: string
+  id: string
+  school_book_code: string | null
+}
+
+export async function acquireLoanCreationLock(
+  db: DbTransaction,
+  lockKey: string
+) {
+  await db.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`
+  )
 }
 
 function mapBackendLoanRow(loan: BackendLoanRow): LoanWithBookAndStudent {
@@ -147,17 +179,110 @@ export async function getStudentLoanStats(db: DbClient): Promise<StudentLoanStat
   return result.rows
 }
 
-export async function createPublicLoanViaRpc(
-  db: DbClient,
+export async function findBookForLoanCreation(
+  db: DbTransaction,
+  bookId: string
+): Promise<LoanCreationBook | null> {
+  const rows = await db
+    .select({
+      available_copies: books.available_copies,
+      id: books.id,
+      school_book_code: books.school_book_code,
+      school_book_codes: books.school_book_codes,
+      title: books.title,
+    })
+    .from(books)
+    .where(eq(books.id, bookId))
+    .limit(1)
+
+  return rows[0] ?? null
+}
+
+export async function findStudentForLoanCreation(
+  db: DbTransaction,
+  studentId: string
+): Promise<LoanCreationStudent | null> {
+  const rows = await db
+    .select({
+      class_number: students.class_number,
+      id: students.id,
+      loan_banned_until: students.loan_banned_until,
+      name: students.name,
+      student_number: students.student_number,
+    })
+    .from(students)
+    .where(eq(students.id, studentId))
+    .limit(1)
+
+  return rows[0] ?? null
+}
+
+export async function listActiveLoansForBookCopies(
+  db: DbTransaction,
   bookId: string,
-  studentId: string,
-  notes: string | null,
-  schoolBookCode: string | null
-): Promise<CreatedPublicLoan[]> {
-  const result = await db.execute<CreatedPublicLoan>(
-    sql`select * from public.create_public_loan(${bookId}::uuid, ${studentId}::uuid, ${notes}::text, ${schoolBookCode}::text)`
+  schoolBookCodes: string[]
+): Promise<Pick<ActiveLoanForCreation, 'book_id' | 'school_book_code'>[]> {
+  const legacyPrimaryCopyCondition = and(
+    eq(loans.book_id, bookId),
+    isNull(loans.school_book_code)
   )
-  return result.rows
+  const copyCondition = schoolBookCodes.length > 0
+    ? or(inArray(loans.school_book_code, schoolBookCodes), legacyPrimaryCopyCondition)
+    : legacyPrimaryCopyCondition
+
+  return db
+    .select({
+      book_id: loans.book_id,
+      school_book_code: loans.school_book_code,
+    })
+    .from(loans)
+    .where(
+      and(
+        eq(loans.status, 'rented'),
+        isNull(loans.returned_on),
+        copyCondition
+      )
+    )
+}
+
+export async function listActiveLoansForStudent(
+  db: DbTransaction,
+  studentId: string
+): Promise<ActiveLoanForCreation[]> {
+  return db
+    .select({
+      book_id: loans.book_id,
+      due_on: loans.due_on,
+      id: loans.id,
+      school_book_code: loans.school_book_code,
+    })
+    .from(loans)
+    .where(
+      and(
+        eq(loans.student_id, studentId),
+        eq(loans.status, 'rented'),
+        isNull(loans.returned_on)
+      )
+    )
+}
+
+export async function insertLoanForCreation(
+  db: DbTransaction,
+  input: {
+    book_id: string
+    borrowed_on: string
+    due_on: string
+    notes: string | null
+    school_book_code: string | null
+    student_id: string
+  }
+): Promise<{ id: string }> {
+  const rows = await db
+    .insert(loans)
+    .values(input)
+    .returning({ id: loans.id })
+
+  return rows[0]
 }
 
 export async function getReturnableLoanBySchoolBookCode(

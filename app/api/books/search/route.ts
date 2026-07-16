@@ -1,5 +1,5 @@
 import { createRouteDbClient, jsonDataWithMeta, runApiRoute } from '@/lib/api-route'
-import { searchBooks } from '@/lib/library-queries'
+import { searchBooks } from '@/services/public-library.service'
 
 export const dynamic = 'force-dynamic'
 

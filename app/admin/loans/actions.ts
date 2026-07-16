@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { AdminAuthError } from '@/lib/admin-auth'
-import { updateAdminLoan } from '@/lib/admin-loans'
+import { updateAdminLoan } from '@/services/loan.service'
 import { ApiRouteError } from '@/lib/api-route'
 import { requireAdminSessionFromCookies } from '@/lib/admin-server-auth'
 import type { ApiError, LoanStatus, LoanWithBookAndStudent } from '@/types/library'

@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import JsBarcode from 'jsbarcode'
 import { Barcode, Printer, Search, Users } from 'lucide-react'
-import { getBorrowerType, type BorrowerType } from '@/lib/loan-limits'
-import type { BorrowerBarcodeRow } from '@/types/library'
+import { getBorrowerType } from '@/services/borrower-policy.service'
+import type { BorrowerBarcodeRow, BorrowerType } from '@/types/library'
 
 type BorrowerBarcodeManagerProps = {
   borrowers: BorrowerBarcodeRow[]

@@ -2,8 +2,8 @@
 
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { BookOpen, Loader2, Plus, RotateCcw, Trash2 } from 'lucide-react'
-import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import { displayValue } from '@/lib/display'
+import { normalizeBarcodeInput } from '@/lib/shared/barcode'
+import { displayValue } from '@/lib/shared/display'
 import type {
   ApiResponse,
   ApiResponseWithMeta,

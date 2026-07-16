@@ -1,4 +1,3 @@
-import bcrypt from 'bcryptjs'
 import {
   AdminAuthError,
   createAdminSession,
@@ -14,7 +13,7 @@ import {
   runApiRoute,
   withNoStore,
 } from '@/lib/api-route'
-import { findAdminUserByLoginId } from '@/repositories/admin-user.repository'
+import { authenticateAdmin } from '@/services/admin-auth.service'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -45,54 +44,6 @@ function getCredentials(body: LoginBody) {
   const password = typeof body.password === 'string' ? body.password : ''
 
   return { loginId, password }
-}
-
-function getErrorCode(error: unknown, depth = 0): string {
-  if (depth > 3) {
-    return ''
-  }
-
-  if (typeof error !== 'object' || error === null || !('code' in error)) {
-    if (typeof error === 'object' && error !== null && 'cause' in error) {
-      return getErrorCode(error.cause, depth + 1)
-    }
-
-    return ''
-  }
-
-  if (typeof error.code === 'string') {
-    return error.code
-  }
-
-  return 'cause' in error ? getErrorCode(error.cause, depth + 1) : ''
-}
-
-function getAdminDatabaseError(error: unknown) {
-  const code = getErrorCode(error)
-
-  if (code === '42P01' || code === '42703') {
-    return new AdminAuthError(
-      503,
-      'ADMIN_DATABASE_SCHEMA_OUTDATED',
-      '관리자 로그인 DB 스키마가 최신 상태가 아닙니다. 서버에서 관리자 로그인 DB 보정 SQL을 실행해주세요.'
-    )
-  }
-
-  if (
-    code === '28P01' ||
-    code === '3D000' ||
-    code === 'ECONNREFUSED' ||
-    code === 'ENOTFOUND' ||
-    code === 'ETIMEDOUT'
-  ) {
-    return new AdminAuthError(
-      503,
-      'ADMIN_DATABASE_UNAVAILABLE',
-      'PostgreSQL에 연결할 수 없습니다. 서버의 DATABASE_URL과 PostgreSQL 실행 상태를 확인해주세요.'
-    )
-  }
-
-  return error
 }
 
 export async function POST(request: Request) {
@@ -149,33 +100,12 @@ export async function POST(request: Request) {
         }
 
         const db = createRouteDbClient()
-        dbg('POST: loading admin user from DB')
-        const tUser = Date.now()
-        let adminUser
-
-        try {
-          adminUser = await findAdminUserByLoginId(db, loginId)
-        } catch (error) {
-          throw getAdminDatabaseError(error)
-        }
-        dbg('POST: admin user lookup done', {
-          found: Boolean(adminUser),
-          duration_ms: Date.now() - tUser,
+        dbg('POST: authenticating admin user')
+        const authenticationStartedAt = Date.now()
+        const adminUser = await authenticateAdmin(db, loginId, password)
+        dbg('POST: admin authentication completed', {
+          duration_ms: Date.now() - authenticationStartedAt,
         })
-
-        if (!adminUser) {
-          dbg('POST: FAIL — loginId not found', { loginId })
-          throw new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
-        }
-
-        dbg('POST: checking bcrypt password')
-        const t1 = Date.now()
-        const passwordMatches = await bcrypt.compare(password, adminUser.password_hash)
-        dbg('POST: password check done', { matches: passwordMatches, duration_ms: Date.now() - t1 })
-        if (!passwordMatches) {
-          dbg('POST: FAIL — password mismatch')
-          throw new AdminAuthError(401, 'INVALID_CREDENTIALS', '아이디 또는 비밀번호가 올바르지 않습니다.')
-        }
 
         dbg('POST: all checks passed, creating session')
 

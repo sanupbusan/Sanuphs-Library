@@ -1,4 +1,4 @@
-export type BorrowerType = 'staff' | 'student'
+import type { BorrowerType } from '@/types/library'
 
 export const STUDENT_ACTIVE_LOAN_LIMIT = 2
 export const STAFF_ACTIVE_LOAN_LIMIT = 5

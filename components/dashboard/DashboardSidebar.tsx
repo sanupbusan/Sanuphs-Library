@@ -9,7 +9,7 @@ import {
   BarChart3,
   type LucideIcon,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/shared/class-names'
 
 export type DashboardSection = 'dashboard' | 'books' | 'overdue' | 'statistics'
 

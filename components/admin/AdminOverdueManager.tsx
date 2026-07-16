@@ -1,6 +1,7 @@
 import { AlertTriangle } from 'lucide-react'
-import { displayValue } from '@/lib/display'
-import { getOverdueDays, getTodayDateKey } from '@/lib/loan-restrictions'
+import { getTodayDateKey } from '@/lib/shared/date'
+import { displayValue } from '@/lib/shared/display'
+import { getOverdueDays } from '@/services/loan-restriction.service'
 import type { OverdueLoanRow } from '@/types/library'
 
 type AdminOverdueManagerProps = {

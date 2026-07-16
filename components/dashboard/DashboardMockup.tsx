@@ -14,7 +14,7 @@ import type {
   RecentRental,
   StudentLoanStatistic,
 } from '@/lib/dashboard-data'
-import type { DashboardSummary } from '@/lib/library-queries'
+import type { DashboardSummary } from '@/types/library'
 
 type DashboardMockupProps = {
   canViewStatistics: boolean

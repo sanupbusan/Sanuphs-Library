@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Loader2, LogIn } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/shared/class-names'
 
 const DEBUG_TAG = '[LOGIN_DEBUG_CLIENT]'
 const LOGIN_DEBUG_ENABLED = process.env.NEXT_PUBLIC_LOGIN_DEBUG === 'true'

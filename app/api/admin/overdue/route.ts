@@ -1,5 +1,6 @@
 import { requireAdminSession } from '@/lib/admin-auth'
-import { listAdminOverdueLoans } from '@/lib/admin-overdue'
+import { getTodayDateKey } from '@/lib/shared/date'
+import { listAdminOverdueLoans } from '@/services/loan.service'
 import { jsonDataWithMeta, runApiRoute, withNoStore } from '@/lib/api-route'
 
 export const dynamic = 'force-dynamic'
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
     },
     async () => {
       const session = await requireAdminSession(request)
-      const today = new Date().toISOString().slice(0, 10)
+      const today = getTodayDateKey()
       const overdueLoans = await listAdminOverdueLoans(session.db, today)
 
       return jsonDataWithMeta(

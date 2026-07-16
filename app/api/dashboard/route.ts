@@ -4,7 +4,7 @@ import {
   getOverdueLoans,
   getRecentBooks,
   getStudentLoanStats,
-} from '@/lib/library-queries'
+} from '@/services/dashboard.service'
 import { jsonData, runApiRoute, withNoStore } from '@/lib/api-route'
 
 export const dynamic = 'force-dynamic'

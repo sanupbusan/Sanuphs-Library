@@ -12,7 +12,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/shared/class-names'
 
 const sidebarMenuItems = [
   { icon: LayoutDashboard, label: '대시보드', active: true },

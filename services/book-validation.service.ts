@@ -1,4 +1,4 @@
-import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
+import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/shared/barcode'
 
 export function normalizeBookBarcode(value: string) {
   return normalizeBarcodeInput(value)

@@ -1,8 +1,8 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
-import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
-import { isAdminBookInfoComplete, type AdminBookCreateInput } from '@/lib/admin-book-input'
+import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/shared/barcode'
+import { isAdminBookInfoComplete, type AdminBookCreateInput } from '@/services/book-input.service'
 import type { IsbnLookupResult } from '@/types/library'
 
 export type AdminBookFormState = {

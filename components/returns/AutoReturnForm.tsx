@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { RotateCcw, ScanBarcode } from 'lucide-react'
-import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import { formatKoreanDate } from '@/lib/loan-restrictions'
+import { normalizeBarcodeInput } from '@/lib/shared/barcode'
+import { formatKoreanDate, getTodayDateKey } from '@/lib/shared/date'
 import { ScanInput } from '@/components/ui/ScanInput'
 import { StatusMessage } from '@/components/ui/StatusMessage'
 import type { ApiResponse, ReturnedLoan } from '@/types/library'
@@ -69,7 +69,7 @@ export default function AutoReturnForm() {
           loan_banned_until: null,
           loan_id: '',
           overdue_days: 0,
-          returned_on: new Date().toISOString().slice(0, 10),
+          returned_on: getTodayDateKey(),
           school_book_code: trimmed,
           student_name: '',
         },
