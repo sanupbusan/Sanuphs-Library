@@ -48,7 +48,7 @@ export default function AdminBooksManager({ initialBooks }: AdminBooksManagerPro
             <ExcelImportModal />
             <Link
               href="/admin/add_books"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700"
+              className="inline-flex h-10 shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700"
             >
               <Plus className="h-4 w-4" />
               새 책 추가

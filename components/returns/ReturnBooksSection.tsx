@@ -183,12 +183,12 @@ export default function ReturnBooksSection({ initialSchoolBookCode }: { initialS
             <table className="min-w-full divide-y divide-gray-100 text-sm">
               <thead className="bg-gray-50 text-left text-xs font-semibold uppercase text-gray-500">
                 <tr>
-                  <th className="px-4 py-3">학교 도서 코드</th>
+                  <th className="whitespace-nowrap px-4 py-3">학교 도서 코드</th>
                   <th className="px-4 py-3">도서명</th>
-                  <th className="px-4 py-3">대여자</th>
-                  <th className="px-4 py-3">대여일</th>
-                  <th className="px-4 py-3">반납 예정일</th>
-                  <th className="px-4 py-3 text-right">제외</th>
+                  <th className="whitespace-nowrap px-4 py-3">대여자</th>
+                  <th className="whitespace-nowrap px-4 py-3">대여일</th>
+                  <th className="whitespace-nowrap px-4 py-3">반납 예정일</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-right">제외</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-gray-700">
@@ -201,11 +201,11 @@ export default function ReturnBooksSection({ initialSchoolBookCode }: { initialS
                 ) : (
                   pendingLoans.map((loan) => (
                     <tr key={loan.loan_id}>
-                      <td className="px-4 py-3 font-semibold text-gray-900">{displayValue(loan.school_book_code)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 font-semibold text-gray-900">{displayValue(loan.school_book_code)}</td>
                       <td className="max-w-[280px] px-4 py-3 font-medium text-gray-900">{displayValue(loan.book_title)}</td>
-                      <td className="px-4 py-3">{displayValue(loan.student_name)}</td>
-                      <td className="px-4 py-3">{displayValue(loan.borrowed_on)}</td>
-                      <td className="px-4 py-3">{displayValue(loan.due_on)}</td>
+                      <td className="whitespace-nowrap px-4 py-3">{displayValue(loan.student_name)}</td>
+                      <td className="whitespace-nowrap px-4 py-3">{displayValue(loan.borrowed_on)}</td>
+                      <td className="whitespace-nowrap px-4 py-3">{displayValue(loan.due_on)}</td>
                       <td className="px-4 py-3 text-right">
                         <button
                           className="inline-flex shrink-0 whitespace-nowrap items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50"
