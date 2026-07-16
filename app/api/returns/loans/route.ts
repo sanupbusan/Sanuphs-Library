@@ -42,7 +42,6 @@ function getSchoolBookCodesFromBody(body: ReturnLoansBody) {
 export async function GET(request: Request) {
   return runApiRoute(
     {
-      exposeErrorMessage: true,
       fallback: {
         code: 'BOOK_RETURN_LOOKUP_FAILED',
         message: '반납할 대여 정보를 조회하는 중 오류가 발생했습니다.',
@@ -71,7 +70,6 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   return runApiRoute(
     {
-      exposeErrorMessage: true,
       fallback: {
         code: 'BOOK_RETURN_FAILED',
         message: '도서 반납 처리에 실패했습니다.',

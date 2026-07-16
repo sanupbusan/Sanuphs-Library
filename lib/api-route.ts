@@ -8,7 +8,6 @@ type ApiRouteFallback = {
 }
 
 type ApiRouteOptions = {
-  exposeErrorMessage?: boolean
   fallback: ApiRouteFallback
   logLabel: string
 }
@@ -26,24 +25,15 @@ export class ApiRouteError extends Error {
 }
 
 function getStructuredApiError(error: unknown) {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    'message' in error &&
-    'status' in error &&
-    typeof error.code === 'string' &&
-    typeof error.message === 'string' &&
-    typeof error.status === 'number'
-  ) {
-    return {
-      code: error.code,
-      message: error.message,
-      status: error.status,
-    }
+  if (!(error instanceof ApiRouteError)) {
+    return null
   }
 
-  return null
+  return {
+    code: error.code,
+    message: error.message,
+    status: error.status,
+  }
 }
 
 function getDatabaseError(error: unknown, depth = 0): unknown {
@@ -130,9 +120,7 @@ export function handleApiRouteError(error: unknown, options: ApiRouteOptions) {
 
   return jsonError(
     options.fallback.code,
-    options.exposeErrorMessage && databaseError instanceof Error
-      ? databaseError.message
-      : options.fallback.message,
+    options.fallback.message,
     options.fallback.status ?? 500
   )
 }
