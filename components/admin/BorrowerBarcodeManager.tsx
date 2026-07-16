@@ -152,7 +152,7 @@ export default function BorrowerBarcodeManager({ borrowers }: BorrowerBarcodeMan
           </div>
 
           <button
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+            className="inline-flex h-10 shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-md bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:bg-gray-300"
             disabled={selectedBorrowers.length === 0}
             onClick={() => window.print()}
             type="button"
@@ -170,7 +170,7 @@ export default function BorrowerBarcodeManager({ borrowers }: BorrowerBarcodeMan
               ['staff', '교직원'],
             ] as const).map(([value, label]) => (
               <button
-                className={`h-8 rounded px-3 text-sm font-medium transition-colors ${borrowerFilter === value ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                className={`h-8 shrink-0 whitespace-nowrap rounded px-3 text-sm font-medium transition-colors ${borrowerFilter === value ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
                 key={value}
                 onClick={() => setFilter(value)}
                 type="button"

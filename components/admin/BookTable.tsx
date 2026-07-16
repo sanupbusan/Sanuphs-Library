@@ -119,7 +119,7 @@ export default function BookTable({
                       {isEditing ? (
                         <div className="flex justify-end gap-2">
                           <button
-                            className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-primary-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
+                            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-primary-600 px-3 text-xs font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-wait disabled:opacity-70"
                             disabled={isSaving}
                             onClick={() => onSaveEdit(book)}
                             type="button"
@@ -128,7 +128,7 @@ export default function BookTable({
                             저장
                           </button>
                           <button
-                            className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
+                            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
                             disabled={isSaving}
                             onClick={onCancelEdit}
                             type="button"
@@ -140,7 +140,7 @@ export default function BookTable({
                       ) : (
                         <div className="flex justify-end gap-2">
                           <button
-                            className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
+                            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-wait disabled:opacity-70"
                             disabled={areActionsDisabled}
                             onClick={() => onStartEdit(book)}
                             type="button"
@@ -149,7 +149,7 @@ export default function BookTable({
                             수정
                           </button>
                           <button
-                            className="inline-flex h-9 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-red-100 bg-red-50 px-3 text-xs font-semibold text-red-700 transition-colors hover:border-red-200 hover:bg-red-100 disabled:cursor-wait disabled:opacity-70"
+                            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-red-100 bg-red-50 px-3 text-xs font-semibold text-red-700 transition-colors hover:border-red-200 hover:bg-red-100 disabled:cursor-wait disabled:opacity-70"
                             disabled={areActionsDisabled}
                             onClick={() => onDeleteBook(book)}
                             type="button"
