@@ -112,7 +112,7 @@ export default function LoanManager({ initialLoans }: LoanManagerProps) {
                         {loan.status === 'rented' ? (
                           <>
                             <button
-                              className="inline-flex h-8 items-center gap-1 rounded-lg bg-primary-50 px-2.5 text-xs font-semibold text-primary-700 transition-colors hover:bg-primary-100"
+                              className="inline-flex h-8 shrink-0 whitespace-nowrap items-center gap-1 rounded-lg bg-primary-50 px-3 text-xs font-semibold text-primary-700 transition-colors hover:bg-primary-100"
                               onClick={() => {
                                 void updateLoanStatus(loan.id, 'returned')
                               }}
@@ -122,7 +122,7 @@ export default function LoanManager({ initialLoans }: LoanManagerProps) {
                               반납
                             </button>
                             <button
-                              className="inline-flex h-8 items-center gap-1 rounded-lg bg-amber-50 px-2.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100"
+                              className="inline-flex h-8 shrink-0 whitespace-nowrap items-center gap-1 rounded-lg bg-amber-50 px-3 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100"
                               onClick={() => {
                                 void extendDueDate(loan.id)
                               }}
@@ -133,7 +133,7 @@ export default function LoanManager({ initialLoans }: LoanManagerProps) {
                             </button>
                             {!overdue ? (
                               <button
-                                className="inline-flex h-8 items-center gap-1 rounded-lg bg-red-50 px-2.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100"
+                                className="inline-flex h-8 shrink-0 whitespace-nowrap items-center gap-1 rounded-lg bg-red-50 px-3 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100"
                                 onClick={() => {
                                   void forceOverdue(loan)
                                 }}
@@ -146,7 +146,7 @@ export default function LoanManager({ initialLoans }: LoanManagerProps) {
                           </>
                         ) : (
                           <button
-                            className="inline-flex h-8 items-center gap-1 rounded-lg bg-gray-100 px-2.5 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-200"
+                            className="inline-flex h-8 shrink-0 whitespace-nowrap items-center gap-1 rounded-lg bg-gray-100 px-3 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-200"
                             onClick={() => {
                               void updateLoanStatus(loan.id, 'rented')
                             }}

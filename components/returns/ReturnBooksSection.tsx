@@ -156,7 +156,7 @@ export default function ReturnBooksSection({ initialSchoolBookCode }: { initialS
               type="text"
             />
             <button
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-primary-100 bg-primary-50 px-4 text-sm font-semibold text-primary-700 transition-colors hover:bg-primary-100 disabled:cursor-wait disabled:opacity-70"
+              className="inline-flex h-11 shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-lg border border-primary-100 bg-primary-50 px-4 text-sm font-semibold text-primary-700 transition-colors hover:bg-primary-100 disabled:cursor-wait disabled:opacity-70"
               disabled={isLookingUp}
               type="submit"
             >
@@ -208,7 +208,7 @@ export default function ReturnBooksSection({ initialSchoolBookCode }: { initialS
                       <td className="px-4 py-3">{displayValue(loan.due_on)}</td>
                       <td className="px-4 py-3 text-right">
                         <button
-                          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50"
+                          className="inline-flex shrink-0 whitespace-nowrap items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50"
                           onClick={() => {
                             setPendingLoans((currentLoans) => currentLoans.filter((currentLoan) => currentLoan.loan_id !== loan.loan_id))
                           }}
@@ -227,7 +227,7 @@ export default function ReturnBooksSection({ initialSchoolBookCode }: { initialS
 
           <div className="flex justify-end border-t border-gray-100 px-4 py-4">
             <button
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-11 shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-lg bg-primary-600 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={pendingLoans.length === 0 || isReturning}
               type="submit"
             >
