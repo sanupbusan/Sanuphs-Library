@@ -74,7 +74,7 @@ export default function ExcelImportModal() {
       <button
         type="button"
         onClick={downloadExcel}
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-primary-100 bg-white px-4 text-sm font-semibold text-primary-700 shadow-sm transition-colors hover:border-primary-200 hover:bg-primary-50"
+        className="inline-flex h-10 shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-lg border border-primary-100 bg-white px-4 text-sm font-semibold text-primary-700 shadow-sm transition-colors hover:border-primary-200 hover:bg-primary-50"
       >
         <Download className="h-4 w-4" />
         엑셀 다운로드
@@ -84,7 +84,7 @@ export default function ExcelImportModal() {
         type="button"
         onClick={openImportPicker}
         disabled={isImporting}
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-primary-100 bg-primary-50 px-4 text-sm font-semibold text-primary-700 shadow-sm transition-colors hover:border-primary-200 hover:bg-primary-100 disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex h-10 shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-lg border border-primary-100 bg-primary-50 px-4 text-sm font-semibold text-primary-700 shadow-sm transition-colors hover:border-primary-200 hover:bg-primary-100 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
         {isImporting ? '업로드 중...' : '엑셀로 추가'}

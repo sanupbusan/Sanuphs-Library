@@ -65,13 +65,13 @@ export default function LoanManager({ initialLoans }: LoanManagerProps) {
           <table className="min-w-full divide-y divide-gray-100 text-sm">
             <thead className="bg-gray-50 text-left text-xs font-semibold uppercase text-gray-500">
               <tr>
-                <th className="px-4 py-3">학교 도서 코드</th>
+                <th className="whitespace-nowrap px-4 py-3">학교 도서 코드</th>
                 <th className="px-4 py-3">도서명</th>
-                <th className="px-4 py-3">대여자</th>
-                <th className="px-4 py-3">학번</th>
-                <th className="px-4 py-3">대여일</th>
-                <th className="px-4 py-3">반납예정일</th>
-                <th className="px-4 py-3">상태</th>
+                <th className="whitespace-nowrap px-4 py-3">대여자</th>
+                <th className="whitespace-nowrap px-4 py-3">학번</th>
+                <th className="whitespace-nowrap px-4 py-3">대여일</th>
+                <th className="whitespace-nowrap px-4 py-3">반납예정일</th>
+                <th className="whitespace-nowrap px-4 py-3">상태</th>
                 <th className="px-4 py-3 text-right">작업</th>
               </tr>
             </thead>
@@ -89,20 +89,20 @@ export default function LoanManager({ initialLoans }: LoanManagerProps) {
                     </td>
                     <td className="px-4 py-3">{loan.students?.name ?? '-'}</td>
                     <td className="px-4 py-3">{loan.students?.student_number ?? '-'}</td>
-                    <td className="px-4 py-3">{loan.borrowed_on}</td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3">{loan.borrowed_on}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
                       <span className={overdue ? 'font-semibold text-red-600' : ''}>
                         {loan.due_on}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3">
                       {overdue ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                        <span className="inline-flex shrink-0 whitespace-nowrap items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
                           <AlertCircle className="h-3 w-3" />
                           연체
                         </span>
                       ) : (
-                        <span className="inline-flex rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+                        <span className="inline-flex shrink-0 whitespace-nowrap rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
                           대여중
                         </span>
                       )}
