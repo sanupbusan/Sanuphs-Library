@@ -1,7 +1,10 @@
-﻿import { normalizeIsbnInput } from '@/lib/barcode-input'
+import { normalizeIsbnInput } from '@/lib/shared/barcode'
 import { requireAdminSession } from '@/lib/admin-auth'
 import { jsonData, runApiRoute, throwApiError } from '@/lib/api-route'
-import * as bookRepository from '@/repositories/book.repository'
+import {
+  lookupStoredBookByIsbn,
+  type NormalizedBookInfo,
+} from '@/services/book-lookup.service'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -9,13 +12,6 @@ export const runtime = 'nodejs'
 const DEFAULT_ISBN_API_URL = 'https://www.nl.go.kr/seoji/SearchApi.do'
 const ISBN_API_TIMEOUT_MS = 5_000
 const ISBN_LOOKUP_CACHE_TTL_MS = 24 * 60 * 60 * 1000
-
-type NormalizedBookInfo = {
-  author: string
-  isbn: string
-  publisher: string
-  title: string
-}
 
 type IsbnLookupCacheEntry = {
   book: NormalizedBookInfo
@@ -167,36 +163,6 @@ function normalizeBookInfo(payload: unknown, fallbackIsbn: string): NormalizedBo
     publisher,
     title,
   }
-}
-
-function normalizeStoredBookInfo(
-  book: {
-    author: string | null
-    isbn: string | null
-    publisher: string | null
-    title: string | null
-  },
-  fallbackIsbn: string
-): NormalizedBookInfo | null {
-  const title = cleanText(book.title)
-  const author = cleanText(book.author)
-  const publisher = cleanText(book.publisher)
-
-  if (!title && !author && !publisher) {
-    return null
-  }
-
-  return {
-    author,
-    isbn: normalizeIsbnInput(cleanText(book.isbn)) || fallbackIsbn,
-    publisher,
-    title,
-  }
-}
-
-async function lookupStoredBookByIsbn(db: Parameters<typeof bookRepository.findStoredBookInfoByIsbn>[0], isbn: string) {
-  const book = await bookRepository.findStoredBookInfoByIsbn(db, isbn)
-  return book ? normalizeStoredBookInfo(book, isbn) : null
 }
 
 async function fetchWithTimeout(url: URL) {

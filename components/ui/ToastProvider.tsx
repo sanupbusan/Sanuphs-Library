@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/shared/class-names'
 
 type ToastVariant = 'success' | 'error' | 'info'
 

@@ -19,7 +19,7 @@ import {
 import { normalizeRentCode, useRentBookState } from '@/components/rent/useRentBookState'
 import { useInputFocus } from '@/hooks/useInputFocus'
 import { useStatusMessages } from '@/hooks/useStatusMessages'
-import { getBorrowerLookupCodeFromScannedValue, normalizeBorrowerLookupCode } from '@/lib/loan-limits'
+import { getBorrowerLookupCodeFromScannedValue, normalizeBorrowerLookupCode } from '@/services/borrower-policy.service'
 
 export function useRentBookForm() {
   const searchParams = useSearchParams()

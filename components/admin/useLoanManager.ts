@@ -3,25 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { updateLoanAction } from '@/app/admin/loans/actions'
+import { formatDateKey } from '@/lib/shared/date'
 import type { LoanStatus, LoanWithBookAndStudent } from '@/types/library'
 
 export type Loan = LoanWithBookAndStudent
-
-function formatLocalDate(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-
-  return `${year}-${month}-${day}`
-}
-
-export function isLoanOverdue(dueOn: string) {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const due = new Date(`${dueOn}T00:00:00`)
-
-  return due < today
-}
 
 export function useLoanManager(initialLoans: Loan[]) {
   const router = useRouter()
@@ -101,7 +86,7 @@ export function useLoanManager(initialLoans: Loan[]) {
       today.setHours(0, 0, 0, 0)
       const newDueDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000)
 
-      await applyLoanMutation(loanId, { dueOn: formatLocalDate(newDueDate) })
+      await applyLoanMutation(loanId, { dueOn: formatDateKey(newDueDate) })
     },
     [applyLoanMutation]
   )
@@ -111,7 +96,7 @@ export function useLoanManager(initialLoans: Loan[]) {
       const yesterday = new Date()
       yesterday.setHours(0, 0, 0, 0)
       yesterday.setDate(yesterday.getDate() - 1)
-      const overdueDateString = formatLocalDate(yesterday)
+      const overdueDateString = formatDateKey(yesterday)
 
       await applyLoanMutation(loan.id, {
         borrowedOn: overdueDateString,

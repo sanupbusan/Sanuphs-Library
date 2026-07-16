@@ -1,19 +1,20 @@
 import type {
+  DashboardOverdueLoan as OverdueLoanRow,
   DashboardSummary,
-  OverdueLoan as OverdueLoanRow,
   RecentBook as RecentBookRow,
   RecentLoan,
   StudentLoanStat as StudentLoanStatRow,
-} from '@/lib/library-queries'
+} from '@/types/library'
 import type { LucideIcon } from 'lucide-react'
 import { BookOpen, ClipboardList, AlertCircle } from 'lucide-react'
 import {
   formatKoreanDate,
-  getOverdueDays,
+  formatLocalizedDate,
   getTodayDateKey,
-} from '@/lib/loan-restrictions'
+} from '@/lib/shared/date'
+import { getOverdueDays } from '@/services/loan-restriction.service'
 
-export { formatKoreanDate } from '@/lib/loan-restrictions'
+export { formatKoreanDate } from '@/lib/shared/date'
 
 export type RentalStatus = 'rented' | 'overdue' | 'returned'
 
@@ -58,24 +59,12 @@ export type OverdueLoan = {
 }
 
 const numberFormatter = new Intl.NumberFormat('ko-KR')
-const dateFormatter = new Intl.DateTimeFormat('ko-KR', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-})
-
 export function formatNumber(value: number | null | undefined) {
   return numberFormatter.format(value ?? 0)
 }
 
 export function formatDate(value: string) {
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) {
-    return '-'
-  }
-
-  return dateFormatter.format(date)
+  return formatLocalizedDate(value)
 }
 
 export function getReturnSuccessMessage(data: {

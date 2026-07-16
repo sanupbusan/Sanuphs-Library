@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import AdminAddBooksManager from '@/components/admin/AdminAddBooksManager'
 import Footer from '@/components/sections/Footer'
 import Header from '@/components/sections/Header'
-import { listAdminBooks } from '@/lib/admin-books'
+import { listAdminBooks } from '@/services/book.service'
 import { requireAdminPageSession } from '@/lib/admin-server-auth'
 
 export const dynamic = 'force-dynamic'

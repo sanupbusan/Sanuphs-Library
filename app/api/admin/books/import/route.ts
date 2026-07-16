@@ -5,9 +5,9 @@ import {
   insertAdminBooksInBatches,
   type ImportAdminBookError,
   type ImportAdminBookRow,
-} from '@/lib/admin-books'
+} from '@/services/book.service'
 import { ApiRouteError, jsonData, runApiRoute, throwApiError } from '@/lib/api-route'
-import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
+import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/shared/barcode'
 import type { BookRow } from '@/types/library'
 
 export const dynamic = 'force-dynamic'

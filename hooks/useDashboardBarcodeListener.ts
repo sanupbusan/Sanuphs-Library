@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { normalizeBarcodeInput } from '@/lib/shared/barcode'
 
 const STUDENT_NUMBER_PATTERN = /^[0-9]{5}$/
 const BARCODE_TIMEOUT_MS = 100

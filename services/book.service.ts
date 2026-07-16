@@ -4,8 +4,8 @@ import {
   getNullableAdminBookIsbn,
   type AdminBookCreateInput,
   type AdminBookUpdateInput,
-} from '@/lib/admin-book-input'
-import { addSchoolBookCode, getSchoolBookCodes } from '@/lib/school-book-codes'
+} from '@/services/book-input.service'
+import { addSchoolBookCode, getSchoolBookCodes } from '@/services/book-code.service'
 import type { DbClient } from '@/lib/db'
 import type { AdminBookRow, BookRow } from '@/types/library'
 import * as bookRepository from '@/repositories/book.repository'
@@ -579,7 +579,8 @@ export async function updateAdminBook(
       author: input.author.trim() || null,
       isbn: getNullableAdminBookIsbn(input),
       publisher: input.publisher.trim() || null,
-      schoolBookCode: input.schoolBookCode,
+      school_book_code: input.schoolBookCode,
+      school_book_codes: [input.schoolBookCode],
       title: input.title,
     })
 

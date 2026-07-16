@@ -1,4 +1,4 @@
-import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { normalizeBarcodeInput } from '@/lib/shared/barcode'
 import {
   createRouteDbClient,
   jsonDataWithMeta,

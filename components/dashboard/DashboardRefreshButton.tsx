@@ -1,5 +1,5 @@
 import { RotateCcw } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/shared/class-names'
 
 export type DashboardRefreshProps = {
   isRefreshing: boolean

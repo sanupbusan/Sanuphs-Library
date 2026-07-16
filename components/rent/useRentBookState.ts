@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { normalizeBarcodeInput } from '@/lib/barcode-input'
+import { normalizeBarcodeInput } from '@/lib/shared/barcode'
 import type { RentBook, RentLoanResult, RentStudent } from '@/components/rent/rentBookApi'
 
 export function normalizeRentCode(value: string) {

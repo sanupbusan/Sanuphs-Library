@@ -1,9 +1,9 @@
 'use client'
 
 import { Check, Loader2, Pencil, Trash2, X } from 'lucide-react'
-import type { AdminBookUpdateInput } from '@/lib/admin-book-input'
-import { displayValue } from '@/lib/display'
-import { displaySchoolBookCodes } from '@/lib/school-book-codes'
+import { displayValue } from '@/lib/shared/display'
+import { displaySchoolBookCodes } from '@/services/book-code.service'
+import type { AdminBookUpdateInput } from '@/services/book-input.service'
 import type { AdminBookRow } from '@/types/library'
 import type { AdminBookEditField } from '@/components/admin/useAdminBooks'
 

@@ -25,7 +25,7 @@ ADMIN_COOKIE_SECURE=false
 적용된 도메인으로 접속할 때만 `true`로 설정하세요. HTTP에서 `true`이면 로그인 응답이
 성공해도 브라우저가 세션 쿠키를 저장하지 않아 로그인 화면으로 되돌아갑니다.
 
-관리자 비밀번호는 환경변수가 아니라 `public.admin_users.password_hash`에 bcrypt hash로 저장합니다. 로컬 bootstrap SQL은 기본 로그인 `SanupLib` / `SanupLib2026!`에 해당하는 첫 관리자 계정을 만들거나 누락된 hash를 채우므로, 운영 환경에서는 적용 직후 강한 비밀번호의 bcrypt hash로 교체하세요.
+관리자 비밀번호는 환경변수가 아니라 `public.admin_users.password_hash`에 bcrypt hash로 저장합니다. DB migration은 기본 로그인 `SanupLib` / `SanupLib2026!`에 해당하는 첫 관리자 계정을 만들거나 누락된 hash를 채우므로, 운영 환경에서는 적용 직후 강한 비밀번호의 bcrypt hash로 교체하세요.
 
 기존 DB에서 로그인이 실패하면 다음 보정 SQL을 먼저 실행합니다. 이 SQL은 구형 DB에
 `login_id`/`password_hash` 컬럼을 추가하고 기본 관리자 계정을 복구합니다.
@@ -37,30 +37,27 @@ psql "$DATABASE_URL" -f ./database/reset-default-admin-password.sql
 실행 후 기본 로그인은 `SanupLib` / `SanupLib2026!`입니다. 운영 환경에서는 로그인 확인
 직후 강한 비밀번호의 bcrypt hash로 변경하세요.
 
-3. 로컬 PostgreSQL 롤업 SQL을 적용합니다.
+3. `supabase/migrations`의 migration을 적용합니다. 독립 PostgreSQL은 먼저 Supabase 호환 스키마와 역할을 한 번 초기화해야 합니다. 아래의 관리자 URL은 migration 실행에만 사용하고 앱의 `DATABASE_URL`로 저장하지 마세요.
 
 Windows PowerShell:
 
 ```powershell
-$env:DATABASE_URL="postgres://library_user:strong-password@localhost:5432/library_db"
-psql $env:DATABASE_URL -f .\database\local-postgres-copy-paste.sql
+$env:DATABASE_ADMIN_URL="postgres://postgres:admin-password@localhost:5432/library_db"
+psql $env:DATABASE_ADMIN_URL -v ON_ERROR_STOP=1 -f .\database\local-postgres-init.sql
+npx.cmd supabase db push --db-url $env:DATABASE_ADMIN_URL
 ```
 
 Linux/macOS/server Bash:
 
 ```bash
-export DATABASE_URL="postgres://library_user:strong-password@localhost:5432/library_db"
-psql "$DATABASE_URL" -f ./database/local-postgres-copy-paste.sql
+export DATABASE_ADMIN_URL="postgres://postgres:admin-password@localhost:5432/library_db"
+psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 -f ./database/local-postgres-init.sql
+npx supabase db push --db-url "$DATABASE_ADMIN_URL"
 ```
 
-원격 DB 서버에 적용할 때는 `localhost` 대신 DB 서버 IP 또는 도메인을 넣습니다.
+Supabase 프로젝트는 호환 초기화 SQL을 생략하고 `npx supabase db push --db-url "$DATABASE_ADMIN_URL"`만 실행합니다. 이후 스키마 변경도 새 migration 파일을 추가해 같은 명령으로 적용합니다.
 
-```bash
-psql "postgres://library_user:strong-password@db.example.com:5432/library_db" \
-  -f ./database/local-postgres-copy-paste.sql
-```
-
-`database/local-postgres-copy-paste.sql`은 로컬/신규 DB bootstrap용 단일 롤업 스크립트입니다.
+이전 롤업 SQL로 만든 기존 DB는 바로 `db push`하지 마세요. 실제 반영된 버전을 확인한 뒤 `supabase migration repair <version> --status applied --db-url "$DATABASE_ADMIN_URL"`로 이미 적용된 migration만 이력에 등록해야 합니다.
 
 4. Next.js 서버를 실행합니다.
 

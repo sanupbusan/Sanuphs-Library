@@ -4,7 +4,7 @@ import { BarChart3 } from 'lucide-react'
 import { DashboardRefreshButton, type DashboardRefreshProps } from '@/components/dashboard/DashboardRefreshButton'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { formatNumber, type StudentLoanStatistic } from '@/lib/dashboard-data'
-import type { DashboardSummary } from '@/lib/library-queries'
+import type { DashboardSummary } from '@/types/library'
 
 type StatisticsPanelProps = {
   summary: DashboardSummary | null

@@ -4,14 +4,14 @@ import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Loader2, Search, Trash2 } from 'lucide-react'
 import { deleteBookAction } from '@/app/admin/books/actions'
 import { useToast } from '@/components/ui/ToastProvider'
-import { displayValue } from '@/lib/display'
-import { displaySchoolBookCodes } from '@/lib/school-book-codes'
+import { displayValue } from '@/lib/shared/display'
+import { displaySchoolBookCodes } from '@/services/book-code.service'
 import {
   isLikelyBarcode,
   isLikelyIsbn,
   normalizeBookBarcode,
   normalizeBookIsbn,
-} from '@/lib/validators'
+} from '@/services/book-validation.service'
 import { useStatusMessages } from '@/hooks/useStatusMessages'
 import type { RemovableBook } from '@/types/library'
 

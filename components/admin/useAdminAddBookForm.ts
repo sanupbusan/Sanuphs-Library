@@ -14,7 +14,7 @@ import {
   getAdminBookLookupSuccessStep,
   getMissingAdminBookRequiredFieldsMessage,
   shouldAutoLookupAdminBookIsbn,
-} from '@/lib/admin-book-input'
+} from '@/services/book-input.service'
 import { useInputFocus } from '@/hooks/useInputFocus'
 import { useStatusMessages } from '@/hooks/useStatusMessages'
 import type { AdminBookRow } from '@/types/library'

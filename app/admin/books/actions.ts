@@ -2,11 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { AdminAuthError } from '@/lib/admin-auth'
-import { createAdminBook, deleteAdminBook, updateAdminBook } from '@/lib/admin-books'
+import { createAdminBook, deleteAdminBook, updateAdminBook } from '@/services/book.service'
 import { ApiRouteError, getText } from '@/lib/api-route'
-import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
+import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/shared/barcode'
 import { requireAdminSessionFromCookies } from '@/lib/admin-server-auth'
-import type { AdminBookCreateInput, AdminBookUpdateInput } from '@/lib/admin-book-input'
+import type { AdminBookCreateInput, AdminBookUpdateInput } from '@/services/book-input.service'
 import type { AdminBookRow, ApiError } from '@/types/library'
 
 type DeleteBookActionResult = {

@@ -1,6 +1,6 @@
 # Database setup
 
-이 프로젝트는 현재 Supabase CLI migration 파일을 사용하지 않고, 신규/로컬 PostgreSQL bootstrap은 `database/local-postgres-copy-paste.sql` 롤업 스크립트 하나로 관리합니다.
+이 프로젝트의 DB 스키마 source of truth는 `supabase/migrations`입니다. 테이블, view, function, trigger, RLS policy 변경은 새 migration 파일로 추가합니다.
 
 ## Environment variables
 
@@ -23,17 +23,21 @@ NATIONAL_LIBRARY_ISBN_API_KEY=<national-library-isbn-api-key>
 
 ## Schema bootstrap
 
-신규 DB에는 롤업 SQL을 적용합니다.
+독립 PostgreSQL에는 Supabase 호환 스키마와 역할을 한 번 초기화한 뒤 migration을 적용합니다. `DATABASE_ADMIN_URL`은 배포 셸에서만 사용하고 애플리케이션 환경변수로 저장하지 않습니다.
 
 ```bash
-psql "$DATABASE_URL" -f ./database/local-postgres-copy-paste.sql
+export DATABASE_ADMIN_URL="postgres://postgres:<admin-password>@localhost:5432/<database>"
+psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 -f ./database/local-postgres-init.sql
+npx supabase db push --db-url "$DATABASE_ADMIN_URL"
 ```
 
-이 스크립트에는 테이블, view, function, trigger, RLS policy, 초기 관리자 계정 보정 로직이 포함되어 있습니다.
+Supabase 프로젝트는 호환 초기화 SQL을 생략하고 `npx supabase db push --db-url "$DATABASE_ADMIN_URL"`만 실행합니다. migration 이력이 있는 DB에서는 미적용 파일만 순서대로 반영됩니다.
+
+이전 롤업 SQL로 만든 기존 DB는 migration 이력이 비어 있을 수 있습니다. 이 경우 `db push` 전에 실제 적용 상태를 확인하고 `supabase migration repair <version> --status applied --db-url "$DATABASE_ADMIN_URL"`로 이미 적용된 버전만 등록합니다. 확인 없이 모든 버전을 적용 처리하거나 `db push`하면 실제 스키마와 이력이 어긋날 수 있습니다.
 
 ## Annual loan reset
 
-롤업 SQL에는 `public.reset_annual_loan_records()` 함수와 pg_cron 예약 로직이 포함되어 있습니다.
+관련 migration에는 `public.reset_annual_loan_records()` 함수와 pg_cron 예약 로직이 포함되어 있습니다.
 
 - Supabase의 `pg_cron` 또는 PostgreSQL의 호환 cron extension을 사용합니다.
 - 예약 시각은 UTC 기준 `0 15 31 12 *`이며, 한국시간 1월 1일 00:00입니다.

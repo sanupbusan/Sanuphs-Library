@@ -79,7 +79,6 @@ export async function listRecentBooks(db: DbClient, limit: number): Promise<Rece
 }
 
 export async function searchBooks(db: DbClient, query: string, limit: number): Promise<SearchBook[]> {
-  const searchQuery = query.trim()
   const rows = await db
     .select({
       id: books.id,
@@ -93,10 +92,10 @@ export async function searchBooks(db: DbClient, query: string, limit: number): P
     })
     .from(books)
     .where(
-      searchQuery
+      query
         ? or(
-            ilike(books.title, `%${searchQuery}%`),
-            ilike(books.author, `%${searchQuery}%`)
+            ilike(books.title, `%${query}%`),
+            ilike(books.author, `%${query}%`)
           )
         : undefined
     )
@@ -250,7 +249,8 @@ export async function updateAdminBook(db: DbClient, bookId: string, input: {
   author: string | null
   isbn: string | null
   publisher: string | null
-  schoolBookCode: string
+  school_book_code: string
+  school_book_codes: string[]
   title: string
 }): Promise<AdminBookRow | null> {
   const rows = await db
@@ -259,8 +259,8 @@ export async function updateAdminBook(db: DbClient, bookId: string, input: {
       author: input.author,
       isbn: input.isbn,
       publisher: input.publisher,
-      school_book_code: input.schoolBookCode,
-      school_book_codes: [input.schoolBookCode],
+      school_book_code: input.school_book_code,
+      school_book_codes: input.school_book_codes,
       title: input.title,
     })
     .where(eq(books.id, bookId))

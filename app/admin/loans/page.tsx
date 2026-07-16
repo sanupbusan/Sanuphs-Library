@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import LoanManager from '@/components/admin/LoanManager'
 import Footer from '@/components/sections/Footer'
 import Header from '@/components/sections/Header'
-import { listAdminLoans } from '@/lib/admin-loans'
+import { listAdminLoans } from '@/services/loan.service'
 import { requireAdminPageSession } from '@/lib/admin-server-auth'
 
 export const metadata: Metadata = {

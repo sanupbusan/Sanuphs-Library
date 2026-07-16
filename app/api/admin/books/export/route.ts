@@ -5,7 +5,7 @@ import {
   ADMIN_BOOK_EXCEL_HEADERS,
   ADMIN_BOOK_EXPORT_FIELD_ORDER,
   listAdminBooksForExport,
-} from '@/lib/admin-books'
+} from '@/services/book.service'
 import { runApiRoute } from '@/lib/api-route'
 
 export const dynamic = 'force-dynamic'

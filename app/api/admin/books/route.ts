@@ -1,12 +1,12 @@
 import { requireAdminSession } from '@/lib/admin-auth'
-import { createAdminBook } from '@/lib/admin-books'
+import { createAdminBook } from '@/services/book.service'
 import {
   getText,
   jsonData,
   readJsonBody,
   runApiRoute,
 } from '@/lib/api-route'
-import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/barcode-input'
+import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/shared/barcode'
 
 export const dynamic = 'force-dynamic'
 

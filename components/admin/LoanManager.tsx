@@ -1,7 +1,8 @@
 'use client'
 
 import { AlertCircle, ClipboardList, Clock, Loader2, RotateCcw, Search } from 'lucide-react'
-import { isLoanOverdue, useLoanManager, type Loan } from '@/components/admin/useLoanManager'
+import { useLoanManager, type Loan } from '@/components/admin/useLoanManager'
+import { isLoanOverdue } from '@/services/loan-restriction.service'
 
 type LoanManagerProps = {
   initialLoans: Loan[]

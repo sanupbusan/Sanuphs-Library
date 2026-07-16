@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server'
 import { AdminAuthError, adminAuthErrorResponse, requireAdminSession } from '@/lib/admin-auth'
-import { createRouteDbClient } from '@/lib/api-route'
-import { listAdminLoans } from '@/lib/admin-loans'
-import { normalizeBarcodeInput } from '@/lib/barcode-input'
-import { createPublicLoan } from '@/services/public-loan.service'
-import type { BorrowerType, CreatedPublicLoan, LoanCreationResult } from '@/types/library'
+import { ApiRouteError, createRouteDbClient } from '@/lib/api-route'
+import { normalizeBarcodeInput } from '@/lib/shared/barcode'
+import { createPublicLoan, listAdminLoans } from '@/services/loan.service'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,38 +21,6 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
-function getStringProperty(error: unknown, property: 'code' | 'details' | 'hint' | 'message') {
-  if (typeof error !== 'object' || error === null || !(property in error)) {
-    return ''
-  }
-
-  const value = (error as Record<typeof property, unknown>)[property]
-
-  return typeof value === 'string' ? value : ''
-}
-
-function getDatabaseError(error: unknown, depth = 0): unknown {
-  if (depth >= 5 || typeof error !== 'object' || error === null || !('cause' in error)) {
-    return error
-  }
-
-  const nestedError = getDatabaseError(error.cause, depth + 1)
-
-  return getStringProperty(nestedError, 'code') ? nestedError : error
-}
-
-function getErrorMessage(error: unknown) {
-  return getStringProperty(getDatabaseError(error), 'message')
-}
-
-function isLoanLimitError(error: unknown) {
-  const databaseError = getDatabaseError(error)
-  return (
-    getStringProperty(databaseError, 'code') === '23514' &&
-    getStringProperty(databaseError, 'message').includes('최대')
-  )
-}
-
 function jsonLoanError(status: number, code: string, message: string) {
   return NextResponse.json(
     {
@@ -65,50 +31,6 @@ function jsonLoanError(status: number, code: string, message: string) {
     },
     { status }
   )
-}
-
-function mapCreatedLoan(loan: CreatedPublicLoan): LoanCreationResult {
-  return {
-    activeLoanCount: loan.active_loan_count,
-    bookTitle: loan.book_title,
-    borrowerLabel: loan.borrower_label,
-    borrowerType: loan.borrower_type as BorrowerType,
-    dueOn: loan.due_on,
-    loanId: loan.loan_id,
-    loanLimit: loan.loan_limit,
-    remainingLoanCount: loan.remaining_loan_count,
-    studentName: loan.student_name,
-  }
-}
-
-function loanRpcErrorResponse(error: unknown) {
-  const message = getErrorMessage(error)
-  const [code, detail] = message.split('|')
-
-  switch (code) {
-    case 'BOOK_NOT_FOUND':
-      return jsonLoanError(404, 'BOOK_NOT_FOUND', '해당 도서를 찾을 수 없습니다.')
-    case 'STUDENT_NOT_FOUND':
-      return jsonLoanError(404, 'STUDENT_NOT_FOUND', '해당 학생을 찾을 수 없습니다.')
-    case 'NO_AVAILABLE_COPIES':
-      return jsonLoanError(409, 'NO_AVAILABLE_COPIES', '대여 가능한 도서가 없습니다.')
-    case 'ALREADY_RENTED':
-      return jsonLoanError(409, 'ALREADY_RENTED', '이미 대여 중인 도서입니다.')
-    case 'STUDENT_LOAN_BANNED':
-      return jsonLoanError(
-        409,
-        'STUDENT_LOAN_BANNED',
-        detail ? `대여 정지 기간입니다. ${detail}까지 대여할 수 없습니다.` : '대여 정지 기간입니다.'
-      )
-    case 'STUDENT_HAS_OVERDUE_LOAN':
-      return jsonLoanError(
-        409,
-        'STUDENT_HAS_OVERDUE_LOAN',
-        detail ? `연체 중인 도서가 있어 대여할 수 없습니다. 가장 오래된 반납 예정일: ${detail}` : '연체 중인 도서가 있어 대여할 수 없습니다.'
-      )
-    default:
-      return null
-  }
 }
 
 export async function GET(request: Request) {
@@ -198,37 +120,18 @@ export async function POST(request: Request) {
       schoolBookCode || null
     )
 
-    if (!loan) {
-      throw new Error('Loan RPC returned no result.')
-    }
-
-    return NextResponse.json({ data: mapCreatedLoan(loan) }, { status: 201 })
+    return NextResponse.json({ data: loan }, { status: 201 })
   } catch (error) {
-    const mappedResponse = loanRpcErrorResponse(error)
-
-    if (mappedResponse) {
-      return mappedResponse
+    if (error instanceof ApiRouteError) {
+      return jsonLoanError(error.status, error.code, error.message)
     }
 
-    if (isLoanLimitError(error)) {
-      return NextResponse.json(
-        {
-          error: {
-            code: 'LOAN_LIMIT_EXCEEDED',
-            message: error instanceof Error ? error.message : '대여 가능 권수를 초과했습니다.',
-          },
-        },
-        { status: 409 }
-      )
-    }
-
-    const databaseError = getDatabaseError(error)
-    console.error('Loan creation error:', databaseError)
+    console.error('Loan creation error:', error)
     return NextResponse.json(
       {
         error: {
           code: 'CREATE_LOAN_FAILED',
-          message: getErrorMessage(error) || '대여 처리 중 오류가 발생했습니다.',
+          message: error instanceof Error ? error.message : '대여 처리 중 오류가 발생했습니다.',
         },
       },
       { status: 500 }
