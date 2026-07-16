@@ -1,8 +1,12 @@
 import { ApiRouteError } from '@/lib/api-route'
-import type { DbClient, DbTransaction } from '@/lib/db'
-import { addDaysToDateKey, getTodayDateKey } from '@/lib/shared/date'
-import { getBorrowerLoanLimit } from '@/services/borrower-policy.service'
-import type { LoanCreationResult, LoanStatus, LoanWithBookAndStudent } from '@/types/library'
+import type { DbClient } from '@/lib/db'
+import { getTodayDateKey } from '@/lib/shared/date'
+import type {
+  CreatedPublicLoan,
+  LoanCreationResult,
+  LoanStatus,
+  LoanWithBookAndStudent,
+} from '@/types/library'
 import * as loanRepository from '@/repositories/loan.repository'
 
 type UpdateAdminLoanInput = {
@@ -31,78 +35,23 @@ function getDbErrorCode(error: unknown, depth = 0): string {
   return 'cause' in error ? getDbErrorCode(error.cause, depth + 1) : ''
 }
 
+function getDbErrorMessage(error: unknown, depth = 0): string {
+  if (depth > 4 || typeof error !== 'object' || error === null) {
+    return ''
+  }
+
+  if ('cause' in error) {
+    const causeMessage = getDbErrorMessage(error.cause, depth + 1)
+    if (causeMessage) {
+      return causeMessage
+    }
+  }
+
+  return 'message' in error && typeof error.message === 'string' ? error.message : ''
+}
+
 function loanCreationError(status: number, code: string, message: string) {
   return new ApiRouteError(status, code, message)
-}
-
-function getBookCopyCandidates(book: loanRepository.LoanCreationBook) {
-  const sourceCodes = book.school_book_codes.length > 0
-    ? book.school_book_codes
-    : [book.school_book_code]
-
-  return sourceCodes
-    .map((code) => code?.trim() ?? '')
-    .filter(Boolean)
-}
-
-function isBookCopyActive(
-  activeCopies: Pick<loanRepository.ActiveLoanForCreation, 'book_id' | 'school_book_code'>[],
-  book: loanRepository.LoanCreationBook,
-  schoolBookCode: string
-) {
-  return activeCopies.some((loan) =>
-    loan.school_book_code === schoolBookCode ||
-    (
-      loan.school_book_code === null &&
-      loan.book_id === book.id &&
-      schoolBookCode === book.school_book_code?.trim()
-    )
-  )
-}
-
-async function resolveSchoolBookCode(
-  db: DbTransaction,
-  book: loanRepository.LoanCreationBook,
-  requestedSchoolBookCode: string | null
-) {
-  const primarySchoolBookCode = book.school_book_code?.trim() || null
-  const storedSchoolBookCodes = book.school_book_codes
-    .map((code) => code.trim())
-    .filter(Boolean)
-  const requestedCode = requestedSchoolBookCode?.trim() || null
-
-  if (
-    requestedCode &&
-    requestedCode !== primarySchoolBookCode &&
-    !storedSchoolBookCodes.includes(requestedCode)
-  ) {
-    throw loanCreationError(404, 'BOOK_NOT_FOUND', '해당 도서를 찾을 수 없습니다.')
-  }
-
-  const candidates = requestedCode ? [requestedCode] : getBookCopyCandidates(book)
-  const activeCopies = await loanRepository.listActiveLoansForBookCopies(
-    db,
-    book.id,
-    candidates
-  )
-
-  if (requestedCode) {
-    if (isBookCopyActive(activeCopies, book, requestedCode)) {
-      throw loanCreationError(409, 'ALREADY_RENTED', '이미 대여 중인 도서입니다.')
-    }
-
-    return requestedCode
-  }
-
-  const availableCode = candidates.find(
-    (candidate) => !isBookCopyActive(activeCopies, book, candidate)
-  )
-
-  if (!availableCode && book.school_book_codes.length > 0) {
-    throw loanCreationError(409, 'NO_AVAILABLE_COPIES', '대여 가능한 도서가 없습니다.')
-  }
-
-  return availableCode ?? null
 }
 
 function mapLoanCreationDatabaseError(error: unknown) {
@@ -111,6 +60,32 @@ function mapLoanCreationDatabaseError(error: unknown) {
   }
 
   const code = getDbErrorCode(error)
+  const [reason, detail] = getDbErrorMessage(error).split('|')
+
+  switch (reason) {
+    case 'BOOK_NOT_FOUND':
+      return loanCreationError(404, 'BOOK_NOT_FOUND', '해당 도서를 찾을 수 없습니다.')
+    case 'STUDENT_NOT_FOUND':
+      return loanCreationError(404, 'STUDENT_NOT_FOUND', '해당 학생을 찾을 수 없습니다.')
+    case 'NO_AVAILABLE_COPIES':
+      return loanCreationError(409, 'NO_AVAILABLE_COPIES', '대여 가능한 도서가 없습니다.')
+    case 'ALREADY_RENTED':
+      return loanCreationError(409, 'ALREADY_RENTED', '이미 대여 중인 도서입니다.')
+    case 'STUDENT_LOAN_BANNED':
+      return loanCreationError(
+        409,
+        'STUDENT_LOAN_BANNED',
+        detail ? `대여 정지 기간입니다. ${detail}까지 대여할 수 없습니다.` : '대여 정지 기간입니다.'
+      )
+    case 'STUDENT_HAS_OVERDUE_LOAN':
+      return loanCreationError(
+        409,
+        'STUDENT_HAS_OVERDUE_LOAN',
+        detail
+          ? `연체 중인 도서가 있어 대여할 수 없습니다. 가장 오래된 반납 예정일: ${detail}`
+          : '연체 중인 도서가 있어 대여할 수 없습니다.'
+      )
+  }
 
   if (code === '23505') {
     return loanCreationError(409, 'ALREADY_RENTED', '이미 대여 중인 도서입니다.')
@@ -135,6 +110,20 @@ function mapLoanCreationDatabaseError(error: unknown) {
   return error
 }
 
+function mapCreatedLoan(loan: CreatedPublicLoan): LoanCreationResult {
+  return {
+    activeLoanCount: loan.active_loan_count,
+    bookTitle: loan.book_title,
+    borrowerLabel: loan.borrower_label,
+    borrowerType: loan.borrower_type === 'staff' ? 'staff' : 'student',
+    dueOn: loan.due_on,
+    loanId: loan.loan_id,
+    loanLimit: loan.loan_limit,
+    remainingLoanCount: loan.remaining_loan_count,
+    studentName: loan.student_name,
+  }
+}
+
 export async function createPublicLoan(
   db: DbClient,
   bookId: string,
@@ -143,101 +132,24 @@ export async function createPublicLoan(
   schoolBookCode: string | null
 ): Promise<LoanCreationResult> {
   try {
-    return await db.transaction(async (transaction) => {
-      await loanRepository.acquireLoanCreationLock(
-        transaction,
-        `loan:book:${bookId}`
+    const rows = await loanRepository.createPublicLoanViaRpc(
+      db,
+      bookId,
+      studentId,
+      notes,
+      schoolBookCode
+    )
+    const loan = rows[0]
+
+    if (!loan) {
+      throw loanCreationError(
+        500,
+        'CREATE_LOAN_FAILED',
+        '대여 처리 결과를 확인하지 못했습니다. 다시 시도해주세요.'
       )
-      const book = await loanRepository.findBookForLoanCreation(transaction, bookId)
-      if (!book) {
-        throw loanCreationError(404, 'BOOK_NOT_FOUND', '해당 도서를 찾을 수 없습니다.')
-      }
+    }
 
-      const selectedSchoolBookCode = await resolveSchoolBookCode(
-        transaction,
-        book,
-        schoolBookCode
-      )
-
-      if (book.available_copies <= 0) {
-        throw loanCreationError(409, 'NO_AVAILABLE_COPIES', '대여 가능한 도서가 없습니다.')
-      }
-
-      await loanRepository.acquireLoanCreationLock(
-        transaction,
-        `loan:student:${studentId}`
-      )
-      const student = await loanRepository.findStudentForLoanCreation(
-        transaction,
-        studentId
-      )
-      if (!student) {
-        throw loanCreationError(404, 'STUDENT_NOT_FOUND', '해당 학생을 찾을 수 없습니다.')
-      }
-
-      const today = getTodayDateKey()
-      if (student.loan_banned_until && student.loan_banned_until >= today) {
-        throw loanCreationError(
-          409,
-          'STUDENT_LOAN_BANNED',
-          `대여 정지 기간입니다. ${student.loan_banned_until}까지 대여할 수 없습니다.`
-        )
-      }
-
-      const activeLoans = await loanRepository.listActiveLoansForStudent(
-        transaction,
-        studentId
-      )
-      const oldestOverdueLoan = activeLoans
-        .filter((loan) => loan.due_on < today)
-        .sort((left, right) => left.due_on.localeCompare(right.due_on))[0]
-
-      if (oldestOverdueLoan) {
-        throw loanCreationError(
-          409,
-          'STUDENT_HAS_OVERDUE_LOAN',
-          `연체 중인 도서가 있어 대여할 수 없습니다. 가장 오래된 반납 예정일: ${oldestOverdueLoan.due_on}`
-        )
-      }
-
-      if (activeLoans.some((loan) => loan.book_id === bookId)) {
-        throw loanCreationError(409, 'ALREADY_RENTED', '이미 대여 중인 도서입니다.')
-      }
-
-      const { borrowerLabel, borrowerType, loanLimit } = getBorrowerLoanLimit(student)
-      const activeLoanCount = activeLoans.length
-
-      if (activeLoanCount >= loanLimit) {
-        throw loanCreationError(
-          409,
-          'LOAN_LIMIT_EXCEEDED',
-          `${borrowerLabel}은 최대 ${loanLimit}권까지 대여할 수 있습니다. 현재 ${activeLoanCount}권 대여 중입니다.`
-        )
-      }
-
-      const dueOn = addDaysToDateKey(today, 14)
-      const loan = await loanRepository.insertLoanForCreation(transaction, {
-        book_id: bookId,
-        borrowed_on: today,
-        due_on: dueOn,
-        notes: notes?.trim() || null,
-        school_book_code: selectedSchoolBookCode,
-        student_id: studentId,
-      })
-      const nextActiveLoanCount = activeLoanCount + 1
-
-      return {
-        activeLoanCount: nextActiveLoanCount,
-        bookTitle: book.title,
-        borrowerLabel,
-        borrowerType,
-        dueOn,
-        loanId: loan.id,
-        loanLimit,
-        remainingLoanCount: Math.max(loanLimit - nextActiveLoanCount, 0),
-        studentName: student.name,
-      }
-    })
+    return mapCreatedLoan(loan)
   } catch (error) {
     throw mapLoanCreationDatabaseError(error)
   }

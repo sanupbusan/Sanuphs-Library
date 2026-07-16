@@ -131,7 +131,7 @@ export async function POST(request: Request) {
       {
         error: {
           code: 'CREATE_LOAN_FAILED',
-          message: error instanceof Error ? error.message : '대여 처리 중 오류가 발생했습니다.',
+          message: '대여 처리 중 오류가 발생했습니다.',
         },
       },
       { status: 500 }
