@@ -28,7 +28,6 @@ function getSchoolBookCodes(body: ReturnBooksBody) {
 export async function POST(request: Request) {
   return runApiRoute(
     {
-      exposeErrorMessage: true,
       fallback: {
         code: 'BOOK_RETURN_FAILED',
         message: '도서 반납 처리에 실패했습니다.',
