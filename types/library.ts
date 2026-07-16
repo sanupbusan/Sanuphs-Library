@@ -76,6 +76,9 @@ export type LoanStudent = Omit<
   borrower_type: BorrowerType
 }
 
+export type CreatedPublicLoan =
+  Database['public']['Functions']['create_public_loan']['Returns'][number]
+
 export type LoanCreationResult = {
   activeLoanCount: number
   bookTitle: string
