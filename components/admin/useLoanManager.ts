@@ -8,6 +8,14 @@ import type { LoanStatus, LoanWithBookAndStudent } from '@/types/library'
 
 export type Loan = LoanWithBookAndStudent
 
+type LoanMutationBody = {
+  borrowedOn?: string | null
+  dueOn?: string | null
+  status?: LoanStatus | string | null
+  forceOverdue?: boolean
+  devKey?: string | null
+}
+
 export function useLoanManager(initialLoans: Loan[]) {
   const router = useRouter()
   const [loans, setLoans] = useState<Loan[]>(initialLoans)
@@ -20,7 +28,7 @@ export function useLoanManager(initialLoans: Loan[]) {
   }, [initialLoans])
 
   const applyLoanMutation = useCallback(
-    async (loanId: string, body: Record<string, string | null>) => {
+    async (loanId: string, body: LoanMutationBody) => {
       setIsLoading(true)
       setErrorMessage('')
 
@@ -92,7 +100,7 @@ export function useLoanManager(initialLoans: Loan[]) {
   )
 
   const forceOverdue = useCallback(
-    async (loan: Loan) => {
+    async (loan: Loan, devKey: string) => {
       const yesterday = new Date()
       yesterday.setHours(0, 0, 0, 0)
       yesterday.setDate(yesterday.getDate() - 1)
@@ -101,6 +109,8 @@ export function useLoanManager(initialLoans: Loan[]) {
       await applyLoanMutation(loan.id, {
         borrowedOn: overdueDateString,
         dueOn: overdueDateString,
+        forceOverdue: true,
+        devKey,
       })
     },
     [applyLoanMutation]
