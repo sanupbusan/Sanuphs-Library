@@ -1,6 +1,7 @@
 import { desc, eq, ilike, inArray, or, sql } from 'drizzle-orm'
 import { books } from '@/db/schema'
 import type { DbClient, DbTransaction } from '@/lib/db'
+import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/shared/barcode'
 import type { AdminBookRow, BookRow, RecentBook, RemovableBook, SearchBook } from '@/types/library'
 
 export const adminBookSelect = {
@@ -24,6 +25,7 @@ export const bookExportSelect = {
   publisher: books.publisher,
   isbn: books.isbn,
   school_book_code: books.school_book_code,
+  school_book_codes: books.school_book_codes,
   category: books.category,
   total_copies: books.total_copies,
   available_copies: books.available_copies,
@@ -79,6 +81,31 @@ export async function listRecentBooks(db: DbClient, limit: number): Promise<Rece
 }
 
 export async function searchBooks(db: DbClient, query: string, limit: number): Promise<SearchBook[]> {
+  const normalizedQuery = query.trim()
+  const normalizedIsbnQuery = normalizeIsbnInput(normalizedQuery)
+  const normalizedSchoolBookCodeQuery = normalizeBarcodeInput(normalizedQuery)
+  const searchConditions = [
+    ilike(books.title, `%${normalizedQuery}%`),
+    ilike(books.author, `%${normalizedQuery}%`),
+    ilike(books.publisher, `%${normalizedQuery}%`),
+  ]
+
+  if (normalizedIsbnQuery) {
+    searchConditions.push(ilike(books.isbn, `%${normalizedIsbnQuery}%`))
+  }
+
+  if (normalizedSchoolBookCodeQuery) {
+    const schoolBookCodePattern = `%${normalizedSchoolBookCodeQuery}%`
+    searchConditions.push(
+      ilike(books.school_book_code, schoolBookCodePattern),
+      sql<boolean>`exists (
+        select 1
+        from unnest(coalesce(${books.school_book_codes}, '{}'::text[])) as school_book_code(value)
+        where value ilike ${schoolBookCodePattern}
+      )`
+    )
+  }
+
   const rows = await db
     .select({
       id: books.id,
@@ -86,23 +113,27 @@ export async function searchBooks(db: DbClient, query: string, limit: number): P
       title: books.title,
       author: books.author,
       publisher: books.publisher,
+      school_book_code: books.school_book_code,
+      school_book_codes: books.school_book_codes,
       category: books.category,
       available_copies: books.available_copies,
       total_copies: books.total_copies,
     })
     .from(books)
     .where(
-      query
-        ? or(
-            ilike(books.title, `%${query}%`),
-            ilike(books.author, `%${query}%`)
-          )
+      normalizedQuery
+        ? or(...searchConditions)
         : undefined
     )
     .orderBy(books.title)
     .limit(limit)
 
   return rows
+}
+
+export async function findAdminBookById(db: DbClient, bookId: string): Promise<AdminBookRow | null> {
+  const rows = await db.select(adminBookSelect).from(books).where(eq(books.id, bookId)).limit(1)
+  return rows[0] ?? null
 }
 
 export async function findBookByIsbn(db: DbClient, isbn: string): Promise<AdminBookRow | null> {

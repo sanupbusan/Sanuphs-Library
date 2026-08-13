@@ -311,6 +311,8 @@ export type Database = {
           id: string
           isbn: string | null
           publisher: string | null
+          school_book_code: string | null
+          school_book_codes: string[]
           title: string
           total_copies: number
         }[]

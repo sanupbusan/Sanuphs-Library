@@ -51,7 +51,7 @@ Supabase 프로젝트는 호환 초기화 SQL을 생략하고 `npx supabase db p
 GET /api/books/search?q=<검색어>&limit=20
 ```
 
-- `q` 또는 `query`: 제목 또는 저자 검색어입니다. 빈 값이면 등록된 도서를 제한 개수만큼 조회합니다.
+- `q` 또는 `query`: 도서명, 저자, 출판사, ISBN, 학교 도서 코드 검색어입니다. 빈 값이면 등록된 도서를 제한 개수만큼 조회합니다.
 - `limit`: 선택값이며 기본 20, 최대 50입니다.
 - DB의 `search_books` function을 호출합니다.
 
