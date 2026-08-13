@@ -1,3 +1,5 @@
+import { normalizeBarcodeInput } from '@/lib/shared/barcode'
+
 type SchoolBookCodeSource = {
   school_book_code?: string | null
   school_book_codes?: string[] | null
@@ -7,7 +9,7 @@ function uniqueNonEmptyCodes(codes: string[]) {
   return Array.from(
     new Set(
       codes
-        .map((code) => code.trim())
+        .map((code) => normalizeBarcodeInput(code))
         .filter(Boolean)
     )
   )
@@ -21,7 +23,7 @@ export function getSchoolBookCodes(book: SchoolBookCodeSource) {
 }
 
 export function hasSchoolBookCode(book: SchoolBookCodeSource, schoolBookCode: string) {
-  return getSchoolBookCodes(book).includes(schoolBookCode.trim())
+  return getSchoolBookCodes(book).includes(normalizeBarcodeInput(schoolBookCode))
 }
 
 export function addSchoolBookCode(book: SchoolBookCodeSource, schoolBookCode: string) {

@@ -37,6 +37,8 @@ export async function GET(request: Request) {
         title: book.title,
         author: book.author,
         publisher: book.publisher,
+        school_book_code: book.school_book_code,
+        school_book_codes: book.school_book_codes,
         available_copies: book.available_copies,
         total_copies: book.total_copies,
       }))

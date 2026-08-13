@@ -7,6 +7,7 @@ import {
 } from '@/services/book-input.service'
 import { addSchoolBookCode, getSchoolBookCodes } from '@/services/book-code.service'
 import type { DbClient } from '@/lib/db'
+import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/shared/barcode'
 import type { AdminBookRow, BookRow } from '@/types/library'
 import * as bookRepository from '@/repositories/book.repository'
 
@@ -14,7 +15,7 @@ export const ADMIN_BOOK_COLUMNS =
   'id, isbn, school_book_code, school_book_codes, title, author, publisher, category, total_copies, available_copies, created_at'
 
 export const ADMIN_BOOK_EXPORT_COLUMNS =
-  'id, title, author, publisher, isbn, school_book_code, category, total_copies, available_copies'
+  'id, title, author, publisher, isbn, school_book_code, school_book_codes, category, total_copies, available_copies'
 
 export const ADMIN_BOOK_EXPORT_FIELD_ORDER = [
   'id',
@@ -23,6 +24,7 @@ export const ADMIN_BOOK_EXPORT_FIELD_ORDER = [
   'publisher',
   'isbn',
   'school_book_code',
+  'school_book_codes',
   'category',
   'total_copies',
   'available_copies',
@@ -35,6 +37,7 @@ export const ADMIN_BOOK_EXCEL_HEADERS: Record<(typeof ADMIN_BOOK_EXPORT_FIELD_OR
   publisher: '출판사',
   isbn: 'ISBN',
   school_book_code: '학교 도서 코드',
+  school_book_codes: '학교 도서 코드 목록',
   category: '분류',
   total_copies: '총 권수',
   available_copies: '대출 가능 권수',
@@ -47,6 +50,7 @@ export const ADMIN_BOOK_IMPORT_HEADER_TO_FIELD: Record<string, keyof BookRow> = 
   isbn: 'isbn',
   publisher: 'publisher',
   school_book_code: 'school_book_code',
+  school_book_codes: 'school_book_codes',
   title: 'title',
   total_copies: 'total_copies',
   available_copies: 'available_copies',
@@ -56,8 +60,21 @@ export const ADMIN_BOOK_IMPORT_HEADER_TO_FIELD: Record<string, keyof BookRow> = 
   분류: 'category',
   저자: 'author',
   출판사: 'publisher',
+  'ISBN 코드': 'isbn',
+  'ISBN코드': 'isbn',
+  'ISBN Code': 'isbn',
+  'ISBNCode': 'isbn',
+  'ISBN번호': 'isbn',
+  '국제표준도서번호': 'isbn',
   '총 권수': 'total_copies',
   '학교 도서 코드': 'school_book_code',
+  '학교 도서 코드 목록': 'school_book_codes',
+  '학교 도서 코드들': 'school_book_codes',
+  '학교도서코드': 'school_book_code',
+  '학교도서코드목록': 'school_book_codes',
+  '학교도서코드들': 'school_book_codes',
+  '학교 내 도서 코드': 'school_book_code',
+  '학교내도서코드': 'school_book_code',
   '대출 가능 권수': 'available_copies',
 }
 
@@ -186,6 +203,7 @@ export type ImportAdminBookInput = {
   isbn?: string | null
   publisher?: string | null
   school_book_code?: string | null
+  school_book_codes?: string[] | null
   title: string
   total_copies?: number
 }
@@ -212,10 +230,10 @@ export async function insertAdminBook(db: DbClient, input: CreateAdminBookInput)
       author: input.author.trim() || null,
       available_copies: 1,
       category: DEFAULT_BOOK_CATEGORY,
-      isbn: input.isbn,
+      isbn: normalizeIsbnInput(input.isbn) || null,
       publisher: input.publisher.trim() || null,
-      school_book_code: input.schoolBookCode,
-      school_book_codes: [input.schoolBookCode],
+      school_book_code: normalizeBarcodeInput(input.schoolBookCode),
+      school_book_codes: [normalizeBarcodeInput(input.schoolBookCode)],
       title: input.title,
       total_copies: 1,
     })
@@ -262,7 +280,8 @@ export async function listAdminBooksForExport(db: DbClient): Promise<BookRow[]> 
 function createImportedBookValues(
   book: ImportAdminBookInput
 ): bookRepository.AdminBookInsertValues {
-  const schoolBookCode = book.school_book_code?.trim() || null
+  const schoolBookCodes = getImportedSchoolBookCodes(book)
+  const schoolBookCode = schoolBookCodes[0] ?? null
   const totalCopies = book.total_copies ?? 1
   const availableCopies = book.available_copies ?? totalCopies
 
@@ -270,13 +289,27 @@ function createImportedBookValues(
     author: book.author?.trim() || null,
     available_copies: availableCopies,
     category: book.category || DEFAULT_BOOK_CATEGORY,
-    isbn: book.isbn ?? null,
-    publisher: book.publisher ?? null,
+    isbn: normalizeImportedIsbn(book.isbn),
+    publisher: book.publisher?.trim() || null,
     school_book_code: schoolBookCode,
-    school_book_codes: schoolBookCode ? [schoolBookCode] : [],
+    school_book_codes: schoolBookCodes,
     title: book.title,
     total_copies: totalCopies,
   }
+}
+
+function normalizeImportedIsbn(value: string | null | undefined) {
+  return normalizeIsbnInput(value ?? '') || null
+}
+
+function getImportedSchoolBookCodes(book: ImportAdminBookInput) {
+  return Array.from(
+    new Set(
+      [book.school_book_code ?? '', ...(book.school_book_codes ?? [])]
+        .map((code) => normalizeBarcodeInput(code))
+        .filter(Boolean)
+    )
+  )
 }
 
 type ExistingImportTarget = {
@@ -292,16 +325,18 @@ type NewImportTarget = {
 type ImportTarget = ExistingImportTarget | NewImportTarget
 
 function addImportedCopies(target: ImportTarget, book: ImportAdminBookInput) {
-  const schoolBookCode = book.school_book_code?.trim() || null
+  const schoolBookCodes = getImportedSchoolBookCodes(book)
   const totalCopies = book.total_copies ?? 1
   const availableCopies = book.available_copies ?? totalCopies
 
   target.book.available_copies += availableCopies
   target.book.total_copies += totalCopies
 
-  if (schoolBookCode) {
-    target.book.school_book_code ||= schoolBookCode
-    target.book.school_book_codes = addSchoolBookCode(target.book, schoolBookCode)
+  if (schoolBookCodes.length > 0) {
+    target.book.school_book_code ||= schoolBookCodes[0]
+    for (const schoolBookCode of schoolBookCodes) {
+      target.book.school_book_codes = addSchoolBookCode(target.book, schoolBookCode)
+    }
   }
 }
 
@@ -310,13 +345,15 @@ function getImportLookupValues(rows: ImportAdminBookRow[]) {
   const schoolBookCodes = new Set<string>()
 
   for (const row of rows) {
-    if (row.book.isbn) {
-      isbns.add(row.book.isbn)
+    const isbn = normalizeImportedIsbn(row.book.isbn)
+    if (isbn) {
+      isbns.add(isbn)
     }
 
-    const schoolBookCode = row.book.school_book_code?.trim()
-    if (schoolBookCode) {
-      schoolBookCodes.add(schoolBookCode)
+    for (const schoolBookCode of getImportedSchoolBookCodes(row.book)) {
+      if (schoolBookCode) {
+        schoolBookCodes.add(schoolBookCode)
+      }
     }
   }
 
@@ -367,21 +404,23 @@ async function insertAdminBookImportBatch(
           usedSchoolBookCodes.add(schoolBookCode)
         }
 
-        if (existingBook.isbn) {
-          targetsByIsbn.set(existingBook.isbn, target)
+        const isbn = normalizeImportedIsbn(existingBook.isbn)
+        if (isbn) {
+          targetsByIsbn.set(isbn, target)
         }
       }
 
       // Preserve the previous row-by-row duplicate semantics while planning one bulk write.
       for (const row of rows) {
-        const schoolBookCode = row.book.school_book_code?.trim() || null
+        const schoolBookCodes = getImportedSchoolBookCodes(row.book)
 
-        if (schoolBookCode && usedSchoolBookCodes.has(schoolBookCode)) {
+        if (schoolBookCodes.some((schoolBookCode) => usedSchoolBookCodes.has(schoolBookCode))) {
           skipped += 1
           continue
         }
 
-        const isbnTarget = row.book.isbn ? targetsByIsbn.get(row.book.isbn) : undefined
+        const isbn = normalizeImportedIsbn(row.book.isbn)
+        const isbnTarget = isbn ? targetsByIsbn.get(isbn) : undefined
 
         if (isbnTarget) {
           addImportedCopies(isbnTarget, row.book)
@@ -400,7 +439,7 @@ async function insertAdminBookImportBatch(
           }
         }
 
-        if (schoolBookCode) {
+        for (const schoolBookCode of schoolBookCodes) {
           usedSchoolBookCodes.add(schoolBookCode)
         }
         inserted += 1
@@ -575,12 +614,23 @@ export async function updateAdminBook(
   }
 
   try {
+    const existingBook = await bookRepository.findAdminBookById(db, bookId)
+    if (!existingBook) {
+      throw new ApiRouteError(404, 'BOOK_NOT_FOUND', '수정할 도서를 찾을 수 없습니다.')
+    }
+
+    const schoolBookCode = normalizeBarcodeInput(input.schoolBookCode)
+    const bookWithSchoolBookCode = await bookRepository.findBookBySchoolBookCode(db, schoolBookCode)
+    if (bookWithSchoolBookCode && bookWithSchoolBookCode.id !== bookId) {
+      throw duplicateBookCodeError()
+    }
+
     const updatedBook = await bookRepository.updateAdminBook(db, bookId, {
       author: input.author.trim() || null,
       isbn: getNullableAdminBookIsbn(input),
       publisher: input.publisher.trim() || null,
-      school_book_code: input.schoolBookCode,
-      school_book_codes: [input.schoolBookCode],
+      school_book_code: schoolBookCode,
+      school_book_codes: addSchoolBookCode(existingBook, schoolBookCode),
       title: input.title,
     })
 

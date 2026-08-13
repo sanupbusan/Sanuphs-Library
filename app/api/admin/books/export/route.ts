@@ -7,6 +7,7 @@ import {
   listAdminBooksForExport,
 } from '@/services/book.service'
 import { runApiRoute } from '@/lib/api-route'
+import type { BookRow } from '@/types/library'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,6 +40,15 @@ function createKstTimestampFilename(date = new Date()) {
   return `${values.year}${values.month}${values.day}${values.hour}${values.minute}.xlsx`
 }
 
+function getExportCellValue(book: BookRow, field: (typeof ADMIN_BOOK_EXPORT_FIELD_ORDER)[number]) {
+  if (field === 'school_book_codes') {
+    return (book.school_book_codes ?? []).join(', ')
+  }
+
+  const value = book[field]
+  return value === null ? '' : value
+}
+
 export async function GET(request: Request) {
   return runApiRoute(
     {
@@ -55,10 +65,7 @@ export async function GET(request: Request) {
       const worksheet = XLSX.utils.aoa_to_sheet([
         ADMIN_BOOK_EXPORT_FIELD_ORDER.map((field) => ADMIN_BOOK_EXCEL_HEADERS[field]),
         ...books.map((book) =>
-          ADMIN_BOOK_EXPORT_FIELD_ORDER.map((field) => {
-            const value = book[field]
-            return value === null ? '' : value
-          })
+          ADMIN_BOOK_EXPORT_FIELD_ORDER.map((field) => getExportCellValue(book, field))
         ),
       ])
 

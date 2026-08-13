@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { deleteBookAction, updateBookAction } from '@/app/admin/books/actions'
 import { removeAdminBookById, replaceUpdatedAdminBook } from '@/components/admin/adminBookListState'
 import { useToast } from '@/components/ui/ToastProvider'
-import { displaySchoolBookCodes } from '@/services/book-code.service'
+import { getSchoolBookCodes } from '@/services/book-code.service'
+import { normalizeBarcodeInput, normalizeIsbnInput } from '@/lib/shared/barcode'
 import type { AdminBookUpdateInput } from '@/services/book-input.service'
 import type { AdminBookRow } from '@/types/library'
 
@@ -15,7 +16,7 @@ function getBookEditInput(book: AdminBookRow): AdminBookUpdateInput {
     author: book.author ?? '',
     isbn: book.isbn ?? '',
     publisher: book.publisher ?? '',
-    schoolBookCode: book.school_book_code ?? '',
+    schoolBookCode: book.school_book_code ?? book.school_book_codes?.[0] ?? '',
     title: book.title ?? '',
   }
 }
@@ -31,14 +32,19 @@ function matchesBookSearch(book: AdminBookRow, query: string) {
     return true
   }
 
-  return [
+  const textMatches = [
     book.title,
     book.author,
     book.publisher,
-    book.isbn,
-    book.school_book_code,
-    displaySchoolBookCodes(book),
   ].some((value) => normalizeSearchValue(value).includes(normalizedQuery))
+
+  const isbnQuery = normalizeIsbnInput(query)
+  const schoolBookCodeQuery = normalizeBarcodeInput(query)
+  const isbnMatches = Boolean(isbnQuery) && normalizeIsbnInput(book.isbn ?? '').includes(isbnQuery)
+  const schoolBookCodeMatches = Boolean(schoolBookCodeQuery) && getSchoolBookCodes(book)
+    .some((code) => normalizeBarcodeInput(code).includes(schoolBookCodeQuery))
+
+  return textMatches || isbnMatches || schoolBookCodeMatches
 }
 
 export function useAdminBooks(initialBooks: AdminBookRow[]) {

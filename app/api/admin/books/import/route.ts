@@ -25,7 +25,11 @@ function logImport(message: string, data?: Record<string, unknown>) {
 }
 
 type SheetCellValue = string | number | boolean | null | undefined
-type SheetRow = SheetCellValue[]
+type SheetCell = {
+  formatted?: string
+  raw: SheetCellValue
+}
+type SheetRow = SheetCell[]
 
 type ParsedWorksheet = {
   dataRowCount: number
@@ -34,16 +38,56 @@ type ParsedWorksheet = {
   worksheet: XLSX.WorkSheet
 }
 
+function isSheetCell(value: unknown): value is SheetCell {
+  return typeof value === 'object' && value !== null && 'raw' in value
+}
+
+function getCellRawValue(value: unknown) {
+  return isSheetCell(value) ? value.raw : value
+}
+
 function getCellText(value: unknown) {
-  if (typeof value === 'string') {
-    return value.trim()
+  const rawValue = getCellRawValue(value)
+
+  if (typeof rawValue === 'string') {
+    return rawValue.trim()
   }
 
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value).trim()
+  if (typeof rawValue === 'number' || typeof rawValue === 'boolean') {
+    return String(rawValue).trim()
   }
 
   return ''
+}
+
+function getFormattedCellText(value: unknown) {
+  if (isSheetCell(value) && value.formatted) {
+    return value.formatted.trim()
+  }
+
+  return getCellText(value)
+}
+
+function getIdentifierCellText(value: unknown) {
+  if (
+    isSheetCell(value) &&
+    typeof value.raw === 'number' &&
+    /e[+-]?\d+/i.test(value.formatted ?? '')
+  ) {
+    return getCellText(value)
+  }
+
+  return getFormattedCellText(value)
+}
+
+function getImportIsbn(value: unknown) {
+  const isbn = normalizeIsbnInput(getIdentifierCellText(value))
+
+  if (isSheetCell(value) && typeof value.raw === 'number' && isbn.length === 9) {
+    return `0${isbn}`
+  }
+
+  return isbn
 }
 
 function getOptionalText(value: unknown) {
@@ -132,14 +176,28 @@ function buildImportRow(
     )
   }
 
+  const schoolBookCode = normalizeBarcodeInput(getIdentifierCellText(mappedRow.school_book_code))
+  const schoolBookCodes = Array.from(
+    new Set(
+      [
+        schoolBookCode,
+        ...getIdentifierCellText(mappedRow.school_book_codes)
+          .split(/[,;|\n]+/)
+          .map((code) => normalizeBarcodeInput(code))
+          .filter(Boolean),
+      ].filter(Boolean)
+    )
+  )
+
   return {
     book: {
       author: getOptionalText(mappedRow.author),
       available_copies: availableCopies,
       category: getCellText(mappedRow.category) || '미분류',
-      isbn: normalizeIsbnInput(getOptionalText(mappedRow.isbn) ?? '') || null,
+      isbn: getImportIsbn(mappedRow.isbn) || null,
       publisher: getOptionalText(mappedRow.publisher),
-      school_book_code: normalizeBarcodeInput(getOptionalText(mappedRow.school_book_code) ?? '') || null,
+      school_book_code: schoolBookCodes[0] ?? null,
+      school_book_codes: schoolBookCodes,
       title,
       total_copies: totalCopies,
     },
@@ -225,7 +283,10 @@ function readSheetRow(
   for (let columnIndex = range.s.c; columnIndex <= range.e.c; columnIndex += 1) {
     const cell = worksheet[XLSX.utils.encode_cell({ c: columnIndex, r: rowIndex })]
     const value = cell?.t === 'e' ? undefined : (cell?.v as SheetCellValue)
-    row.push(value)
+    row.push({
+      formatted: typeof cell?.w === 'string' ? cell.w : undefined,
+      raw: value,
+    })
 
     if (value !== null && value !== undefined) {
       hasValue = true
@@ -235,11 +296,33 @@ function readSheetRow(
   return hasValue ? row : null
 }
 
+function normalizeImportHeader(value: string) {
+  return value
+    .replace(/^\uFEFF/, '')
+    .replace(/[\s_.-]+/g, '')
+    .toLowerCase()
+}
+
+const NORMALIZED_IMPORT_HEADER_TO_FIELD = new Map<string, keyof BookRow>(
+  Object.entries(ADMIN_BOOK_IMPORT_HEADER_TO_FIELD).map(([header, field]) => [
+    normalizeImportHeader(header),
+    field,
+  ])
+)
+
+function getImportHeaderField(header: unknown) {
+  const rawHeader = getCellText(header)
+  return (
+    ADMIN_BOOK_IMPORT_HEADER_TO_FIELD[rawHeader] ??
+    NORMALIZED_IMPORT_HEADER_TO_FIELD.get(normalizeImportHeader(rawHeader))
+  )
+}
+
 function getHeaderFields(headerRow: SheetRow) {
   const seenFields = new Set<keyof BookRow>()
 
   return headerRow.map((header) => {
-    const field = ADMIN_BOOK_IMPORT_HEADER_TO_FIELD[getCellText(header)]
+    const field = getImportHeaderField(header)
     if (!field || seenFields.has(field)) {
       return undefined
     }
@@ -261,7 +344,7 @@ async function readWorkbook(file: File): Promise<ParsedWorksheet> {
     workbook = XLSX.read(new Uint8Array(arrayBuffer), {
       cellFormula: false,
       cellHTML: false,
-      cellText: false,
+      cellText: true,
       sheetRows: ADMIN_BOOK_IMPORT_MAX_ROWS + 1,
       sheets: 0,
       type: 'array',
