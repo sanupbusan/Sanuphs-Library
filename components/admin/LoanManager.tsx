@@ -136,12 +136,16 @@ export default function LoanManager({ initialLoans }: LoanManagerProps) {
                               <button
                                 className="inline-flex h-8 shrink-0 whitespace-nowrap items-center gap-1 rounded-lg bg-red-50 px-3 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100"
                                 onClick={() => {
-                                  void forceOverdue(loan)
+                                  const devKey = window.prompt('연체 처리를 위해 DEV KEY를 입력하세요.')
+
+                                  if (devKey) {
+                                    void forceOverdue(loan, devKey)
+                                  }
                                 }}
                                 type="button"
                               >
                                 <AlertCircle className="h-3 w-3" />
-                                연체 테스트
+                                연체
                               </button>
                             ) : null}
                           </>

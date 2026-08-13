@@ -11,6 +11,8 @@ type UpdateLoanActionInput = {
   borrowedOn?: string | null
   dueOn?: string | null
   status?: LoanStatus | string | null
+  forceOverdue?: boolean
+  devKey?: string | null
 }
 
 type UpdateLoanActionResult = {
@@ -40,6 +42,11 @@ export async function updateLoanAction(
 ): Promise<UpdateLoanActionResult> {
   try {
     const session = await requireAdminSessionFromCookies()
+
+    if (input.forceOverdue && (!process.env.DEV_KEY || input.devKey !== process.env.DEV_KEY)) {
+      throw new ApiRouteError(403, 'INVALID_DEV_KEY', 'DEV KEY가 올바르지 않습니다.')
+    }
+
     const data = await updateAdminLoan(session.db, loanId.trim(), input)
 
     revalidatePath('/admin/loans')
