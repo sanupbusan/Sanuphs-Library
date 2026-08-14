@@ -5,6 +5,8 @@ import {
   LayoutDashboard,
   Library,
   ClipboardList,
+  BookOpen,
+  ScanBarcode,
   AlertCircle,
   BarChart3,
   type LucideIcon,
@@ -23,8 +25,10 @@ type SidebarMenuItem = {
 
 const sidebarMenuItems: SidebarMenuItem[] = [
   { icon: LayoutDashboard, label: '대시보드', section: 'dashboard' },
+  { icon: BookOpen, label: '도서 대여', href: '/rent', section: null },
   { icon: Library, label: '도서 관리', href: '/admin/books', section: null },
   { icon: ClipboardList, label: '대여 관리', href: '/admin/loans', section: null },
+  { icon: ScanBarcode, label: '바코드 출력', href: '/admin/barcodes', section: null },
   { icon: AlertCircle, label: '연체 관리', requiresLogin: true, section: 'overdue' },
   { icon: BarChart3, label: '통계', requiresLogin: true, section: 'statistics' },
 ]
