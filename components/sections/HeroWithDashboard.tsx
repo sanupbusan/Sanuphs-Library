@@ -246,6 +246,13 @@ export default function HeroWithDashboard() {
                 <Search className="h-5 w-5" />
                 도서 검색하기
               </a>
+              <a
+                href="/rent"
+                className="inline-flex items-center gap-2 rounded-lg border border-primary-200 bg-white px-6 py-3 text-base font-semibold text-primary-700 shadow-sm transition-all hover:border-primary-300 hover:bg-primary-50 hover:shadow-md"
+              >
+                <BookOpen className="h-5 w-5" />
+                도서 대여하기
+              </a>
             </div>
           </div>
 

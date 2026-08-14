@@ -38,13 +38,13 @@ export default function RentBookForm() {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">도서 대여</h1>
-          <p className="mt-1 text-sm text-gray-600">학생 바코드를 스캔한 뒤, 대여할 도서를 스캔합니다.</p>
+          <p className="mt-1 text-sm text-gray-600">학생 번호를 직접 입력하거나 바코드를 스캔한 뒤, 대여할 도서를 스캔합니다.</p>
         </div>
       </div>
 
       <form onSubmit={handleStudentSubmit} className="mb-4 rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
         <label htmlFor="student-number" className="mb-2 block text-sm font-medium text-gray-700">
-          학생 바코드 (학번)
+          학번/교직원 번호
         </label>
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -65,7 +65,7 @@ export default function RentBookForm() {
               }}
               onKeyDown={handleStudentKeyDown}
               className="h-11 w-full rounded-lg border border-gray-200 pl-10 pr-3 text-sm text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
-              placeholder="학생/교직원 바코드 스캔"
+              placeholder="학번 또는 교직원 번호 입력"
               readOnly={Boolean(student)}
               type="text"
             />
@@ -79,6 +79,7 @@ export default function RentBookForm() {
             <span className="ml-2">확인</span>
           </button>
         </div>
+        <p className="mt-2 text-xs text-gray-500">학번을 입력하거나 학생·교직원 바코드를 스캔한 후 확인을 눌러주세요.</p>
 
         {student ? (
           <div className="mt-4 rounded-lg bg-green-50 p-3">
