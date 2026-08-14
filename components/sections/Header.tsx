@@ -19,14 +19,7 @@ type SessionResponse = {
 
 const publicNavigationItems = [
   { label: '도서검색', href: '/books' },
-  { label: '도서 대여', href: '/rent' },
   { label: '기능소개', href: '/#features' },
-]
-
-const protectedNavigationItems = [
-  { label: '도서관리', href: '/admin/books' },
-  { label: '바코드출력', href: '/admin/barcodes' },
-  { label: '연체관리', href: '/admin/overdue' },
 ]
 
 export default function Header({ className }: HeaderProps) {
@@ -111,17 +104,6 @@ export default function Header({ className }: HeaderProps) {
               {item.label}
             </Link>
           ))}
-          {isLoggedIn
-            ? protectedNavigationItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="text-sm font-medium text-gray-600 transition-colors hover:text-primary-600"
-                >
-                  {item.label}
-                </Link>
-              ))
-            : null}
           {isLoggedIn ? (
             <button
               className="text-sm font-medium text-gray-600 transition-colors hover:text-primary-600 disabled:cursor-wait disabled:opacity-60"
