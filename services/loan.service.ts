@@ -160,7 +160,29 @@ export async function listAdminLoans(db: DbClient): Promise<LoanWithBookAndStude
 }
 
 export async function resetAdminLoanRecords(db: DbClient): Promise<void> {
-  await loanRepository.resetAdminLoanRecords(db)
+  try {
+    await loanRepository.resetAdminLoanRecords(db)
+  } catch (error) {
+    const code = getDbErrorCode(error)
+
+    if (code === '42883') {
+      throw new ApiRouteError(
+        503,
+        'RESET_LOAN_FUNCTION_MISSING',
+        '대여 기록 초기화 DB 함수가 없습니다. 최신 데이터베이스 migration을 적용해주세요.'
+      )
+    }
+
+    if (code === '42501') {
+      throw new ApiRouteError(
+        503,
+        'RESET_LOAN_PERMISSION_DENIED',
+        '대여 기록 초기화 DB 함수 실행 권한이 없습니다. 최신 데이터베이스 migration을 적용해주세요.'
+      )
+    }
+
+    throw error
+  }
 }
 
 export async function updateAdminLoan(
