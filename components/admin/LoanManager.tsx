@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertCircle, ClipboardList, Clock, Loader2, RotateCcw, Search } from 'lucide-react'
+import { AlertCircle, ClipboardList, Clock, Loader2, RotateCcw, Search, Trash2 } from 'lucide-react'
 import { useLoanManager, type Loan } from '@/components/admin/useLoanManager'
 import { isLoanOverdue } from '@/services/loan-restriction.service'
 
@@ -15,21 +15,52 @@ export default function LoanManager({ initialLoans }: LoanManagerProps) {
     filteredLoans,
     forceOverdue,
     isLoading,
+    refreshErrorMessage,
+    resetLoanRecords,
     searchQuery,
     setSearchQuery,
+    successMessage,
     updateLoanStatus,
   } = useLoanManager(initialLoans)
 
+  function handleResetLoanRecords() {
+    const devKey = window.prompt('대여 기록 초기화를 위해 DEV KEY를 입력하세요.')
+
+    if (devKey === null) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      '반납 완료 기록을 포함한 모든 대여 기록을 삭제하고 대여 가능 권수를 복원합니다. 계속하시겠습니까?'
+    )
+
+    if (confirmed) {
+      void resetLoanRecords(devKey)
+    }
+  }
+
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-      <div className="mb-8 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-50 text-primary-600">
-          <ClipboardList className="h-5 w-5" />
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-50 text-primary-600">
+            <ClipboardList className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">대여 관리</h1>
+            <p className="mt-1 text-sm text-gray-600">현재 대여 중인 도서와 대여자를 확인하고 상태를 변경할 수 있습니다.</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">대여 관리</h1>
-          <p className="mt-1 text-sm text-gray-600">현재 대여 중인 도서와 대여자를 확인하고 상태를 변경할 수 있습니다.</p>
-        </div>
+
+        <button
+          className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-red-50 px-4 text-sm font-semibold text-red-700 transition-colors hover:bg-red-100 disabled:cursor-wait disabled:opacity-60"
+          disabled={isLoading}
+          onClick={handleResetLoanRecords}
+          type="button"
+        >
+          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          {isLoading ? '처리 중...' : '대여 기록 초기화'}
+        </button>
       </div>
 
       <div className="mb-4">
@@ -45,9 +76,15 @@ export default function LoanManager({ initialLoans }: LoanManagerProps) {
         </div>
       </div>
 
-      {errorMessage ? (
+      {errorMessage || refreshErrorMessage ? (
         <div className="mb-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {errorMessage}
+          {errorMessage || refreshErrorMessage}
+        </div>
+      ) : null}
+
+      {successMessage ? (
+        <div className="mb-4 rounded-lg border border-green-100 bg-green-50 px-3 py-2 text-sm text-green-700">
+          {successMessage}
         </div>
       ) : null}
 

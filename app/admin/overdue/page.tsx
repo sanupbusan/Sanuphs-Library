@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import AdminOverdueManager from '@/components/admin/AdminOverdueManager'
 import Footer from '@/components/sections/Footer'
 import Header from '@/components/sections/Header'
+import { getTodayDateKey } from '@/lib/shared/date'
 import { listAdminOverdueLoans } from '@/services/loan.service'
 import { requireAdminPageSession } from '@/lib/admin-server-auth'
 
@@ -19,7 +20,10 @@ export default async function AdminOverduePage() {
   return (
     <main className="min-h-screen bg-gray-50">
       <Header />
-      <AdminOverdueManager initialOverdueLoans={overdueLoans} />
+      <AdminOverdueManager
+        initialOverdueLoans={overdueLoans}
+        initialToday={getTodayDateKey()}
+      />
       <Footer />
     </main>
   )
