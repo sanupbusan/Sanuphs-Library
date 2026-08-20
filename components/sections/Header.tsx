@@ -104,6 +104,12 @@ export default function Header({ className }: HeaderProps) {
               {item.label}
             </Link>
           ))}
+          <Link
+            href="/rent"
+            className="inline-flex h-9 items-center justify-center rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700"
+          >
+            도서 대여
+          </Link>
           {isLoggedIn ? (
             <button
               className="text-sm font-medium text-gray-600 transition-colors hover:text-primary-600 disabled:cursor-wait disabled:opacity-60"

@@ -1,7 +1,6 @@
 'use client'
 
 import { FormEvent, useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
 import { Loader2, LogIn } from 'lucide-react'
 import { cn } from '@/lib/shared/class-names'
 
@@ -32,28 +31,7 @@ type SessionResponse = {
   } | null
 }
 
-function getSafeAdminRedirect(nextPath: string | null) {
-  if (!nextPath) {
-    return '/admin'
-  }
-
-  if (
-    nextPath === '/admin/login' ||
-    nextPath.startsWith('/admin/login/') ||
-    nextPath.startsWith('/admin/login?')
-  ) {
-    return '/admin'
-  }
-
-  if (nextPath === '/admin' || nextPath.startsWith('/admin/') || nextPath.startsWith('/admin?')) {
-    return nextPath
-  }
-
-  return '/admin'
-}
-
 export default function AdminLoginForm() {
-  const searchParams = useSearchParams()
   const [loginId, setLoginId] = useState('')
   const [password, setPassword] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
@@ -80,8 +58,8 @@ export default function AdminLoginForm() {
         dbg('useEffect: payload parsed', payload)
 
         if (!didCancel && response.ok && payload.data?.user?.loginId) {
-          dbg('useEffect: already logged in, redirecting to /admin')
-          window.location.replace('/admin')
+          dbg('useEffect: already logged in, redirecting to landing page')
+          window.location.replace('/')
         } else {
           dbg('useEffect: not logged in, staying on login page')
         }
@@ -140,7 +118,7 @@ export default function AdminLoginForm() {
 
       dbg('handleSubmit: login succeeded, redirecting')
       shouldResetLoading = false
-      window.location.replace(getSafeAdminRedirect(searchParams.get('next')))
+      window.location.replace('/')
     } catch (error) {
       dbg('handleSubmit: caught error', error)
       setErrorMessage(error instanceof Error ? error.message : '로그인에 실패했습니다.')
