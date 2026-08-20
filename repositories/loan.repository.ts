@@ -69,6 +69,10 @@ export async function listAdminLoans(db: DbClient): Promise<LoanWithBookAndStude
   return result.rows.map(mapBackendLoanRow)
 }
 
+export async function resetAdminLoanRecords(db: DbClient): Promise<void> {
+  await db.execute(sql`select public.reset_annual_loan_records()`)
+}
+
 export async function getAdminLoanById(db: DbClient, loanId: string): Promise<LoanWithBookAndStudent | null> {
   const result = await db.execute<BackendLoanRow>(
     sql`select * from public.get_backend_loan_by_id(${loanId}::uuid)`

@@ -159,6 +159,10 @@ export async function listAdminLoans(db: DbClient): Promise<LoanWithBookAndStude
   return loanRepository.listAdminLoans(db)
 }
 
+export async function resetAdminLoanRecords(db: DbClient): Promise<void> {
+  await loanRepository.resetAdminLoanRecords(db)
+}
+
 export async function updateAdminLoan(
   db: DbClient,
   loanId: string,

@@ -1,16 +1,80 @@
+'use client'
+
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { getTodayDateKey } from '@/lib/shared/date'
 import { displayValue } from '@/lib/shared/display'
+import { readJsonResponse } from '@/lib/api-client'
+import { useAutoRefresh } from '@/hooks/useAutoRefresh'
 import { getOverdueDays } from '@/services/loan-restriction.service'
-import type { OverdueLoanRow } from '@/types/library'
+import type { ApiResponseWithMeta, OverdueLoanRow } from '@/types/library'
 
 type AdminOverdueManagerProps = {
   initialOverdueLoans: OverdueLoanRow[]
+  initialToday: string
 }
 
-export default function AdminOverdueManager({ initialOverdueLoans }: AdminOverdueManagerProps) {
-  const today = getTodayDateKey()
-  const overdueLoans = initialOverdueLoans
+type OverdueLoanResponse = ApiResponseWithMeta<OverdueLoanRow[], { today: string }>
+
+export default function AdminOverdueManager({
+  initialOverdueLoans,
+  initialToday,
+}: AdminOverdueManagerProps) {
+  const [today, setToday] = useState(initialToday)
+  const [overdueLoans, setOverdueLoans] = useState(initialOverdueLoans)
+  const isMountedRef = useRef(true)
+  const isRefreshingRef = useRef(false)
+
+  useEffect(() => {
+    setToday(initialToday)
+    setOverdueLoans(initialOverdueLoans)
+  }, [initialOverdueLoans, initialToday])
+
+  useEffect(() => {
+    isMountedRef.current = true
+
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
+  const refreshOverdueLoans = useCallback(async () => {
+    if (
+      !isMountedRef.current ||
+      isRefreshingRef.current ||
+      document.visibilityState !== 'visible'
+    ) {
+      return
+    }
+
+    isRefreshingRef.current = true
+
+    try {
+      const response = await fetch('/api/admin/overdue', {
+        cache: 'no-store',
+      })
+      const payload = await readJsonResponse<OverdueLoanResponse>(response)
+
+      if (!response.ok) {
+        throw new Error(payload.error?.message ?? '최신 연체 목록을 불러오지 못했습니다.')
+      }
+
+      if (!Array.isArray(payload.data)) {
+        throw new Error('최신 연체 목록을 확인하지 못했습니다.')
+      }
+
+      if (!isMountedRef.current) {
+        return
+      }
+
+      setOverdueLoans(payload.data)
+      setToday(payload.meta?.today ?? getTodayDateKey())
+    } finally {
+      isRefreshingRef.current = false
+    }
+  }, [])
+
+  useAutoRefresh(refreshOverdueLoans)
 
   return (
     <section className="bg-gray-50 py-14 sm:py-16">
